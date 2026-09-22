@@ -36,7 +36,7 @@ export function StatusBar() {
   const synced = status.protocol.synced;
 
   return (
-    <footer className="sticky bottom-0 z-40 border-t border-border bg-bg/90 backdrop-blur">
+    <footer className="border-t border-border bg-bg/90 backdrop-blur">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 text-xs text-gray-400 sm:px-6">
         <span className="flex items-center gap-1.5">
           <Dot color={synced ? "bg-success" : "bg-danger"} /> Bitcoin · synced

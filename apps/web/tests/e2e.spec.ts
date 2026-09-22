@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
 
 function randomTicker(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let out = "";
-  for (let i = 0; i < 4; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
+  // Guaranteed unique per run and always exactly 4 A-Z0-9 chars.
+  const n = String(Date.now() % 1_000_000).padStart(6, "0");
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  return `${chars[Math.floor(Math.random() * 26)]}${n.slice(-3)}`;
 }
 
 test("E2E-001: visitor reaches homepage and a token page", async ({ page }) => {
@@ -31,6 +31,7 @@ test("E2E-002: creator launches a token (mock)", async ({ page }) => {
   // Scroll the button to the viewport center so the fixed status footer doesn't
   // overlap it on small mobile viewports before clicking.
   await page.getByRole("button", { name: "Deploy token" }).evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await expect(page.getByRole("button", { name: "Deploy token" })).toBeEnabled();
   await page.getByRole("button", { name: "Deploy token" }).click();
 
   // Pending → deployed state.

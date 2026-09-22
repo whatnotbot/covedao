@@ -152,13 +152,19 @@ export default function LaunchPage() {
       {/* Step 3: risk */}
       <section className="rounded-3xl border border-border bg-surface p-6">
         <h2 className="mb-3 font-semibold text-white">3. Risk confirmation</h2>
-        <label className="flex items-start gap-3 text-sm text-gray-300">
-          <input type="checkbox" checked={risk} onChange={(e) => setRisk(e.target.checked)} className="mt-1" />
-          <span>
+        <div className="flex items-start gap-3 text-sm text-gray-300">
+          <input
+            id="risk-confirm"
+            type="checkbox"
+            checked={risk}
+            onChange={(e) => setRisk(e.target.checked)}
+            className="mt-1"
+          />
+          <label htmlFor="risk-confirm" className="cursor-pointer">
             I understand CRC/PRECOP is experimental and token launches may lose value or fail due to
             protocol, Bitcoin, wallet or software behavior.
-          </span>
-        </label>
+          </label>
+        </div>
       </section>
 
       {error && <p className="text-sm text-danger">{error}</p>}

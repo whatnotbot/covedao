@@ -1,0 +1,52 @@
+import { quoteExactTokens, TOTAL_SUPPLY_ATOMS, PUBLIC_SUPPLY_ATOMS, GRADUATION_RESERVE_ATOMS, getStageForSupply } from "@crclaunch/curve";
+import type { MockChainNode } from "./node.js";
+import type { MockToken } from "./types.js";
+
+interface SeedSpec {
+  ticker: string;
+  name: string;
+  percentMinted: number; // 0..100
+  graduated?: boolean;
+}
+
+const SEED: SeedSpec[] = [
+  { ticker: "FROG", name: "Frog", percentMinted: 63 },
+  { ticker: "DOGE", name: "Doge", percentMinted: 28 },
+  { ticker: "MOON", name: "Moon", percentMinted: 96 },
+  { ticker: "TREE", name: "Tree", percentMinted: 100, graduated: true },
+];
+
+/**
+ * Seeds the mock chain with clearly-labeled development/demo tokens
+ * (section 94). Production must never fall back to this data.
+ */
+export async function seedMockChain(node: MockChainNode): Promise<void> {
+  await node.mutate((state) => {
+    for (const spec of SEED) {
+      const deploymentId = `seed-${spec.ticker.toLowerCase()}-00000000000000000000000000000000`;
+      if (state.tokens[deploymentId]) continue; // idempotent
+      const minted = (PUBLIC_SUPPLY_ATOMS * BigInt(spec.percentMinted)) / 100n;
+      const reserve = quoteExactTokens({ desiredTokens: minted, currentSupply: 0n }).curveContributionSats;
+      const token: MockToken = {
+        deploymentId,
+        ticker: spec.ticker,
+        tickerNormalized: spec.ticker,
+        name: spec.name,
+        creatorAddress: `bc1qm0ckseed-${spec.ticker.toLowerCase()}000000000000000000000000000`,
+        network: state.network,
+        totalSupplyAtoms: TOTAL_SUPPLY_ATOMS,
+        publicSupplyAtoms: PUBLIC_SUPPLY_ATOMS,
+        reserveSupplyAtoms: GRADUATION_RESERVE_ATOMS,
+        confirmedMintedAtoms: minted,
+        pendingMintedAtoms: 0n,
+        currentStage: getStageForSupply(minted),
+        deployHeight: 1n,
+        status: spec.graduated ? "GRADUATED" : "LIVE",
+        reserveSats: reserve,
+        lastTradePricePerMillion: spec.graduated ? 149_731n : null,
+      };
+      state.tokens[deploymentId] = token;
+      state.tickerIndex[spec.ticker] = deploymentId;
+    }
+  });
+}

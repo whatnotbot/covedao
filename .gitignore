@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Builds
+.next/
+dist/
+build/
+out/
+*.tsbuildinfo
+.turbo/
+
+# Env & secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+*.pem
+*.key
+
+# Coverage
+coverage/
+
+# Playwright
+playwright-report/
+test-results/
+blob-report/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# Local data (mock chain state, uploads, etc.)
+.local/
+data/
+uploads/

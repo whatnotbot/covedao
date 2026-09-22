@@ -1,0 +1,96 @@
+{
+  "$comment": "CRC Launch V1 canonical mint test vectors (proposed crc-launch-v1 profile). Supply/amount are token units (integer); payment is satoshis. These run through validateCanonicalMint in packages/curve. The CRC team can implement the same vectors against their canonical validator.",
+  "profile": "crc-launch-v1",
+  "vectors": [
+    {
+      "id": "stage-1",
+      "state": { "profile": "crc-launch-v1", "ticker": "FROG", "tickerExists": true, "confirmedSupplyTokens": "0", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "FROG", "requestedAmountTokens": "1000000", "paymentSats": "500", "replayed": false },
+      "expected": { "valid": true, "requiredPaymentSats": "500", "reason": null }
+    },
+    {
+      "id": "stage-boundary",
+      "state": { "profile": "crc-launch-v1", "ticker": "FROG", "tickerExists": true, "confirmedSupplyTokens": "0", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "FROG", "requestedAmountTokens": "42000000", "paymentSats": "21000", "replayed": false },
+      "expected": { "valid": true, "requiredPaymentSats": "21000", "reason": null }
+    },
+    {
+      "id": "crossing-one-stage",
+      "state": { "profile": "crc-launch-v1", "ticker": "FROG", "tickerExists": true, "confirmedSupplyTokens": "0", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "FROG", "requestedAmountTokens": "43000000", "paymentSats": "21675", "replayed": false },
+      "expected": { "valid": true, "requiredPaymentSats": "21675", "reason": null }
+    },
+    {
+      "id": "crossing-multiple-stages",
+      "state": { "profile": "crc-launch-v1", "ticker": "FROG", "tickerExists": true, "confirmedSupplyTokens": "0", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "FROG", "requestedAmountTokens": "210000000", "paymentSats": "209118", "replayed": false },
+      "expected": { "valid": true, "requiredPaymentSats": "209118", "reason": null }
+    },
+    {
+      "id": "final-available-tokens",
+      "state": { "profile": "crc-launch-v1", "ticker": "FROG", "tickerExists": true, "confirmedSupplyTokens": "0", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "FROG", "requestedAmountTokens": "840000000", "paymentSats": "24196788", "replayed": false },
+      "expected": { "valid": true, "requiredPaymentSats": "24196788", "reason": null }
+    },
+    {
+      "id": "attempted-overmint",
+      "state": { "profile": "crc-launch-v1", "ticker": "FROG", "tickerExists": true, "confirmedSupplyTokens": "0", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "FROG", "requestedAmountTokens": "840000001", "paymentSats": "999999999", "replayed": false },
+      "expected": { "valid": false, "requiredPaymentSats": null, "reason": "exceeds remaining public supply" }
+    },
+    {
+      "id": "underpayment-by-1-sat",
+      "state": { "profile": "crc-launch-v1", "ticker": "FROG", "tickerExists": true, "confirmedSupplyTokens": "0", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "FROG", "requestedAmountTokens": "2000000", "paymentSats": "999", "replayed": false },
+      "expected": { "valid": false, "requiredPaymentSats": "1000", "reason": "underpayment" }
+    },
+    {
+      "id": "underpayment-by-50-percent",
+      "state": { "profile": "crc-launch-v1", "ticker": "FROG", "tickerExists": true, "confirmedSupplyTokens": "0", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "FROG", "requestedAmountTokens": "2000000", "paymentSats": "500", "replayed": false },
+      "expected": { "valid": false, "requiredPaymentSats": "1000", "reason": "underpayment" }
+    },
+    {
+      "id": "exact-payment",
+      "state": { "profile": "crc-launch-v1", "ticker": "FROG", "tickerExists": true, "confirmedSupplyTokens": "0", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "FROG", "requestedAmountTokens": "2000000", "paymentSats": "1000", "replayed": false, "claimedSupplyBeforeTokens": "0" },
+      "expected": { "valid": true, "requiredPaymentSats": "1000", "reason": null }
+    },
+    {
+      "id": "overpayment",
+      "state": { "profile": "crc-launch-v1", "ticker": "FROG", "tickerExists": true, "confirmedSupplyTokens": "0", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "FROG", "requestedAmountTokens": "2000000", "paymentSats": "1500", "replayed": false },
+      "expected": { "valid": true, "requiredPaymentSats": "1000", "reason": null }
+    },
+    {
+      "id": "replay-attempt",
+      "state": { "profile": "crc-launch-v1", "ticker": "FROG", "tickerExists": true, "confirmedSupplyTokens": "0", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "FROG", "requestedAmountTokens": "2000000", "paymentSats": "1000", "replayed": true },
+      "expected": { "valid": false, "requiredPaymentSats": null, "reason": "replayed operation" }
+    },
+    {
+      "id": "wrong-ticker",
+      "state": { "profile": "crc-launch-v1", "ticker": "FROG", "tickerExists": false, "confirmedSupplyTokens": "0", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "XXXX", "requestedAmountTokens": "2000000", "paymentSats": "1000", "replayed": false },
+      "expected": { "valid": false, "requiredPaymentSats": null, "reason": "ticker not found" }
+    },
+    {
+      "id": "stale-canonical-supply",
+      "state": { "profile": "crc-launch-v1", "ticker": "FROG", "tickerExists": true, "confirmedSupplyTokens": "11000000", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "FROG", "requestedAmountTokens": "2000000", "paymentSats": "1000", "replayed": false, "claimedSupplyBeforeTokens": "10000000" },
+      "expected": { "valid": false, "requiredPaymentSats": null, "reason": "stale supply" }
+    },
+    {
+      "id": "unsupported-profile",
+      "state": { "profile": "some-other-profile", "ticker": "FROG", "tickerExists": true, "confirmedSupplyTokens": "0", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "FROG", "requestedAmountTokens": "2000000", "paymentSats": "1000", "replayed": false },
+      "expected": { "valid": false, "requiredPaymentSats": null, "reason": "unsupported profile" }
+    },
+    {
+      "id": "zero-amount",
+      "state": { "profile": "crc-launch-v1", "ticker": "FROG", "tickerExists": true, "confirmedSupplyTokens": "0", "publicSupplyTokens": "840000000" },
+      "operation": { "kind": "mint", "ticker": "FROG", "requestedAmountTokens": "0", "paymentSats": "0", "replayed": false },
+      "expected": { "valid": false, "requiredPaymentSats": null, "reason": "amount must be positive" }
+    }
+  ]
+}

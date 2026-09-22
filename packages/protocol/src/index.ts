@@ -21,6 +21,7 @@ export type {
   VerificationStatus,
   FeeBreakdown,
   ProtocolListing,
+  DecodedSignedTransaction,
 } from "./types.js";
 export type { CRCProtocolAdapter } from "./adapter.js";
 export { ProtocolError, isProtocolError, type ProtocolErrorCode } from "./errors.js";
@@ -31,7 +32,7 @@ export {
   MOCK_VERIFICATION,
 } from "./verification.js";
 
-export { MockCRCAdapter, toProtocolToken, toProtocolEvent, MOCK_RESERVE_ADDRESS } from "./mock/adapter.js";
+export { MockCRCAdapter, toProtocolToken, toProtocolEvent } from "./mock/adapter.js";
 export { MockChainNode, type MockHealth } from "./mock/node.js";
 export { MemoryStorage, RedisMockStorage, type MockStorage, type RedisLike } from "./mock/store.js";
 export {
@@ -42,8 +43,25 @@ export {
   getStateHash,
   ensureWallet,
   getConfirmedEvents,
+  assertProtocolInvariants,
   MOCK_FAUCET_SATS,
 } from "./mock/chain.js";
+export {
+  DEFAULT_MOCK_PROTOCOL_CONFIG,
+  MOCK_TREASURY_ADDRESS,
+  MOCK_RESERVE_ADDRESS,
+  MOCK_PROTOCOL_FEE_ADDRESS,
+  CRC_LAUNCH_V1_PROFILE,
+  type ProtocolConfig,
+} from "./validation/config.js";
+export {
+  outputsToAddress,
+  sumOutputsByKind,
+  findOutputByKind,
+  countOutputsByKind,
+  countOutputsToAddress,
+  type OpValidationResult,
+} from "./validation/common.js";
 export type {
   MockChainState,
   MockToken,

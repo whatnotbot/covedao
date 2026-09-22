@@ -13,6 +13,8 @@ import {
 import { deserializeState, serializeState } from "./serialize.js";
 import { isMockSignedPsbt, parseSignedMockPsbt } from "./envelope.js";
 import type { MockStorage } from "./store.js";
+import type { ProtocolConfig } from "../validation/config.js";
+import { DEFAULT_MOCK_PROTOCOL_CONFIG } from "../validation/config.js";
 
 export interface MockHealth {
   synced: boolean;
@@ -33,15 +35,24 @@ export class MockChainNode {
   constructor(
     private readonly storage: MockStorage,
     private readonly network: Network = "mock",
+    private readonly config: ProtocolConfig = DEFAULT_MOCK_PROTOCOL_CONFIG,
   ) {
-    this.state = createInitialState(network);
+    this.state = createInitialState(network, config);
+  }
+
+  /** Ensure a deserialized (possibly older) state carries the protocol config. */
+  private migrateState(state: MockChainState): MockChainState {
+    if (!state.config) {
+      state.config = this.config;
+    }
+    return state;
   }
 
   async init(): Promise<void> {
     if (this.initialized) return;
     const json = await this.storage.read();
     if (json) {
-      this.state = deserializeState<MockChainState>(json);
+      this.state = this.migrateState(deserializeState<MockChainState>(json));
     } else {
       await this.persist();
     }
@@ -57,7 +68,7 @@ export class MockChainNode {
     const release = await this.storage.lock();
     try {
       const json = await this.storage.read();
-      if (json) this.state = deserializeState<MockChainState>(json);
+      if (json) this.state = this.migrateState(deserializeState<MockChainState>(json));
       const result = fn(this.state);
       await this.persist();
       return result;
@@ -74,7 +85,7 @@ export class MockChainNode {
   private async refresh(): Promise<void> {
     await this.init();
     const json = await this.storage.read();
-    if (json) this.state = deserializeState<MockChainState>(json);
+    if (json) this.state = this.migrateState(deserializeState<MockChainState>(json));
   }
 
   // ── Bitcoin node view ────────────────────────────────────────────────
@@ -191,6 +202,16 @@ export class MockChainNode {
   async getEvents(from: bigint, to: bigint): Promise<MockEvent[]> {
     await this.refresh();
     return getConfirmedEvents(this.state).filter((e) => e.blockHeight >= from && e.blockHeight <= to);
+  }
+
+  async getBlocks(): Promise<MockBlock[]> {
+    await this.refresh();
+    return [...this.state.blocks];
+  }
+
+  async getCanonicalTxids(): Promise<string[]> {
+    await this.refresh();
+    return this.state.blocks.flatMap((b) => b.txids);
   }
 
   async mineBlock(): Promise<MockBlock> {

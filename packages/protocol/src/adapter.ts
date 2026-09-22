@@ -6,6 +6,7 @@ import type {
   BuildMintInput,
   BuildSellInput,
   DecodedProtocolTransaction,
+  DecodedSignedTransaction,
   ProtocolEvent,
   ProtocolListing,
   ProtocolToken,
@@ -64,4 +65,7 @@ export interface CRCProtocolAdapter {
   getEvents(fromHeight: bigint, toHeight: bigint): Promise<ProtocolEvent[]>;
 
   decodeTransaction(rawTx: string): Promise<DecodedProtocolTransaction>;
+
+  /** Decode a signed transaction to derive canonical operation/txid/signer. */
+  decodeSignedTransaction(rawTx: string): Promise<DecodedSignedTransaction>;
 }

@@ -4,10 +4,15 @@ import {
   PUBLIC_SUPPLY_ATOMS,
   RESERVE_SUPPLY_ATOMS,
   TOTAL_SUPPLY_ATOMS,
+  computePlatformFee,
   getStageForSupply,
+  quoteExactTokens,
 } from "@crclaunch/curve";
 import type { Network } from "@crclaunch/config";
 import type { ProtocolEventType } from "../types.js";
+import type { ProtocolConfig } from "../validation/config.js";
+import { DEFAULT_MOCK_PROTOCOL_CONFIG } from "../validation/config.js";
+import { outputsToAddress, countOutputsToAddress, type OpValidationResult } from "../validation/common.js";
 import type {
   MockBlock,
   MockChainState,
@@ -19,12 +24,13 @@ import type {
 } from "./types.js";
 
 export const MOCK_FAUCET_SATS: Sats = 10n * 100_000_000n; // 10 BTC
+const TICKER_RE = /^[A-Z0-9]{4}$/;
 
 function sha256(data: string): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-export function createInitialState(network: Network): MockChainState {
+export function createInitialState(network: Network, config?: ProtocolConfig): MockChainState {
   return {
     network,
     height: 0n,
@@ -38,6 +44,7 @@ export function createInitialState(network: Network): MockChainState {
     events: {},
     platformTreasurySats: 0n,
     protocolTreasurySats: 0n,
+    config: config ?? DEFAULT_MOCK_PROTOCOL_CONFIG,
   };
 }
 
@@ -73,6 +80,7 @@ export function mineBlock(state: MockChainState): MockBlock {
     }
   }
 
+  // Deterministic block transaction ordering: mempool insertion order.
   const pending = state.mempool.slice();
   state.mempool = [];
   for (const txid of pending) {
@@ -123,64 +131,258 @@ function emitEvent(
   state.events[key] = event;
 }
 
-function applyTx(
-  state: MockChainState,
-  tx: MockTx,
-  blockHeight: bigint,
-  blockHash: string,
-): "CONFIRMED" | "REJECTED" {
-  const ok = applyEffects(state, tx, blockHeight, blockHash);
-  if (!ok) {
-    tx.status = "REJECTED";
-    tx.confirmHeight = null;
-    return "REJECTED";
-  }
-  tx.status = "CONFIRMED";
-  tx.confirmHeight = blockHeight;
-  return "CONFIRMED";
-}
-
-function reject(tx: MockTx, reason: string): false {
-  tx.status = "REJECTED";
-  tx.rejectReason = reason;
-  return false;
-}
-
 /**
- * Applies a tx's effects to derived state (no event emission). Returns false if
- * the tx is invalid and must be rejected. Must be deterministic for reorg replay.
+ * Validate a transaction WITHOUT mutating state. Returns a normalized operation
+ * containing only protocol-derived values. The raw payload is never trusted for
+ * economic/identity/ticker/price fields.
  */
-function applyEffects(
+function validateTx(
   state: MockChainState,
   tx: MockTx,
   blockHeight: bigint,
-  blockHash: string,
-): boolean {
+): OpValidationResult<unknown> {
+  const signer = tx.signer ?? "";
+  const p = tx.payload;
+
   switch (tx.op) {
     case "DEPLOY": {
-      const p = tx.payload;
       const tickerNorm = (p.ticker ?? "").toUpperCase();
-      if (state.tickerIndex[tickerNorm]) {
-        return reject(tx, "TICKER_TAKEN");
+      if (!TICKER_RE.test(tickerNorm)) return { valid: false, reason: "INVALID_TICKER", normalized: null };
+      if (state.tickerIndex[tickerNorm]) return { valid: false, reason: "TICKER_TAKEN", normalized: null };
+      if (!signer) return { valid: false, reason: "MISSING_SIGNER", normalized: null };
+      if (p.creatorAddress && p.creatorAddress !== signer) {
+        return { valid: false, reason: "SIGNER_MISMATCH", normalized: null };
       }
-      const creator = tx.signer ?? p.creatorAddress ?? "";
-      const wallet = ensureWallet(state, creator);
-      const launchFee = p.launchFeeSats ?? 0n;
-      const totalCost = launchFee + tx.feeSats;
-      if (wallet.btcSats < totalCost) return reject(tx, "INSUFFICIENT_BTC");
-
-      wallet.btcSats -= totalCost;
-      if (p.treasuryAddress) {
-        ensureWallet(state, p.treasuryAddress).btcSats += launchFee;
+      const launchFee = state.config.launchFeeSats;
+      const actualLaunchFee = outputsToAddress(tx.outputs, state.config.treasuryAddress);
+      if (actualLaunchFee < launchFee) return { valid: false, reason: "LAUNCH_FEE_UNDERPAYMENT", normalized: null };
+      const walletBtc = state.balances[signer]?.btcSats ?? MOCK_FAUCET_SATS;
+      if (walletBtc < launchFee + tx.feeSats) {
+        return { valid: false, reason: "INSUFFICIENT_BTC", normalized: null };
       }
-      state.platformTreasurySats += launchFee;
+      return {
+        valid: true,
+        reason: null,
+        normalized: {
+          ticker: p.ticker ?? "",
+          tickerNormalized: tickerNorm,
+          name: p.name ?? null,
+          creatorAddress: signer,
+          launchFeeSats: launchFee,
+        },
+      };
+    }
 
+    case "MINT": {
+      const token = state.tokens[p.deploymentId ?? ""];
+      if (!token) return { valid: false, reason: "TOKEN_NOT_FOUND", normalized: null };
+      if (token.status !== "LIVE") return { valid: false, reason: "MINT_SOLD_OUT", normalized: null };
+      if (token.confirmedMintedAtoms !== (p.supplyBeforeAtoms ?? 0n)) {
+        return { valid: false, reason: "SUPPLY_CHANGED", normalized: null };
+      }
+      if (p.ticker !== undefined && p.ticker.toUpperCase() !== token.tickerNormalized) {
+        return { valid: false, reason: "TICKER_MISMATCH", normalized: null };
+      }
+      if (!signer) return { valid: false, reason: "MISSING_SIGNER", normalized: null };
+      if (p.buyerAddress && p.buyerAddress !== signer) {
+        return { valid: false, reason: "SIGNER_MISMATCH", normalized: null };
+      }
+      const amount = p.tokenAmountAtoms ?? 0n;
+      if (amount <= 0n) return { valid: false, reason: "ZERO_QUANTITY", normalized: null };
+      const remaining = PUBLIC_SUPPLY_ATOMS - token.confirmedMintedAtoms;
+      if (amount > remaining) return { valid: false, reason: "EXCEEDS_REMAINING_SUPPLY", normalized: null };
+
+      // Recompute economics deterministically — never trust payload.
+      const quote = quoteExactTokens({
+        desiredTokens: amount,
+        currentSupply: token.confirmedMintedAtoms,
+      });
+      const requiredCurve = quote.curveContributionSats;
+      const requiredPlatform = computePlatformFee(requiredCurve, state.config.primaryMintFeeBps);
+
+      // Derive actual payments from OUTPUTS, not payload. Exact layout: exactly
+      // one reserve output and exactly one platform-fee output.
+      const actualCurve = outputsToAddress(tx.outputs, state.config.reserveAddress);
+      const actualPlatform = outputsToAddress(tx.outputs, state.config.treasuryAddress);
+      if (countOutputsToAddress(tx.outputs, state.config.reserveAddress) !== 1) {
+        return { valid: false, reason: "INVALID_OUTPUT_LAYOUT", normalized: null };
+      }
+      if (countOutputsToAddress(tx.outputs, state.config.treasuryAddress) !== 1) {
+        return { valid: false, reason: "INVALID_OUTPUT_LAYOUT", normalized: null };
+      }
+      if (actualCurve < requiredCurve) return { valid: false, reason: "UNDERPAYMENT", normalized: null };
+      if (actualPlatform < requiredPlatform) return { valid: false, reason: "FEE_UNDERPAYMENT", normalized: null };
+      const walletBtc = state.balances[signer]?.btcSats ?? MOCK_FAUCET_SATS;
+      const total = requiredCurve + requiredPlatform + tx.feeSats;
+      if (walletBtc < total) return { valid: false, reason: "INSUFFICIENT_BTC", normalized: null };
+
+      return {
+        valid: true,
+        reason: null,
+        normalized: {
+          deploymentId: token.deploymentId,
+          ticker: token.ticker,
+          buyerAddress: signer,
+          tokenAmountAtoms: amount,
+          curveContributionSats: requiredCurve,
+          platformFeeSats: requiredPlatform,
+          minerFeeSats: tx.feeSats,
+          startingStage: quote.startingStage,
+          endingStage: quote.endingStage,
+        },
+      };
+    }
+
+    case "TRANSFER": {
+      const token = state.tokens[p.deploymentId ?? ""];
+      if (!token) return { valid: false, reason: "TOKEN_NOT_FOUND", normalized: null };
+      const amount = p.tokenAmountAtoms ?? 0n;
+      if (amount <= 0n) return { valid: false, reason: "ZERO_QUANTITY", normalized: null };
+      if (!signer) return { valid: false, reason: "MISSING_SIGNER", normalized: null };
+      const to = p.buyerAddress ?? p.sellerAddress ?? "";
+      if (!to || to === signer) return { valid: false, reason: "INVALID_RECIPIENT", normalized: null };
+      const fromWallet = state.balances[signer];
+      if (!fromWallet || (fromWallet.tokens[token.deploymentId] ?? 0n) < amount) {
+        return { valid: false, reason: "INSUFFICIENT_TOKENS", normalized: null };
+      }
+      return {
+        valid: true,
+        reason: null,
+        normalized: { deploymentId: token.deploymentId, from: signer, to, tokenAmountAtoms: amount },
+      };
+    }
+
+    case "DEX_ASK": {
+      const token = state.tokens[p.deploymentId ?? ""];
+      if (!token) return { valid: false, reason: "TOKEN_NOT_FOUND", normalized: null };
+      if (token.status !== "GRADUATED") return { valid: false, reason: "NOT_GRADUATED", normalized: null };
+      if (!signer) return { valid: false, reason: "MISSING_SIGNER", normalized: null };
+      if (p.sellerAddress && p.sellerAddress !== signer) {
+        return { valid: false, reason: "SIGNER_MISMATCH", normalized: null };
+      }
+      const amount = p.tokenAmountAtoms ?? 0n;
+      if (amount <= 0n) return { valid: false, reason: "ZERO_QUANTITY", normalized: null };
+      const askingPrice = p.askingPriceSats ?? 0n;
+      if (askingPrice <= 0n) return { valid: false, reason: "ZERO_PRICE", normalized: null };
+      const expiry = p.expiryHeight ?? 0n;
+      if (expiry <= blockHeight) return { valid: false, reason: "EXPIRED_ON_CREATION", normalized: null };
+      const wallet = state.balances[signer];
+      const available = wallet ? (wallet.tokens[token.deploymentId] ?? 0n) - (wallet.lockedTokens[token.deploymentId] ?? 0n) : 0n;
+      if (available < amount) return { valid: false, reason: "INSUFFICIENT_TOKENS", normalized: null };
+      return {
+        valid: true,
+        reason: null,
+        normalized: {
+          listingId: tx.txid,
+          deploymentId: token.deploymentId,
+          sellerAddress: signer,
+          tokenAmountAtoms: amount,
+          askingPriceSats: askingPrice,
+          expiryHeight: expiry,
+        },
+      };
+    }
+
+    case "DEX_BID": {
+      const listing = state.listings[p.listingId ?? ""];
+      if (!listing) return { valid: false, reason: "LISTING_NOT_FOUND", normalized: null };
+      if (listing.status !== "OPEN") return { valid: false, reason: "LISTING_ALREADY_TAKEN", normalized: null };
+      if (blockHeight >= listing.expiryHeight) return { valid: false, reason: "LISTING_EXPIRED", normalized: null };
+      if (!signer) return { valid: false, reason: "MISSING_SIGNER", normalized: null };
+      if (p.buyerAddress && p.buyerAddress !== signer) {
+        return { valid: false, reason: "SIGNER_MISMATCH", normalized: null };
+      }
+      if (signer === listing.sellerAddress) return { valid: false, reason: "SELF_BUY", normalized: null };
+
+      // Canonical listing values — never trust payload price/amount/seller/deployment.
+      const price = listing.askingPriceSats;
+      const requiredProtocolFee = computePlatformFee(price, state.config.marketplaceFeeBps);
+      const requiredPlatformFee = 0n; // V1: no additional marketplace platform fee.
+
+      const actualSellerPayment = outputsToAddress(tx.outputs, listing.sellerAddress);
+      if (actualSellerPayment < price) return { valid: false, reason: "SELLER_UNDERPAYMENT", normalized: null };
+      if (requiredProtocolFee > 0n) {
+        const actualProtocolFee = outputsToAddress(tx.outputs, state.config.protocolFeeAddress);
+        if (actualProtocolFee < requiredProtocolFee) return { valid: false, reason: "FEE_UNDERPAYMENT", normalized: null };
+      }
+      if (requiredPlatformFee > 0n) {
+        const actualPlatformFee = outputsToAddress(tx.outputs, state.config.treasuryAddress);
+        if (actualPlatformFee < requiredPlatformFee) return { valid: false, reason: "FEE_UNDERPAYMENT", normalized: null };
+      }
+      const walletBtc = state.balances[signer]?.btcSats ?? MOCK_FAUCET_SATS;
+      const total = price + requiredProtocolFee + requiredPlatformFee + tx.feeSats;
+      if (walletBtc < total) return { valid: false, reason: "INSUFFICIENT_BTC", normalized: null };
+
+      return {
+        valid: true,
+        reason: null,
+        normalized: {
+          listingId: listing.id,
+          deploymentId: listing.deploymentId,
+          buyerAddress: signer,
+          sellerAddress: listing.sellerAddress,
+          tokenAmountAtoms: listing.tokenAmountAtoms,
+          totalPriceSats: price,
+          protocolFeeSats: requiredProtocolFee,
+          platformFeeSats: requiredPlatformFee,
+          minerFeeSats: tx.feeSats,
+        },
+      };
+    }
+
+    case "DEX_CANCEL": {
+      const listing = state.listings[p.listingId ?? ""];
+      if (!listing) return { valid: false, reason: "LISTING_NOT_FOUND", normalized: null };
+      if (listing.status !== "OPEN") return { valid: false, reason: "LISTING_NOT_CANCELLABLE", normalized: null };
+      if (!signer || signer !== listing.sellerAddress) return { valid: false, reason: "NOT_LISTING_OWNER", normalized: null };
+      return {
+        valid: true,
+        reason: null,
+        normalized: { listingId: listing.id, sellerAddress: signer, tokenAmountAtoms: listing.tokenAmountAtoms, deploymentId: listing.deploymentId },
+      };
+    }
+
+    case "GRADUATION": {
+      const token = state.tokens[p.deploymentId ?? ""];
+      if (!token) return { valid: false, reason: "TOKEN_NOT_FOUND", normalized: null };
+      if (token.confirmedMintedAtoms !== PUBLIC_SUPPLY_ATOMS) {
+        return { valid: false, reason: "NOT_SOLD_OUT", normalized: null };
+      }
+      if (token.status !== "SOLD_OUT" && token.status !== "GRADUATING") {
+        return { valid: false, reason: "NOT_GRADUATABLE", normalized: null };
+      }
+      return {
+        valid: true,
+        reason: null,
+        normalized: { deploymentId: token.deploymentId, reserveSats: token.reserveSats },
+      };
+    }
+
+    default:
+      return { valid: false, reason: "UNSUPPORTED_OPERATION", normalized: null };
+  }
+}
+
+/** Apply a VALIDATED, normalized operation. Mutates state; must be deterministic. */
+function applyNormalized(
+  state: MockChainState,
+  tx: MockTx,
+  n: any,
+  blockHeight: bigint,
+  blockHash: string,
+): void {
+  switch (tx.op) {
+    case "DEPLOY": {
+      const wallet = ensureWallet(state, n.creatorAddress);
+      wallet.btcSats -= n.launchFeeSats + tx.feeSats;
+      ensureWallet(state, state.config.treasuryAddress).btcSats += n.launchFeeSats;
+      state.platformTreasurySats += n.launchFeeSats;
       const token: MockToken = {
         deploymentId: tx.txid,
-        ticker: p.ticker ?? "",
-        tickerNormalized: tickerNorm,
-        name: p.name ?? null,
-        creatorAddress: creator,
+        ticker: n.ticker,
+        tickerNormalized: n.tickerNormalized,
+        name: n.name,
+        creatorAddress: n.creatorAddress,
         network: state.network,
         totalSupplyAtoms: TOTAL_SUPPLY_ATOMS,
         publicSupplyAtoms: PUBLIC_SUPPLY_ATOMS,
@@ -194,209 +396,152 @@ function applyEffects(
         lastTradePricePerMillion: null,
       };
       state.tokens[tx.txid] = token;
-      state.tickerIndex[tickerNorm] = tx.txid;
+      state.tickerIndex[n.tickerNormalized] = tx.txid;
       emitEvent(state, tx, blockHeight, blockHash, "DEPLOY", {
         deploymentId: tx.txid,
-        walletFrom: creator,
-        btcAmountSats: launchFee,
-        payload: { ticker: p.ticker, name: p.name },
+        walletFrom: n.creatorAddress,
+        btcAmountSats: n.launchFeeSats,
+        payload: { ticker: n.ticker, name: n.name },
       });
-      return true;
+      return;
     }
 
     case "MINT": {
-      const p = tx.payload;
-      const token = state.tokens[p.deploymentId ?? ""];
-      if (!token) return reject(tx, "TOKEN_NOT_FOUND");
-      if (token.status === "SOLD_OUT" || token.status === "GRADUATED" || token.status === "GRADUATING") {
-        return reject(tx, "MINT_SOLD_OUT");
-      }
-      if (token.confirmedMintedAtoms !== (p.supplyBeforeAtoms ?? 0n)) {
-        return reject(tx, "SUPPLY_CHANGED");
-      }
-      const amount = p.tokenAmountAtoms ?? 0n;
-      if (amount <= 0n) return reject(tx, "ZERO_QUANTITY");
-      if (token.confirmedMintedAtoms + amount > PUBLIC_SUPPLY_ATOMS) {
-        return reject(tx, "EXCEEDS_REMAINING_SUPPLY");
-      }
-
-      const buyer = tx.signer ?? p.buyerAddress ?? "";
-      const wallet = ensureWallet(state, buyer);
-      const curve = p.curveContributionSats ?? 0n;
-      const platform = p.platformFeeSats ?? 0n;
-      const miner = p.minerFeeSats ?? 0n;
-      const total = curve + platform + miner;
-      if (wallet.btcSats < total) return reject(tx, "INSUFFICIENT_BTC");
-
+      const wallet = ensureWallet(state, n.buyerAddress);
+      const total = n.curveContributionSats + n.platformFeeSats + n.minerFeeSats;
       wallet.btcSats -= total;
-      wallet.tokens[token.deploymentId] =
-        (wallet.tokens[token.deploymentId] ?? 0n) + amount;
-      token.reserveSats += curve;
-      if (p.treasuryAddress) {
-        ensureWallet(state, p.treasuryAddress).btcSats += platform;
-      }
-      state.platformTreasurySats += platform;
-      token.confirmedMintedAtoms += amount;
+      wallet.tokens[n.deploymentId] = (wallet.tokens[n.deploymentId] ?? 0n) + n.tokenAmountAtoms;
+      const token = state.tokens[n.deploymentId]!;
+      token.reserveSats += n.curveContributionSats;
+      ensureWallet(state, state.config.treasuryAddress).btcSats += n.platformFeeSats;
+      state.platformTreasurySats += n.platformFeeSats;
+      token.confirmedMintedAtoms += n.tokenAmountAtoms;
       token.currentStage = getStageForSupply(token.confirmedMintedAtoms);
-      if (token.confirmedMintedAtoms >= PUBLIC_SUPPLY_ATOMS) {
-        token.status = "SOLD_OUT";
-      }
+      if (token.confirmedMintedAtoms === PUBLIC_SUPPLY_ATOMS) token.status = "SOLD_OUT";
       emitEvent(state, tx, blockHeight, blockHash, "MINT", {
-        deploymentId: token.deploymentId,
-        walletFrom: buyer,
-        walletTo: buyer,
-        tokenAmountAtoms: amount,
-        btcAmountSats: curve,
-        payload: { platformFeeSats: platform, minerFeeSats: miner },
+        deploymentId: n.deploymentId,
+        walletFrom: n.buyerAddress,
+        walletTo: n.buyerAddress,
+        tokenAmountAtoms: n.tokenAmountAtoms,
+        btcAmountSats: n.curveContributionSats,
+        payload: { platformFeeSats: n.platformFeeSats, minerFeeSats: n.minerFeeSats },
       });
-      return true;
+      return;
     }
 
     case "TRANSFER": {
-      const p = tx.payload;
-      const from = tx.signer ?? "";
-      const to = p.buyerAddress ?? p.sellerAddress ?? "";
-      const amount = p.tokenAmountAtoms ?? 0n;
-      const fromWallet = ensureWallet(state, from);
-      if ((fromWallet.tokens[p.deploymentId ?? ""] ?? 0n) < amount) {
-        return reject(tx, "INSUFFICIENT_TOKENS");
-      }
-      fromWallet.tokens[p.deploymentId ?? ""] = (fromWallet.tokens[p.deploymentId ?? ""] ?? 0n) - amount;
-      ensureWallet(state, to).tokens[p.deploymentId ?? ""] =
-        (ensureWallet(state, to).tokens[p.deploymentId ?? ""] ?? 0n) + amount;
+      const fromWallet = ensureWallet(state, n.from);
+      fromWallet.tokens[n.deploymentId] = (fromWallet.tokens[n.deploymentId] ?? 0n) - n.tokenAmountAtoms;
+      ensureWallet(state, n.to).tokens[n.deploymentId] =
+        (ensureWallet(state, n.to).tokens[n.deploymentId] ?? 0n) + n.tokenAmountAtoms;
       emitEvent(state, tx, blockHeight, blockHash, "TRANSFER", {
-        deploymentId: p.deploymentId,
-        walletFrom: from,
-        walletTo: to,
-        tokenAmountAtoms: amount,
+        deploymentId: n.deploymentId,
+        walletFrom: n.from,
+        walletTo: n.to,
+        tokenAmountAtoms: n.tokenAmountAtoms,
       });
-      return true;
+      return;
     }
 
     case "DEX_ASK": {
-      const p = tx.payload;
-      const token = state.tokens[p.deploymentId ?? ""];
-      if (!token) return reject(tx, "TOKEN_NOT_FOUND");
-      if (token.status !== "GRADUATED") return reject(tx, "NOT_GRADUATED");
-      const seller = tx.signer ?? p.sellerAddress ?? "";
-      const amount = p.tokenAmountAtoms ?? 0n;
-      if (amount <= 0n) return reject(tx, "ZERO_QUANTITY");
-      const wallet = ensureWallet(state, seller);
-      const available = (wallet.tokens[token.deploymentId] ?? 0n) - (wallet.lockedTokens[token.deploymentId] ?? 0n);
-      if (available < amount) return reject(tx, "INSUFFICIENT_TOKENS");
-      wallet.lockedTokens[token.deploymentId] = (wallet.lockedTokens[token.deploymentId] ?? 0n) + amount;
+      const wallet = ensureWallet(state, n.sellerAddress);
+      wallet.lockedTokens[n.deploymentId] = (wallet.lockedTokens[n.deploymentId] ?? 0n) + n.tokenAmountAtoms;
       const listing: MockListing = {
-        id: tx.txid,
-        deploymentId: token.deploymentId,
-        sellerAddress: seller,
-        tokenAmountAtoms: amount,
-        askingPriceSats: p.askingPriceSats ?? 0n,
+        id: n.listingId,
+        deploymentId: n.deploymentId,
+        sellerAddress: n.sellerAddress,
+        tokenAmountAtoms: n.tokenAmountAtoms,
+        askingPriceSats: n.askingPriceSats,
         creationHeight: blockHeight,
-        expiryHeight: p.expiryHeight ?? blockHeight + 144n,
+        expiryHeight: n.expiryHeight,
         status: "OPEN",
       };
       state.listings[listing.id] = listing;
       emitEvent(state, tx, blockHeight, blockHash, "DEX_ASK", {
-        deploymentId: token.deploymentId,
-        walletFrom: seller,
-        tokenAmountAtoms: amount,
-        btcAmountSats: listing.askingPriceSats,
+        deploymentId: n.deploymentId,
+        walletFrom: n.sellerAddress,
+        tokenAmountAtoms: n.tokenAmountAtoms,
+        btcAmountSats: n.askingPriceSats,
         payload: { listingId: listing.id, expiryHeight: listing.expiryHeight },
       });
-      return true;
+      return;
     }
 
     case "DEX_BID": {
-      const p = tx.payload;
-      const listing = state.listings[p.listingId ?? ""];
-      if (!listing) return reject(tx, "LISTING_NOT_FOUND");
-      if (listing.status !== "OPEN") return reject(tx, "LISTING_ALREADY_TAKEN");
-      if (blockHeight >= listing.expiryHeight) return reject(tx, "LISTING_EXPIRED");
-      const buyer = tx.signer ?? p.buyerAddress ?? "";
-      const wallet = ensureWallet(state, buyer);
-      const totalPrice = p.totalPriceSats ?? 0n;
-      const protocolFee = p.protocolFeeSats ?? 0n;
-      const platformFee = p.platformFeeSats ?? 0n;
-      const miner = p.minerFeeSats ?? 0n;
-      const buyerCost = totalPrice + protocolFee + platformFee + miner;
-      if (wallet.btcSats < buyerCost) return reject(tx, "INSUFFICIENT_BTC");
-
-      wallet.btcSats -= buyerCost;
-      ensureWallet(state, listing.sellerAddress).btcSats += totalPrice;
-      if (p.treasuryAddress) {
-        ensureWallet(state, p.treasuryAddress).btcSats += platformFee;
+      const wallet = ensureWallet(state, n.buyerAddress);
+      const total = n.totalPriceSats + n.protocolFeeSats + n.platformFeeSats + n.minerFeeSats;
+      wallet.btcSats -= total;
+      ensureWallet(state, n.sellerAddress).btcSats += n.totalPriceSats;
+      if (n.platformFeeSats > 0n) {
+        ensureWallet(state, state.config.treasuryAddress).btcSats += n.platformFeeSats;
+        state.platformTreasurySats += n.platformFeeSats;
       }
-      state.platformTreasurySats += platformFee;
-      state.protocolTreasurySats += protocolFee;
-
-      // Move locked tokens from seller to buyer.
-      const sellerWallet = ensureWallet(state, listing.sellerAddress);
-      sellerWallet.tokens[listing.deploymentId] =
-        (sellerWallet.tokens[listing.deploymentId] ?? 0n) - listing.tokenAmountAtoms;
-      sellerWallet.lockedTokens[listing.deploymentId] =
-        (sellerWallet.lockedTokens[listing.deploymentId] ?? 0n) - listing.tokenAmountAtoms;
-      wallet.tokens[listing.deploymentId] =
-        (wallet.tokens[listing.deploymentId] ?? 0n) + listing.tokenAmountAtoms;
-      listing.status = "TAKEN";
-
-      const token = state.tokens[listing.deploymentId];
+      if (n.protocolFeeSats > 0n) {
+        state.protocolTreasurySats += n.protocolFeeSats;
+      }
+      const sellerWallet = ensureWallet(state, n.sellerAddress);
+      sellerWallet.tokens[n.deploymentId] = (sellerWallet.tokens[n.deploymentId] ?? 0n) - n.tokenAmountAtoms;
+      sellerWallet.lockedTokens[n.deploymentId] = (sellerWallet.lockedTokens[n.deploymentId] ?? 0n) - n.tokenAmountAtoms;
+      wallet.tokens[n.deploymentId] = (wallet.tokens[n.deploymentId] ?? 0n) + n.tokenAmountAtoms;
+      state.listings[n.listingId]!.status = "TAKEN";
+      const token = state.tokens[n.deploymentId];
       if (token) {
-        token.lastTradePricePerMillion =
-          (listing.askingPriceSats * 1_000_000n) / listing.tokenAmountAtoms;
+        token.lastTradePricePerMillion = (n.totalPriceSats * 1_000_000n) / n.tokenAmountAtoms;
       }
       emitEvent(state, tx, blockHeight, blockHash, "DEX_BID", {
-        deploymentId: listing.deploymentId,
-        walletFrom: buyer,
-        walletTo: listing.sellerAddress,
-        tokenAmountAtoms: listing.tokenAmountAtoms,
-        btcAmountSats: totalPrice,
-        payload: { listingId: listing.id, protocolFeeSats: protocolFee, platformFeeSats: platformFee },
+        deploymentId: n.deploymentId,
+        walletFrom: n.buyerAddress,
+        walletTo: n.sellerAddress,
+        tokenAmountAtoms: n.tokenAmountAtoms,
+        btcAmountSats: n.totalPriceSats,
+        payload: { listingId: n.listingId, protocolFeeSats: n.protocolFeeSats, platformFeeSats: n.platformFeeSats },
       });
-      return true;
+      return;
     }
 
     case "DEX_CANCEL": {
-      const p = tx.payload;
-      const listing = state.listings[p.listingId ?? ""];
-      if (!listing) return reject(tx, "LISTING_NOT_FOUND");
-      if (listing.status !== "OPEN") return reject(tx, "LISTING_NOT_CANCELLABLE");
-      const seller = tx.signer ?? p.sellerAddress ?? "";
-      if (listing.sellerAddress !== seller) return reject(tx, "NOT_LISTING_OWNER");
-      const wallet = ensureWallet(state, seller);
-      wallet.lockedTokens[listing.deploymentId] =
-        (wallet.lockedTokens[listing.deploymentId] ?? 0n) - listing.tokenAmountAtoms;
-      listing.status = "CANCELLED";
+      const wallet = ensureWallet(state, n.sellerAddress);
+      wallet.lockedTokens[n.deploymentId] = (wallet.lockedTokens[n.deploymentId] ?? 0n) - n.tokenAmountAtoms;
+      state.listings[n.listingId]!.status = "CANCELLED";
       emitEvent(state, tx, blockHeight, blockHash, "DEX_CANCEL", {
-        deploymentId: listing.deploymentId,
-        walletFrom: seller,
-        tokenAmountAtoms: listing.tokenAmountAtoms,
-        payload: { listingId: listing.id },
+        deploymentId: n.deploymentId,
+        walletFrom: n.sellerAddress,
+        tokenAmountAtoms: n.tokenAmountAtoms,
+        payload: { listingId: n.listingId },
       });
-      return true;
+      return;
     }
 
     case "GRADUATION": {
-      const p = tx.payload;
-      const token = state.tokens[p.deploymentId ?? ""];
-      if (!token) return reject(tx, "TOKEN_NOT_FOUND");
-      if (token.confirmedMintedAtoms < PUBLIC_SUPPLY_ATOMS) {
-        return reject(tx, "NOT_SOLD_OUT");
-      }
-      if (token.status !== "SOLD_OUT" && token.status !== "GRADUATING") {
-        return reject(tx, "NOT_GRADUATABLE");
-      }
-      token.status = "GRADUATED";
+      state.tokens[n.deploymentId]!.status = "GRADUATED";
       emitEvent(state, tx, blockHeight, blockHash, "GRADUATION", {
-        deploymentId: token.deploymentId,
-        btcAmountSats: token.reserveSats,
-        payload: { reserveSats: token.reserveSats },
+        deploymentId: n.deploymentId,
+        btcAmountSats: n.reserveSats,
+        payload: { reserveSats: n.reserveSats },
       });
-      return true;
+      return;
     }
-
-    default:
-      return reject(tx, "UNSUPPORTED_OPERATION");
   }
+}
+
+function applyTx(
+  state: MockChainState,
+  tx: MockTx,
+  blockHeight: bigint,
+  blockHash: string,
+): "CONFIRMED" | "REJECTED" {
+  const v = validateTx(state, tx, blockHeight);
+  if (!v.valid) {
+    tx.status = "REJECTED";
+    tx.confirmHeight = null;
+    tx.rejectReason = v.reason;
+    return "REJECTED";
+  }
+  applyNormalized(state, tx, v.normalized, blockHeight, blockHash);
+  tx.status = "CONFIRMED";
+  tx.confirmHeight = blockHeight;
+  tx.rejectReason = null;
+  return "CONFIRMED";
 }
 
 export function rebuildDerivedState(state: MockChainState): void {
@@ -410,10 +555,16 @@ export function rebuildDerivedState(state: MockChainState): void {
     for (const txid of block.txids) {
       const tx = state.txs[txid];
       if (tx) {
-        tx.status = "CONFIRMED";
-        tx.confirmHeight = block.height;
-        tx.rejectReason = null;
-        applyEffects(state, tx, block.height, block.hash);
+        const v = validateTx(state, tx, block.height);
+        if (v.valid) {
+          tx.status = "CONFIRMED";
+          tx.confirmHeight = block.height;
+          tx.rejectReason = null;
+          applyNormalized(state, tx, v.normalized, block.height, block.hash);
+        } else {
+          tx.status = "REJECTED";
+          tx.rejectReason = v.reason;
+        }
       }
     }
   }
@@ -449,4 +600,58 @@ export function getConfirmedEvents(state: MockChainState): MockEvent[] {
 
 export function getEventsInRange(state: MockChainState, from: bigint, to: bigint): MockEvent[] {
   return getConfirmedEvents(state).filter((e) => e.blockHeight >= from && e.blockHeight <= to);
+}
+
+/** Invariant checker — used by tests and reorg verification. Returns violations. */
+export function assertProtocolInvariants(state: MockChainState): string[] {
+  const problems: string[] = [];
+  for (const t of Object.values(state.tokens)) {
+    if (t.confirmedMintedAtoms < 0n || t.confirmedMintedAtoms > t.publicSupplyAtoms) {
+      problems.push(`${t.ticker}: confirmed minted out of range`);
+    }
+    if (t.status === "SOLD_OUT" && t.confirmedMintedAtoms !== t.publicSupplyAtoms) {
+      problems.push(`${t.ticker}: SOLD_OUT but not fully minted`);
+    }
+    if (t.status === "GRADUATED" && t.confirmedMintedAtoms !== t.publicSupplyAtoms) {
+      problems.push(`${t.ticker}: GRADUATED but not fully minted`);
+    }
+    if (t.reserveSats < 0n) problems.push(`${t.ticker}: negative reserve`);
+  }
+  for (const [address, b] of Object.entries(state.balances)) {
+    for (const [dep, amt] of Object.entries(b.tokens)) {
+      if (amt < 0n) problems.push(`${address}: negative balance for ${dep}`);
+    }
+    for (const [dep, amt] of Object.entries(b.lockedTokens)) {
+      if (amt < 0n) problems.push(`${address}: negative locked for ${dep}`);
+      if (amt > (b.tokens[dep] ?? 0n)) problems.push(`${address}: locked exceeds balance for ${dep}`);
+    }
+  }
+  for (const l of Object.values(state.listings)) {
+    if (l.status === "OPEN") {
+      const seller = state.balances[l.sellerAddress];
+      const locked = seller?.lockedTokens[l.deploymentId] ?? 0n;
+      if (locked < l.tokenAmountAtoms) problems.push(`listing ${l.id}: OPEN but seller lacks locked tokens`);
+    }
+    if (l.status !== "OPEN" && l.status !== "TAKEN" && l.status !== "CANCELLED" && l.status !== "EXPIRED") {
+      problems.push(`listing ${l.id}: bad status ${l.status}`);
+    }
+  }
+  for (const [ticker, dep] of Object.entries(state.tickerIndex)) {
+    const t = state.tokens[dep];
+    if (!t) problems.push(`tickerIndex ${ticker} → missing token`);
+    else if (t.tickerNormalized !== ticker) problems.push(`tickerIndex ${ticker} → wrong token`);
+  }
+  // Sum of minted balances across wallets must equal confirmed supply per token.
+  const mintedSum: Record<string, bigint> = {};
+  for (const b of Object.values(state.balances)) {
+    for (const [dep, amt] of Object.entries(b.tokens)) {
+      mintedSum[dep] = (mintedSum[dep] ?? 0n) + amt;
+    }
+  }
+  for (const [dep, t] of Object.entries(state.tokens)) {
+    if ((mintedSum[dep] ?? 0n) !== t.confirmedMintedAtoms) {
+      problems.push(`${t.ticker}: balance sum ${mintedSum[dep]} != confirmed ${t.confirmedMintedAtoms}`);
+    }
+  }
+  return problems;
 }

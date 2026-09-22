@@ -198,6 +198,13 @@ export interface DecodedProtocolTransaction {
   tokenAmountAtoms?: TokenAtoms;
 }
 
+/** Result of decoding a signed transaction: identity + operation + txid. */
+export interface DecodedSignedTransaction {
+  operation: ProtocolOperation;
+  txid: string;
+  signer: string | null;
+}
+
 export interface VerificationStatus {
   deploy: OperationStatus;
   mint: OperationStatus;

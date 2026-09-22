@@ -1,5 +1,6 @@
 import type { Network } from "@crclaunch/config";
 import type { Sats, TokenAtoms } from "@crclaunch/curve";
+import type { ProtocolConfig } from "../validation/config.js";
 import type {
   ProtocolEventType,
   ProtocolOperation,
@@ -127,4 +128,6 @@ export interface MockChainState {
   platformTreasurySats: Sats;
   /** Protocol-mandated trading fees, tracked separately. */
   protocolTreasurySats: Sats;
+  /** Canonical protocol configuration (treasury/reserve/fees). Never from payload. */
+  config: ProtocolConfig;
 }

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, notInArray, or, sql } from "drizzle-orm";
 import type { Database, DbTransaction } from "./client.js";
 import {
   assertListingTransition,
@@ -532,4 +532,46 @@ const PROJECTION_TABLES = [
 /** Truncate all projection tables (demo reset / reindex). Chain state is the source of truth. */
 export async function resetProjections(db: Database): Promise<void> {
   await db.execute(sql.raw(`TRUNCATE TABLE ${PROJECTION_TABLES.join(", ")} CASCADE`));
+}
+
+/** Mark chain events non-canonical whose txid is no longer in the canonical chain. */
+export async function markEventsNonCanonicalExcept(db: DB, network: string, canonicalTxids: string[]): Promise<void> {
+  await db
+    .update(chainEvents)
+    .set({ canonical: false })
+    .where(
+      and(
+        eq(chainEvents.network, network),
+        eq(chainEvents.canonical, true),
+        canonicalTxids.length > 0 ? notInArray(chainEvents.txid, canonicalTxids) : undefined,
+      ),
+    );
+}
+
+/** Mark mints non-canonical whose txid is no longer in the canonical chain. */
+export async function markMintsNonCanonicalExcept(db: DB, network: string, canonicalTxids: string[]): Promise<void> {
+  await db
+    .update(mints)
+    .set({ canonical: false })
+    .where(
+      and(
+        eq(mints.network, network),
+        eq(mints.canonical, true),
+        canonicalTxids.length > 0 ? notInArray(mints.txid, canonicalTxids) : undefined,
+      ),
+    );
+}
+
+/** Mark trades non-canonical whose txid is no longer in the canonical chain. */
+export async function markTradesNonCanonicalExcept(db: DB, network: string, canonicalTxids: string[]): Promise<void> {
+  await db
+    .update(trades)
+    .set({ canonical: false })
+    .where(
+      and(
+        eq(trades.network, network),
+        eq(trades.canonical, true),
+        canonicalTxids.length > 0 ? notInArray(trades.txid, canonicalTxids) : undefined,
+      ),
+    );
 }

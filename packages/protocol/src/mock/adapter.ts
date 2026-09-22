@@ -7,6 +7,7 @@ import type {
   BuildMintInput,
   BuildSellInput,
   DecodedProtocolTransaction,
+  DecodedSignedTransaction,
   ProtocolEvent,
   ProtocolToken,
   ProtocolTransactionStatus,
@@ -20,9 +21,9 @@ import { MOCK_VERIFICATION } from "../verification.js";
 import type { MockChainNode } from "./node.js";
 import { buildEnvelope, envelopeToPsbt, parseSignedMockPsbt } from "./envelope.js";
 import type { MockEvent, MockListing, MockToken, MockTxEnvelope } from "./types.js";
+import { MOCK_RESERVE_ADDRESS, MOCK_PROTOCOL_FEE_ADDRESS } from "../validation/config.js";
 
-export const MOCK_RESERVE_ADDRESS = "bc1qm0ckreserve000000000000000000000000000000000000";
-export const MOCK_PROTOCOL_TREASURY = "bc1qm0ckprotocol0000000000000000000000000000000000";
+export { MOCK_RESERVE_ADDRESS, MOCK_PROTOCOL_FEE_ADDRESS as MOCK_PROTOCOL_TREASURY };
 
 function mockMinerFee(inputs: number, outputs: number): Sats {
   // ~150 sats per input + ~150 sats per output at ~2 sat/vB.
@@ -136,13 +137,13 @@ export class MockCRCAdapter {
     }
     const fee = mockMinerFee(1, 1);
     const outputs: TransactionOutput[] = [
-      { index: 0, address: input.treasuryAddress, amountSats: input.launchFeeSats, kind: "launch-fee" },
+      { index: 0, address: this.node.snapshot.config.treasuryAddress, amountSats: input.launchFeeSats, kind: "launch-fee" },
     ];
     const payload = {
       ticker: input.ticker,
       name: input.name,
       creatorAddress: input.creatorAddress,
-      treasuryAddress: input.treasuryAddress,
+      treasuryAddress: this.node.snapshot.config.treasuryAddress,
       launchFeeSats: input.launchFeeSats,
     };
     const envelope = buildEnvelope({
@@ -183,14 +184,14 @@ export class MockCRCAdapter {
     }
 
     const outputs: TransactionOutput[] = [
-      { index: 0, address: MOCK_RESERVE_ADDRESS, amountSats: input.curveContributionSats, kind: "curve-reserve" },
-      { index: 1, address: input.treasuryAddress, amountSats: input.platformFeeSats, kind: "platform-fee" },
+      { index: 0, address: this.node.snapshot.config.reserveAddress, amountSats: input.curveContributionSats, kind: "curve-reserve" },
+      { index: 1, address: this.node.snapshot.config.treasuryAddress, amountSats: input.platformFeeSats, kind: "platform-fee" },
     ];
     const payload = {
       deploymentId: input.deploymentId,
       ticker: input.ticker,
       buyerAddress: input.buyerAddress,
-      treasuryAddress: input.treasuryAddress,
+      treasuryAddress: this.node.snapshot.config.treasuryAddress,
       tokenAmountAtoms: input.tokenAmountAtoms,
       curveContributionSats: input.curveContributionSats,
       platformFeeSats: input.platformFeeSats,
@@ -279,10 +280,10 @@ export class MockCRCAdapter {
       { index: 0, address: input.sellerAddress, amountSats: input.totalPriceSats, kind: "seller" },
     ];
     if (input.protocolFeeSats > 0n) {
-      outputs.push({ index: 1, address: MOCK_PROTOCOL_TREASURY, amountSats: input.protocolFeeSats, kind: "protocol-fee" });
+      outputs.push({ index: 1, address: this.node.snapshot.config.protocolFeeAddress, amountSats: input.protocolFeeSats, kind: "protocol-fee" });
     }
     if (input.platformFeeSats > 0n) {
-      outputs.push({ index: outputs.length, address: input.treasuryAddress, amountSats: input.platformFeeSats, kind: "platform-fee" });
+      outputs.push({ index: outputs.length, address: this.node.snapshot.config.treasuryAddress, amountSats: input.platformFeeSats, kind: "platform-fee" });
     }
     const token = await this.node.getTokenByDeployment(input.deploymentId);
     const envelope = buildEnvelope({
@@ -298,7 +299,7 @@ export class MockCRCAdapter {
         protocolFeeSats: input.protocolFeeSats,
         platformFeeSats: input.platformFeeSats,
         minerFeeSats: input.minerFeeSats,
-        treasuryAddress: input.treasuryAddress,
+        treasuryAddress: this.node.snapshot.config.treasuryAddress,
       },
       inputs: [{ txid: `mock-utxo-${input.buyerAddress}`, vout: 0, address: input.buyerAddress, amountSats: input.totalPriceSats + input.protocolFeeSats + input.platformFeeSats + fee }],
       outputs,
@@ -383,7 +384,7 @@ export class MockCRCAdapter {
 
   async validateMint(tx: UnsignedProtocolTransaction): Promise<ValidationResult> {
     return this.validateOutputs(tx, (t) => [
-      { address: MOCK_RESERVE_ADDRESS, amountSats: t.summary.curveContributionSats ?? 0n, kind: "curve-reserve" },
+      { address: this.node.snapshot.config.reserveAddress, amountSats: t.summary.curveContributionSats ?? 0n, kind: "curve-reserve" },
       { address: t.outputs[1]?.address ?? null, amountSats: t.summary.platformFeeSats ?? 0n, kind: "platform-fee" },
     ]);
   }
@@ -454,6 +455,11 @@ export class MockCRCAdapter {
       ticker: envelope.payload.ticker,
       tokenAmountAtoms: envelope.payload.tokenAmountAtoms,
     };
+  }
+
+  async decodeSignedTransaction(rawTx: string): Promise<DecodedSignedTransaction> {
+    const { envelope, signer } = parseSignedMockPsbt(rawTx);
+    return { operation: envelope.op, txid: envelope.txid, signer: signer || null };
   }
 
   // ── helpers ──────────────────────────────────────────────────────────

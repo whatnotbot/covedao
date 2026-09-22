@@ -15,8 +15,8 @@ import type { Sats, TokenAtoms } from "./types.js";
 export interface CanonicalMintInput {
   profile: string;
   tickerExists: boolean;
+  /** Confirmed canonical public supply in token units (1 token = 1 unit). */
   confirmedSupplyTokens: TokenAtoms;
-  publicSupplyTokens: TokenAtoms;
   requestedAmountTokens: TokenAtoms;
   paymentSats: Sats;
   replayed: boolean;

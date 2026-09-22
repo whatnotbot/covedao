@@ -1,6 +1,7 @@
 import type { ProtocolHealth } from "@crclaunch/config";
 import type {
   DecodedProtocolTransaction,
+  DecodedSignedTransaction,
   ProtocolEvent,
   ProtocolListing,
   ProtocolToken,
@@ -133,6 +134,10 @@ export class PrecopCRCAdapter {
   }
 
   async decodeTransaction(): Promise<DecodedProtocolTransaction> {
+    throw new ProtocolError("PROTOCOL_NOT_VERIFIED", "PRECOP decode not verified.");
+  }
+
+  async decodeSignedTransaction(): Promise<DecodedSignedTransaction> {
     throw new ProtocolError("PROTOCOL_NOT_VERIFIED", "PRECOP decode not verified.");
   }
 }

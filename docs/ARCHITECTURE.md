@@ -68,3 +68,21 @@ never the source of truth for money movement.
   expire by time and height.
 - Mempool is never treated as final; graduation waits for a configurable
   finality threshold.
+
+## Trust model (adversarial hardening)
+
+Transaction construction is convenience only. Canonical state is produced by
+**independently validating every operation against deterministic protocol
+rules**, never by trusting the requestor:
+
+- **Frontend is untrusted** — the UI is a convenience wrapper.
+- **Builder is untrusted** — a malicious client may construct its own transaction.
+- **Payload is untrusted** — payment/fee/price/address/ticker claims are ignored.
+- **Indexer/validator recomputes all material state** from canonical prior state,
+  the transaction signer, transaction outputs, and deterministic rules
+  (`packages/protocol/src/mock/chain.ts` `validateTx` → `applyNormalized`).
+
+The validator derives actual payments from transaction **outputs** (address +
+amount) against the canonical protocol config (`packages/protocol/src/validation/config.ts`),
+not from payload fields. See `packages/protocol/src/mock/adversarial.test.ts` for
+the tampered-transaction attack matrix.

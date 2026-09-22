@@ -39,7 +39,7 @@ test("E2E-002: creator launches a token (mock)", async ({ page }) => {
   await expect(page.getByText(/View token/)).toBeVisible();
 });
 
-test("E2E-003: buyer quotes and mints a seeded token (mock)", async ({ page }) => {
+test("E2E-003: buyer quotes, builds, signs, broadcasts and confirms a mint", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("link", { name: /FROG/ }).first().click();
 
@@ -49,7 +49,14 @@ test("E2E-003: buyer quotes and mints a seeded token (mock)", async ({ page }) =
 
   // Live quote appears (debounced), then review.
   await expect(page.getByText("You receive")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText("Review transaction")).toBeVisible();
+  await page.getByRole("button", { name: "Review transaction" }).click();
+
+  // Review screen shows outputs, then sign & mint.
+  await expect(page.getByText("Review outputs before signing:")).toBeVisible({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Sign & Mint" }).click();
+
+  // Broadcast → done. The mock wallet signs and the worker indexes it.
+  await expect(page.getByText("Transaction submitted")).toBeVisible({ timeout: 30_000 });
 });
 
 test("E2E-014: mobile homepage and token page render at 375px", async ({ page }) => {

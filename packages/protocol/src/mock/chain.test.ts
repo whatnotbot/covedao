@@ -174,16 +174,16 @@ describe("mock chain end-to-end", () => {
     const buyer = "bc1qm0ckbuyer0000000000000000000000000000000000000000";
 
     const deploy = await adapter.buildDeploy({
-      ticker: "REORG", name: "Reorg", creatorAddress: creator, treasuryAddress: TREASURY, launchFeeSats: 10_000n, network: "mock",
+      ticker: "RORG", name: "Reorg", creatorAddress: creator, treasuryAddress: TREASURY, launchFeeSats: 10_000n, network: "mock",
     });
     await signAndSubmit(adapter, deploy, creator);
     await node.mineBlock();
-    const token = (await adapter.getTokenByTicker("REORG"))!;
+    const token = (await adapter.getTokenByTicker("RORG"))!;
 
     // Three sequential mints, each in its own block.
     for (let i = 0; i < 3; i++) {
       const mint = await adapter.buildMint({
-        deploymentId: token.deploymentId, ticker: "REORG", buyerAddress: buyer, treasuryAddress: TREASURY,
+        deploymentId: token.deploymentId, ticker: "RORG", buyerAddress: buyer, treasuryAddress: TREASURY,
         tokenAmountAtoms: 2_000_000n, curveContributionSats: 1_000n, platformFeeSats: 10n,
         minerFeeSats: 450n, currentSupplyAtoms: BigInt(i * 2_000_000), stateHash: await node.getStateHash(),
       });

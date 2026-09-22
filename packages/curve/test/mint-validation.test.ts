@@ -36,7 +36,6 @@ describe("CRC Launch V1 canonical mint test vectors", () => {
         profile: v.state.profile,
         tickerExists: v.state.tickerExists,
         confirmedSupplyTokens: BigInt(v.state.confirmedSupplyTokens),
-        publicSupplyTokens: BigInt(v.state.publicSupplyTokens),
         requestedAmountTokens: BigInt(v.operation.requestedAmountTokens),
         paymentSats: BigInt(v.operation.paymentSats),
         replayed: v.operation.replayed,

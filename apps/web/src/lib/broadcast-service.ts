@@ -9,7 +9,7 @@ import {
   getTokenByDeployment,
   setTokenStatus,
 } from "@crclaunch/db";
-import { parseSignedMockPsbt, type CRCProtocolAdapter } from "@crclaunch/protocol";
+import type { CRCProtocolAdapter } from "@crclaunch/protocol";
 import type { RuntimeConfig } from "@crclaunch/config";
 
 export interface BroadcastRequest {
@@ -24,76 +24,75 @@ export async function broadcastOperation(
   config: RuntimeConfig,
   req: BroadcastRequest,
 ): Promise<Response> {
-  let envelope;
+  // Derive canonical operation/signer/txid from the SIGNED TRANSACTION itself —
+  // never trust the client's claimed `operation`.
+  let decoded;
   try {
-    const parsed = parseSignedMockPsbt(req.signedPsbt);
-    envelope = parsed.envelope;
-    if (!parsed.signer) return fail("WALLET_NOT_CONNECTED", "Transaction is not signed.", 400);
-    if (parsed.signer !== req.walletAddress) {
-      return fail("NETWORK_MISMATCH", "Signer address does not match connected wallet.", 400);
-    }
-  } catch {
-    return fail("TX_REJECTED", "Could not parse signed transaction.", 400);
+    decoded = await adapter.decodeSignedTransaction(req.signedPsbt);
+  } catch (e) {
+    return fail("TX_REJECTED", e instanceof Error ? e.message : "Could not decode transaction.", 400);
   }
 
-  if (envelope.op !== req.operation) {
+  if (!decoded.signer) {
+    return fail("WALLET_NOT_CONNECTED", "Transaction is not signed.", 400);
+  }
+  if (decoded.signer !== req.walletAddress) {
+    return fail("NETWORK_MISMATCH", "Signer address does not match connected wallet.", 400);
+  }
+  if (decoded.operation !== req.operation) {
     return fail("TX_REJECTED", "Transaction operation mismatch.", 400);
   }
 
-  let txid: string;
-  try {
-    txid = await adapter.broadcast(req.signedPsbt);
-  } catch (e) {
-    return fail("TX_REJECTED", e instanceof Error ? e.message : "Broadcast failed.", 502, true);
-  }
+  const txid = await adapter.broadcast(req.signedPsbt);
 
-  const idempotencyKey = `broadcast-${txid}`;
   let chainTx = await getChainTxByTxid(db, config.network, txid);
   if (!chainTx) {
     chainTx = await createChainTx(db, {
       network: config.network,
-      operation: req.operation,
+      operation: decoded.operation,
       walletAddress: req.walletAddress,
-      idempotencyKey,
+      idempotencyKey: `broadcast-${txid}`,
       txid,
       status: "BROADCAST",
-      deploymentId: envelope.payload.deploymentId ?? null,
+      deploymentId: null,
     });
   }
+  const deploymentId = chainTx?.deploymentId ?? null;
 
   if (chainTx) {
     await forceSetChainTxStatus(db, chainTx.id, "MEMPOOL");
   }
 
-  // Operation-specific optimistic state (chain remains authoritative).
-  if (req.operation === "DEPLOY") {
+  // Optimistic UI bookkeeping only — the canonical indexer is authoritative and
+  // re-syncs real values from validated chain events.
+  if (decoded.operation === "DEPLOY") {
     const token = await getTokenByDeployment(db, config.network, txid);
     if (token) {
       await stepToken(db, token.id, token.status as never, "DEPLOY_BROADCAST");
       await stepToken(db, token.id, "DEPLOY_BROADCAST", "DEPLOY_PENDING");
     }
-  } else if (req.operation === "MINT") {
+  } else if (decoded.operation === "MINT") {
     await insertMint(db, {
       network: config.network,
-      deploymentId: envelope.payload.deploymentId ?? "",
+      deploymentId: deploymentId ?? "",
       walletAddress: req.walletAddress,
-      tokenAmountAtoms: envelope.payload.tokenAmountAtoms ?? 0n,
-      curveContributionSats: envelope.payload.curveContributionSats ?? 0n,
-      platformFeeSats: envelope.payload.platformFeeSats ?? 0n,
-      minerFeeSats: envelope.payload.minerFeeSats ?? 0n,
+      tokenAmountAtoms: 0n,
+      curveContributionSats: 0n,
+      platformFeeSats: 0n,
+      minerFeeSats: 0n,
       txid,
       status: "MEMPOOL",
     });
-  } else if (req.operation === "DEX_ASK") {
+  } else if (decoded.operation === "DEX_ASK") {
     await insertListing(db, {
       listingId: txid,
       network: config.network,
-      deploymentId: envelope.payload.deploymentId ?? "",
+      deploymentId: deploymentId ?? "",
       sellerAddress: req.walletAddress,
-      tokenAmountAtoms: envelope.payload.tokenAmountAtoms ?? 0n,
-      askingPriceSats: envelope.payload.askingPriceSats ?? 0n,
+      tokenAmountAtoms: 0n,
+      askingPriceSats: 0n,
       creationHeight: 0n,
-      expiryHeight: envelope.payload.expiryHeight ?? 0n,
+      expiryHeight: 0n,
       status: "BROADCAST",
       txid,
     });

@@ -15,6 +15,10 @@ import {
   setTokenStatus,
   getListingById,
   forceSetListingStatus,
+  upsertBlock,
+  markEventsNonCanonicalExcept,
+  markMintsNonCanonicalExcept,
+  markTradesNonCanonicalExcept,
 } from "@crclaunch/db";
 import type { MockChainNode, MockCRCAdapter } from "@crclaunch/protocol";
 import type { RuntimeConfig } from "@crclaunch/config";
@@ -184,6 +188,18 @@ export async function syncMockToDb(db: Database, node: MockChainNode, network: s
         });
       }
     }
+  });
+
+  // ── Canonical block history + reorg reconciliation (P0-26/27/28) ──────────
+  const blocks = await node.getBlocks();
+  const canonicalTxids = await node.getCanonicalTxids();
+  await db.transaction(async (tx) => {
+    for (const b of blocks) {
+      await upsertBlock(tx, { network, height: b.height, hash: b.hash, parentHash: b.parentHash, canonical: true });
+    }
+    await markEventsNonCanonicalExcept(tx, network, canonicalTxids);
+    await markMintsNonCanonicalExcept(tx, network, canonicalTxids);
+    await markTradesNonCanonicalExcept(tx, network, canonicalTxids);
   });
 
   await setCursor(db, CURSOR_ID, network, height, await node.getBlockHash(height));

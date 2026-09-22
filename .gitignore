@@ -2,10 +2,10 @@
 node_modules/
 .pnpm-store/
 
-# Builds
+# Builds (root-level only — `build/` also matches Next.js `api/*/build/` route dirs)
 .next/
 dist/
-build/
+/build/
 out/
 *.tsbuildinfo
 .turbo/

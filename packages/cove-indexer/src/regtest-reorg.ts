@@ -62,9 +62,16 @@ class RegtestRpc {
       body: JSON.stringify({ jsonrpc: "1.0", id: `${++this.id}`, method, params }),
       signal: AbortSignal.timeout(30_000),
     });
-    if (!res.ok) throw new Error(`RPC ${method} HTTP ${res.status}`);
-    const json = (await res.json()) as { result?: T; error?: { message?: string } | null };
-    if (json.error) throw new Error(`RPC ${method}: ${json.error.message ?? "error"}`);
+    const text = await res.text();
+    let json: { result?: T; error?: { message?: string } | null } = {};
+    try {
+      json = JSON.parse(text) as typeof json;
+    } catch {
+      /* non-JSON error body */
+    }
+    if (!res.ok || json.error) {
+      throw new Error(`RPC ${method}: ${json.error?.message ?? text.slice(0, 200) ?? `HTTP ${res.status}`}`);
+    }
     return json.result as T;
   }
 

@@ -162,4 +162,21 @@ describe("CoveIndexer (binary envelope, classification, tx index)", () => {
     idx.processBlock(CFG.genesisHeight, []);
     expect(() => idx.processBlock(CFG.genesisHeight + 2, [])).toThrow(/non-contiguous/);
   });
+
+  it("records an invalid mint without mutating state", () => {
+    const idx = new CoveIndexer(CFG);
+    idx.processBlock(CFG.genesisHeight, [
+      tx(encodeCoveDeploy("FROG"), [{ index: 1, scriptPubKeyHex: CFG.treasuryScript, valueSats: 10_000n }], "d".repeat(64)),
+    ]);
+    // Overpay the settlement → invalid; reserve must stay 0.
+    idx.processBlock(CFG.genesisHeight + 1, [
+      tx(encodeCoveMint("FROG", 200_000_000_000_000n, 0n), [
+        { index: 1, scriptPubKeyHex: RECIPIENT, valueSats: 330n },
+        { index: 2, scriptPubKeyHex: CFG.settlementScript, valueSats: 9999n },
+      ], "e".repeat(64)),
+    ]);
+    expect(idx.getStats().validOps).toBe(1);
+    expect(idx.getStats().invalidOps).toBe(1);
+    expect(idx.getState().reserveSats).toBe(0n); // rejected mint did not credit reserve
+  });
 });

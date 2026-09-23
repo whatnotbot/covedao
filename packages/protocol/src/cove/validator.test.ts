@@ -93,6 +93,13 @@ describe("Cove DEPLOY", () => {
     });
   });
 
+  it("rejects unsupported actor script on DEPLOY", () => {
+    const s = createCoveState();
+    expect(
+      validateCoveOperation(s, deployTx({ actor: "76a914" + "11".repeat(20) + "88ac" }), CFG),
+    ).toEqual({ valid: false, reason: "UNSUPPORTED_ACTOR_SCRIPT" });
+  });
+
   it("rejects wrong launch fee and wrong treasury", () => {
     const s = createCoveState();
     expect(
@@ -131,6 +138,28 @@ describe("Cove MINT (combined settlement + min contribution)", () => {
       valid: false,
       reason: "BELOW_MIN_CONTRIBUTION",
     });
+  });
+
+  it("rejects zero amount and unknown deployment", () => {
+    const s = deployedState();
+    expect(validateCoveOperation(s, mintTx(0n, 0n, 0n), CFG)).toEqual({
+      valid: false,
+      reason: "ZERO_AMOUNT",
+    });
+    expect(validateCoveOperation(s, mintTx(MINT_AMOUNT, 0n, 1010n, { ticker: "TOAD" }), CFG)).toEqual({
+      valid: false,
+      reason: "UNKNOWN_DEPLOYMENT",
+    });
+  });
+
+  it("advances stage after filling stage 1 (500 → 675 sats/M)", () => {
+    const s = deployedState();
+    // Fill stage 1 exactly: 42M tokens → 21,000 curve + 210 fee = 21,210 settlement.
+    applyCoveOperation(s, mintTx(atoms(42_000_000), 0n, 21_210n), CFG);
+    expect(s.tokens.get(DEPLOY_TXID)!.currentStage).toBe(2);
+    // Next 2M tokens at stage 2: 1,350 curve + 14 fee = 1,364 settlement.
+    const next = mintTx(atoms(2_000_000), atoms(42_000_000), 1_364n);
+    expect(validateCoveOperation(s, next, CFG)).toEqual({ valid: true, reason: null });
   });
 
   it("rejects settlement 1 sat under / over", () => {
@@ -271,6 +300,18 @@ describe("Cove TRANSFER (continuation model)", () => {
     expect(validateCoveOperation(s, transferTx(atoms(1), { recipient: RECIPIENT }), CFG)).toEqual({
       valid: false,
       reason: "SELF_TRANSFER",
+    });
+  });
+
+  it("rejects zero amount and unknown deployment on TRANSFER", () => {
+    const s = mintedState();
+    expect(validateCoveOperation(s, transferTx(0n), CFG)).toEqual({
+      valid: false,
+      reason: "ZERO_AMOUNT",
+    });
+    expect(validateCoveOperation(s, transferTx(atoms(1), { ticker: "TOAD" }), CFG)).toEqual({
+      valid: false,
+      reason: "UNKNOWN_DEPLOYMENT",
     });
   });
 });

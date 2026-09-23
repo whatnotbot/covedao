@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "protocol": "cove",
+  "version": 1,
+  "status": "FROZEN",
+  "serializationSpec": "docs/COVE_V1_STATE_ROOT.md",
+  "domain": "cove:1:mainnet:0:::10000:100:1000",
+  "note": "Mainnet is NOT activated (H=0, empty custody scripts). These vectors pin the unactivated mainnet domain; when the owner commits a real future H + custody scripts, the domain changes and NEW golden vectors must be added here and frozen.",
+  "vectors": [
+    {
+      "id": "empty",
+      "description": "Fresh state (no tokens, no balances, zero reserve/treasury).",
+      "root": "bdde793c31ddec8a9d194996b8f9e193c374ae71f55238c9d4c6b3774d97343f"
+    },
+    {
+      "id": "deploy",
+      "description": "One DEPLOY of ticker FROG (creator 0014aa…, 10000 sat launch fee).",
+      "root": "09315df3f61b59a4acf4f3c5398a729800c229509312a201f05964533f50caf2"
+    },
+    {
+      "id": "mint",
+      "description": "DEPLOY + one MINT of 2,000,000 tokens (2e14 atoms) to 5120bb….",
+      "root": "8221471164363fcee70cfc6d98801ef7a57d6b3335aa24b79e1b86101201380e"
+    },
+    {
+      "id": "transfer",
+      "description": "DEPLOY + MINT + TRANSFER of 500,000 tokens (5e13 atoms) to 0014cc….",
+      "root": "6b362f03973c0f22d7c3347fd3771bcbe4ed825f8dade4a65d40a8f94f4215ba"
+    }
+  ]
+}

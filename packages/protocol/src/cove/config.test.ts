@@ -27,4 +27,12 @@ describe("COVE_V1_MAINNET_CONFIG (immutable literal consensus constants)", () =>
     expect(isCoveMainnetActivated({ ...COVE_V1_MAINNET_CONFIG, genesisHeight: 1, settlementScript: "", treasuryScript: "0014" })).toBe(false);
     expect(isCoveMainnetActivated({ ...COVE_V1_MAINNET_CONFIG, genesisHeight: 1, settlementScript: "0014", treasuryScript: "" })).toBe(false);
   });
+
+  it("pins every mainnet economic constant (someone could silently change fees otherwise)", () => {
+    expect(COVE_V1_MAINNET_CONFIG.launchFeeSats).toBe(10_000n);
+    expect(COVE_V1_MAINNET_CONFIG.primaryMintFeeBps).toBe(100n);
+    expect(COVE_V1_MAINNET_CONFIG.minContributionSats).toBe(1_000n);
+    expect(COVE_V1_MAINNET_CONFIG.maxFeeRateSatVb).toBe(50n);
+    expect(COVE_V1_MAINNET_CONFIG.maxMinerFeeSats).toBe(50_000n);
+  });
 });

@@ -67,7 +67,7 @@ jobs:
           bitcoind -regtest -daemonwait \
             -server=1 -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
             -rpcport=18443 -fallbackfee=0.0002 -datadir=/tmp/btc-regtest \
-            -txindex=1 -deprecatedrpc=create_bdb
+            -txindex=1 -deprecatedrpc=create_bdb -debug=validation
           for i in $(seq 1 60); do
             bitcoin-cli -regtest -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
               -rpcport=18443 getblockchaininfo >/dev/null 2>&1 && break
@@ -81,3 +81,7 @@ jobs:
 
       - name: Run DEPLOY/MINT/TRANSFER + restart + reorg recovery
         run: pnpm --filter @crclaunch/cove-indexer regtest-reorg
+
+      - name: Dump bitcoind validation log (on failure)
+        if: failure()
+        run: tail -80 /tmp/btc-regtest/regtest/debug.log

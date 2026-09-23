@@ -6,7 +6,7 @@ import type { Sats } from "@crclaunch/curve";
  * protocol version (they may only specify RPC URL / DB URL / poll interval).
  */
 export interface CoveConfig {
-  network: "signet" | "regtest" | "mutinynet";
+  network: "signet" | "regtest" | "mutinynet" | "mainnet";
   /** First canonical block for Cove V1; Cove-looking txs below this are ignored. */
   genesisHeight: number;
   /** Canonical settlement/reserve script (mint combined curve+fee output). */
@@ -69,6 +69,29 @@ export const COVE_MUTINYNET_CONFIG: CoveConfig = {
   maxFeeRateSatVb: 50n,
   maxMinerFeeSats: 50_000n,
 };
+
+/**
+ * Cove V1 MAINNET config — INCOMPLETE and fail-closed. It must not be used for
+ * broadcasting until the owner supplies treasuryScript, settlementScript and an
+ * activation height. `genesisHeight: -1` is a sentinel; `isCoveMainnetActivated`
+ * returns false until a real activation height + both scripts are present.
+ */
+export const COVE_V1_MAINNET_CONFIG: CoveConfig = {
+  network: "mainnet",
+  genesisHeight: -1, // NOT ACTIVATED
+  settlementScript: "", // owner must supply
+  treasuryScript: "", // owner must supply
+  launchFeeSats: 10_000n,
+  primaryMintFeeBps: 100n,
+  minContributionSats: 1_000n,
+  maxFeeRateSatVb: 50n,
+  maxMinerFeeSats: 50_000n,
+};
+
+/** True only when a real mainnet activation height and both scripts are set. */
+export function isCoveMainnetActivated(cfg: CoveConfig): boolean {
+  return cfg.network === "mainnet" && cfg.genesisHeight > 0 && cfg.settlementScript.length > 0 && cfg.treasuryScript.length > 0;
+}
 
 /**
  * Canonical serialization of a CoveConfig. Committed into the state root so two

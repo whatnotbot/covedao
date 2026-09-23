@@ -141,6 +141,8 @@ export {
   COVE_V1_SIGNET_CONFIG,
   COVE_MUTINYNET_GENESIS_HEIGHT,
   COVE_MUTINYNET_CONFIG,
+  COVE_V1_MAINNET_CONFIG,
+  isCoveMainnetActivated,
   configDomain,
   type CoveConfig,
 } from "./cove/config.js";
@@ -162,6 +164,7 @@ export {
 } from "./cove/validator.js";
 export { toCoveTransaction, type CoveMapResult } from "./cove/mapper.js";
 export { computeStateRoot } from "./cove/state-root.js";
+export { referenceComputeStateRoot } from "./cove/state-root-reference.js";
 export { assertCoveInvariants } from "./cove/invariants.js";
 export {
   buildCoveDeployPsbt,

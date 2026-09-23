@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "protocol": "cove",
+  "version": 1,
+  "status": "FROZEN",
+  "serializationSpec": "docs/COVE_V1_STATE_ROOT.md",
+  "domain": "cove:1:signet:323323:001468a5c1ce1047fa51ba0a2170329c3f9396c2a0b8:0014c168131539d3062ff2c66bd0833a9c5d8c355f46:10000:100:1000",
+  "vectors": [
+    {
+      "id": "empty",
+      "description": "Fresh state (no tokens, no balances, zero reserve/treasury).",
+      "root": "dc3628446248e5a9c13b786727164ee8a7c3934af642b9dcc9a753ac0b932de2"
+    },
+    {
+      "id": "deploy",
+      "description": "One DEPLOY of ticker FROG (creator 0014aa…, 10000 sat launch fee).",
+      "root": "898c12c4afbfd9e5b4e007e8b7a4f95caa602026b3552472ad1f3fcdee02ac95"
+    },
+    {
+      "id": "mint",
+      "description": "DEPLOY + one MINT of 2,000,000 tokens (2e14 atoms) to 5120bb….",
+      "root": "95342c0decf24a3d3e7a6fd3f358c3543371987b63b616f5d29182c4f63714d5"
+    },
+    {
+      "id": "transfer",
+      "description": "DEPLOY + MINT + TRANSFER of 500,000 tokens (5e13 atoms) to 0014cc….",
+      "root": "3372db67d62a7bda673def25674d9e916c7b7ecfb08a8c37da3c694e745abfb2"
+    }
+  ]
+}

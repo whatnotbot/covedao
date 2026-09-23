@@ -23,7 +23,7 @@ export interface ProofManifest {
   transfer?: ProofStep;
 }
 
-export type ProofAction = "DEPLOY" | "MINT" | "TRANSFER" | "DONE";
+export type ProofAction = "DEPLOY" | "MINT" | "TRANSFER" | "BLOCKED_UNRESOLVED" | "DONE";
 
 export interface ProofDecision {
   action: ProofAction;
@@ -42,6 +42,11 @@ export function validateTicker(t: string): string {
  * Pure resume decision. Given the canonical state and the persisted manifest,
  * decide the next proof action. Uses the manifest txids to avoid ever
  * re-broadcasting a step that was already constructed.
+ *
+ * When a step is RECORDED in the manifest but NOT yet reflected in canonical
+ * state, this returns BLOCKED_UNRESOLVED (with the reason) instead of the step
+ * action — the caller must halt and resolve the recorded tx in mempool/chain,
+ * never blindly construct a replacement.
  */
 export function decideNextAction(
   manifest: ProofManifest,
@@ -55,9 +60,9 @@ export function decideNextAction(
 
   if (dep === undefined) {
     // No deployment indexed yet. If we already recorded a deploy txid, do not
-    // blindly redeploy — the caller must first resolve its mempool/chain status.
+    // blindly redeploy — halt until the caller resolves its mempool/chain status.
     if (manifest.deploy?.txid) {
-      return { action: "DEPLOY", reason: "deploy recorded but not yet confirmed; resolve before re-broadcast" };
+      return { action: "BLOCKED_UNRESOLVED", reason: "deploy recorded but not yet confirmed; resolve before re-broadcast" };
     }
     return { action: "DEPLOY" };
   }
@@ -74,12 +79,16 @@ export function decideNextAction(
   // Deploy complete. Has the mint happened? (supply, not A's balance, survives transfer)
   const mintDone = token.confirmedSupplyAtoms >= mintAmountAtoms;
   if (!mintDone) {
-    return manifest.mint?.txid ? { action: "MINT", reason: "mint recorded but not yet confirmed" } : { action: "MINT" };
+    return manifest.mint?.txid
+      ? { action: "BLOCKED_UNRESOLVED", reason: "mint recorded but not yet confirmed; resolve before re-broadcast" }
+      : { action: "MINT" };
   }
 
   // Mint complete. Has the transfer happened?
   if (aBal === mintAmountAtoms - transferAmountAtoms && bBal === transferAmountAtoms) {
     return { action: "DONE" };
   }
-  return manifest.transfer?.txid ? { action: "TRANSFER", reason: "transfer recorded but not yet confirmed" } : { action: "TRANSFER" };
+  return manifest.transfer?.txid
+    ? { action: "BLOCKED_UNRESOLVED", reason: "transfer recorded but not yet confirmed; resolve before re-broadcast" }
+    : { action: "TRANSFER" };
 }

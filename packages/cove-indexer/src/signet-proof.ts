@@ -355,7 +355,15 @@ async function main() {
 
   // ── Decision-driven resume ─────────────────────────────────────────────────
   let decision = decideNextAction(manifest, indexer.getState(), actorScript, recipientScript, mintAmount, transferAmount);
+  let iterations = 0;
+  let cumulativeFee = 0n;
   while (decision.action !== "DONE") {
+    if (decision.action === "BLOCKED_UNRESOLVED") {
+      throw new Error(`Proof blocked (a recorded step is unresolved): ${decision.reason}`);
+    }
+    if (++iterations > 10) {
+      throw new Error("Proof loop exceeded 10 iterations; aborting (no unbounded rebuild).");
+    }
     if (decision.action === "DEPLOY") {
       await catchUpToTip();
       const utxos = await freshUtxos(signerA, true);
@@ -363,6 +371,8 @@ async function main() {
       const psbt = buildCoveDeployPsbt({ network: "signet", ticker, inputs: coins.selected, changeAddress: signerA.getAddress(), feeRateSatVb: 2n, config: CFG });
       const hex = await signerA.signPsbt(psbt.psbtBase64, psbtIntent(psbt.unsignedHex, { maxFeeSats: CFG.maxMinerFeeSats, changeScriptPubKeyHex: psbt.changeSats > 0n ? actorScript : undefined }));
       const fee = await preflight(hex);
+      cumulativeFee += fee.feeSats;
+      if (cumulativeFee > CFG.maxMinerFeeSats * 10n) throw new Error(`cumulative proof fee ${cumulativeFee} exceeds cap`);
       const txid = await broadcastSafely(provider, hex);
       manifest.deploy = { txid, height: 0, blockHash: "", stateRoot: "" };
       saveManifest(manifest);
@@ -381,6 +391,8 @@ async function main() {
       const psbt = buildCoveMintPsbt({ network: "signet", ticker, amountAtoms: mintAmount, supplyBeforeAtoms: 0n, recipientScriptHex: actorScript, inputs: coins.selected, changeAddress: signerA.getAddress(), feeRateSatVb: 2n, config: CFG });
       const hex = await signerA.signPsbt(psbt.psbtBase64, psbtIntent(psbt.unsignedHex, { maxFeeSats: CFG.maxMinerFeeSats, changeScriptPubKeyHex: psbt.changeSats > 0n ? actorScript : undefined }));
       const fee = await preflight(hex);
+      cumulativeFee += fee.feeSats;
+      if (cumulativeFee > CFG.maxMinerFeeSats * 10n) throw new Error(`cumulative proof fee ${cumulativeFee} exceeds cap`);
       const txid = await broadcastSafely(provider, hex);
       manifest.mint = { txid, height: 0, blockHash: "", stateRoot: "" };
       saveManifest(manifest);
@@ -399,6 +411,8 @@ async function main() {
       const psbt = buildCoveTransferPsbt({ network: "signet", ticker, amountAtoms: transferAmount, recipientScriptHex: recipientScript, actorScriptHex: actorScript, inputs: coins.selected, changeAddress: signerA.getAddress(), feeRateSatVb: 2n, config: CFG });
       const hex = await signerA.signPsbt(psbt.psbtBase64, psbtIntent(psbt.unsignedHex, { maxFeeSats: CFG.maxMinerFeeSats, changeScriptPubKeyHex: psbt.changeSats > 0n ? actorScript : undefined }));
       const fee = await preflight(hex);
+      cumulativeFee += fee.feeSats;
+      if (cumulativeFee > CFG.maxMinerFeeSats * 10n) throw new Error(`cumulative proof fee ${cumulativeFee} exceeds cap`);
       const txid = await broadcastSafely(provider, hex);
       manifest.transfer = { txid, height: 0, blockHash: "", stateRoot: "" };
       saveManifest(manifest);

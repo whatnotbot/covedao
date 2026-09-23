@@ -364,9 +364,13 @@ async function broadcastAndConfirm(
 }
 
 function broadcastTxidMatches(step: CanaryStep, txid: string): boolean {
-  if (step.broadcastTxid) return step.broadcastTxid === txid;
-  if (step.expectedTxid) return step.expectedTxid === txid;
-  return true;
+  const expected = step.broadcastTxid ?? step.expectedTxid;
+  if (!expected) {
+    // A-7: the txid binding is unconditional — refuse to broadcast a signed tx
+    // that was not first exported by this canary (no recorded expected txid).
+    throw new Error("No expected txid recorded for this step; refusing to broadcast an unbound signed transaction.");
+  }
+  return expected === txid;
 }
 
 async function main(): Promise<void> {

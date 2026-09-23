@@ -94,9 +94,16 @@ describe("decideNextAction (resume/idempotency)", () => {
     expect(() => decideNextAction(baseManifest({ deploy: { txid: DEPLOY_TXID, height: 1, blockHash: "", stateRoot: "" } }), state, ACTOR, RECIPIENT, MINT, TRANSFER)).toThrow(/unrelated deployment/);
   });
 
-  it("deploy recorded but not confirmed → DEPLOY with reason (no blind redeploy)", () => {
+  it("deploy recorded but not confirmed → BLOCKED_UNRESOLVED (no blind redeploy)", () => {
     const d = decideNextAction(baseManifest({ deploy: { txid: DEPLOY_TXID, height: 0, blockHash: "", stateRoot: "" } }), createCoveState(), ACTOR, RECIPIENT, MINT, TRANSFER);
-    expect(d.action).toBe("DEPLOY");
+    expect(d.action).toBe("BLOCKED_UNRESOLVED");
     expect(d.reason).toMatch(/not yet confirmed/);
+  });
+
+  it("mint recorded but not confirmed → BLOCKED_UNRESOLVED", () => {
+    const state = deployToState();
+    const d = decideNextAction(baseManifest({ deploy: { txid: DEPLOY_TXID, height: 1, blockHash: "", stateRoot: "" }, mint: { txid: "e".repeat(64), height: 0, blockHash: "", stateRoot: "" } }), state, ACTOR, RECIPIENT, MINT, TRANSFER);
+    expect(d.action).toBe("BLOCKED_UNRESOLVED");
+    expect(d.reason).toMatch(/mint recorded but not yet confirmed/);
   });
 });

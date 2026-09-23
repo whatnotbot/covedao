@@ -553,9 +553,11 @@ const PRESERVED_TABLES = [
   "media",
 ];
 
-/** Truncate protocol projection tables only (demo reset / reorg rebuild). Chain state is source of truth. */
-export async function resetProjections(db: Database): Promise<void> {
-  await db.execute(sql.raw(`TRUNCATE TABLE ${PROJECTION_TABLES.join(", ")} CASCADE`));
+/** Delete protocol projection rows for ONE network (reorg rebuild). Chain state is source of truth. */
+export async function resetProjections(db: Database, network: string): Promise<void> {
+  for (const table of PROJECTION_TABLES) {
+    await db.execute(sql`DELETE FROM ${sql.raw(table)} WHERE network = ${network}`);
+  }
 }
 
 /** Truncate EVERYTHING including preserved app data (full demo reset). */

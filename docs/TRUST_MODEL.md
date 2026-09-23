@@ -6,6 +6,23 @@ The invariant:
 > payload are all untrusted.** The deterministic validator/indexer derives
 > validity from canonical state + signer/ownership + outputs + rules.
 
+## Cove is CLIENT-VALIDATED — Bitcoin does not enforce it
+
+This is the single most important assumption in this document.
+
+- **Bitcoin validates exactly two things**: the signature on input 0, and that
+  the outputs exist with those values. That is the complete list.
+- **Bitcoin does NOT reject**: a DEPLOY of a taken ticker, a MINT of
+  900,000,000 tokens, a MINT paying 1 sat, or a TRANSFER of tokens never owned.
+  All of these confirm on-chain and are then **ignored by the indexer**.
+- **Token supply is a claim made by whoever runs the indexer.** The difference
+  from a closed metaprotocol is that this indexer is open and anyone can
+  reproduce it — not that Bitcoin enforces it.
+- A transaction is only valid Cove if it pays the hardcoded treasury and
+  settlement scripts in `packages/protocol/src/cove/config.ts`. That makes Cove
+  a **payment-gated token standard with one beneficiary**, not an open
+  meta-protocol. This is the intended design — but it is stated explicitly.
+
 ## Canonical facts (trusted)
 
 | Fact     | Source                                             |
@@ -29,6 +46,9 @@ The invariant:
 | continuation          | vout 2 (transfer) must be the actor script, dust-safe             |
 
 ## Rejection codes
+
+Each code below means "**rejected by the indexer**" — the Bitcoin transaction
+still confirms; the indexer simply does not apply it to Cove state.
 
 `TICKER_TAKEN`, `STALE_SUPPLY`, `OVERMINT`, `BELOW_MIN_CONTRIBUTION`,
 `SUBTOKEN_MINT_UNSUPPORTED`, `UNDERPAYMENT`, `OVERPAYMENT`, `WRONG_TREASURY`,
@@ -66,3 +86,5 @@ output (curve + platform fee), so no 5-sat treasury dust output exists.
 - **Custody**: no keys, no signing server-side. Wallets sign the PSBT.
 - **Mainnet**: all mainnet flags are `false`; mainnet genesis is `null`.
 - **Confirmation depth**: applied at block; reorgs handled by deterministic rebuild.
+- **Bitcoin enforcement**: see "Cove is CLIENT-VALIDATED" above — nothing in
+  this document claims Bitcoin enforces Cove rules.

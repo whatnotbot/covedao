@@ -15,6 +15,10 @@ import { syncMockToDb } from "./sync.js";
  */
 async function main() {
   const config = loadConfig(process.env);
+  if (config.network !== "mock") {
+    console.error("[reindex] refused: reindex is mock-only until a real chain source exists.");
+    process.exit(1);
+  }
   const db = createDb(config.databaseUrl);
   const redis = new Redis(config.redisUrl, { maxRetriesPerRequest: null });
   const node = new MockChainNode(new RedisMockStorage(redis), config.network);

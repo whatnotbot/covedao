@@ -30,7 +30,7 @@ export default function ForCrcPage() {
           {[
             ["Launch", "Two-step creator flow with standardized tokenomics and risk confirmation."],
             ["Progressive Mint", "20-stage deterministic curve, exact integer pricing, live quotes."],
-            ["Discovery", "Trending, near-graduation and graduated views; search; activity feed."],
+            ["Discovery", "Trending, near-graduation and graduated views; activity feed."],
             ["Portfolio", "Connected-wallet balances, mints, trades and listings."],
             ["Graduation", "SOLD OUT → GRADUATING → GRADUATED with finality and reorg recovery."],
             ["Marketplace", "Non-custodial fixed-price listings: sell, buy, cancel — atomic by design."],
@@ -60,8 +60,10 @@ export default function ForCrcPage() {
           ))}
         </ul>
         <p className="mt-6 text-sm text-gray-400">
-          The entire application is already built behind these interfaces. The missing part is a
-          clean integration, not more product work.
+          The demo application (launch, progressive mint, portfolio, graduation and the fixed-price
+          marketplace) runs against a local mock chain. Real Bitcoin integration — wallet connection,
+          PSBT signing, signature verification and a live Bitcoin provider — is not yet wired into the
+          web app, and remains this project&apos;s work, not CRC&apos;s.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link href="/mainnet/leaf" className="rounded-lg border border-border px-4 py-2 text-sm text-gray-200 hover:border-brand/60">

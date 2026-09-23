@@ -2,17 +2,22 @@ import { ok, fail } from "@/lib/api";
 import { getServices, initServices } from "@/lib/server";
 import { resetAllTables } from "@crclaunch/db";
 import { seedMockChain, createInitialState } from "@crclaunch/protocol";
+import { getConfig } from "@/lib/env";
+import { isAdmin } from "@/lib/admin";
 
 /**
- * Reset the demo: clear the shared mock chain + projection DB, reseed, and let
- * the worker re-sync. Mainnet modes are never affected (this only runs in DEMO).
+ * Reset the demo (mock network only). Destructive: requires a valid admin
+ * bearer token and a non-production environment. Returns 404 (not 403) when
+ * unavailable so the route's existence is not advertised.
  */
-export async function POST() {
-  const { config, redis, node, db } = getServices();
+export async function POST(req: Request) {
+  const config = getConfig();
+  if (config.nodeEnv === "production") return fail("NOT_FOUND", "Not found.", 404);
+  if (config.network !== "mock") return fail("NOT_FOUND", "Not found.", 404);
+  if (!isAdmin(req, { allowDevBypass: false })) return fail("NOT_FOUND", "Not found.", 404);
+
+  const { redis, node, db } = getServices();
   await initServices();
-  if (config.network !== "mock") {
-    return fail("UNAVAILABLE", "Demo reset is only available in demo mode.", 403);
-  }
   await redis.del("mock:chain:state", "mock:chain:lock");
   await node!.mutate((state) => {
     const fresh = createInitialState(config.network);

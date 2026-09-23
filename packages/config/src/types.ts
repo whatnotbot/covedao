@@ -51,8 +51,6 @@ export interface RuntimeConfig {
   finalityConfirmations: number;
   quoteTtlSeconds: number;
   quoteTtlBlocks: number;
-  maxMinerFeeSats: bigint | null;
-  maxFeeRateSatVb: number | null;
   s3: S3Config | null;
   sentryDsn: string | null;
   adminAuthSecret: string | null;

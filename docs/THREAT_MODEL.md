@@ -17,12 +17,12 @@
 | Malicious seller (list more than owned, expired listing) | Bad fills | Chain checks balance at list time; expired listings rejected at take; full-fill only |
 | Compromised frontend | PSBT substitution | User sees destination/amount before signing; server re-validates outputs; no hidden outputs |
 | Compromised API | Build wrong tx, wrong fees | Output invariant validation (addresses/amounts/kinds), fee caps, treasury network check, audit logs |
-| Bad RPC/provider | Wrong chain state | Primary+fallback provider, health state DEGRADED/UNSAFE disables writes, read-only continues |
+| Bad RPC/provider | Wrong chain state | RPC timeout + block-hash/merkle-root verification (Cove indexer); health state DEGRADED/UNSAFE disables writes, read-only continues |
 | Reorg / double spend | Stale projections | Cursor hash comparison, walk-back to common ancestor, idempotent event upsert, `canonical` flag, reorg forensics, graduation → REORG_RECOVERY |
 | Ticker race | Two creators same ticker | Multi-source check (DB + indexed state + fresh protocol query + post-confirm re-check); external deploy wins |
-| PSBT substitution | Funds redirected | Re-decode + verify every output before signing and before broadcast; abort on any unexpected output |
-| Fee manipulation | Overpay miners | `MAX_MINER_FEE_SATS` / `MAX_FEE_RATE_SAT_VB`; reject `TX_FEE_TOO_HIGH`; >20% requires confirmation, >50% blocked |
-| Image/XSS payload | Client compromise | MIME sniffing, resize/re-encode to WebP, EXIF strip, reject SVG/HTML/JS, CSP, output encoding |
+| PSBT substitution | Funds redirected | The signed raw transaction (never the PSBT proposal) is authoritative: the Cove indexer re-decodes and validates actor/recipient/settlement/continuation/change and fee caps before applying it |
+| Fee manipulation | Overpay miners | Cove PSBT builder enforces `maxFeeRateSatVb` / `maxMinerFeeSats` caps; reject `TX_FEE_TOO_HIGH` |
+| Image/XSS payload | Client compromise | Reject SVG/HTML/JS metadata, CSP, output encoding |
 | Admin compromise | Misuse of admin controls | Admin cannot change balances/mint/steal reserve/modify supply/rewrite events; every admin action logged; kill switches are UI-level only |
 | Protocol/indexer divergence | Wrong displayed state | State-hash mismatch raises alert, disables writes; reserve displayed as expected vs observed (mismatch disables graduation) |
 

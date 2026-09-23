@@ -15,6 +15,10 @@ import { syncMockToDb } from "./sync.js";
 
 async function main() {
   const config = loadConfig(process.env);
+  if (config.network !== "mock" || config.nodeEnv === "production") {
+    console.error("[demo:reset] refused: requires network=mock and NODE_ENV != production.");
+    process.exit(1);
+  }
   const db = createDb(config.databaseUrl);
   const redis = new Redis(config.redisUrl, { maxRetriesPerRequest: null });
 

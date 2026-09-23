@@ -37,5 +37,5 @@ export const DEFAULT_MOCK_PROTOCOL_CONFIG: ProtocolConfig = Object.freeze({
   launchFeeSats: 10_000n,
   primaryMintFeeBps: 100n,
   marketplaceFeeBps: 0n,
-  finalityConfirmations: 2,
+  finalityConfirmations: 6,
 });

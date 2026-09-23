@@ -945,3 +945,23 @@ Plus:
 # Discovered during remediation
 
 _Append anything found while working. Do not silently expand scope._
+
+## Completed (remediation pass, items 1-8)
+
+- Item 1: demo/reset now requires a real admin bearer token (no dev bypass), a
+  non-production env, and mock network; returns 404 when unavailable.
+- Item 2: `apps/web/src/lib/env.ts` calls `validateConfig` (fail closed).
+- Item 3: `treasuryAddress` throws instead of returning ""; config address check
+  extended to every non-mock network (stricter bech32/base58 regexes).
+- Item 4: demo-reset/reindex refuse non-mock; worker seeds only in mock;
+  `resetProjections(db, network)` deletes per-network instead of truncating all.
+- Item 5: TRUST_MODEL now states Cove is client-validated and payment-gated.
+- Item 6: for-crc claim corrected + "search" removed; LEAF badge → ARCHIVED.
+- Item 7: THREAT_MODEL/RUNBOOK reconciled; dead MAX_*_FEE env vars deleted;
+  finality confirmations unified to 6.
+- Item 8: psbt no-op check replaced with a real two-source output-sum check;
+  admin PUT lost its dev bypass and now writes admin_audit_logs rows.
+
+Discovered while working: the prior testnet-address regex `/^(tb1|[mn2])/` matched
+arbitrary garbage beginning with "m"/"n"/"2" (e.g. "not-an-address"); replaced
+with anchored bech32/base58 regexes. No other new defect found.

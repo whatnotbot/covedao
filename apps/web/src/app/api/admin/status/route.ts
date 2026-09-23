@@ -3,25 +3,17 @@ import { fail, ok } from "@/lib/api";
 import { getServices, initServices } from "@/lib/server";
 import { schema } from "@crclaunch/db";
 import { getConfig } from "@/lib/env";
-
-async function isAdmin(req: Request): Promise<boolean> {
-  const config = getConfig();
-  if (config.nodeEnv !== "production" && !config.adminAuthSecret) return true; // dev convenience
-  const auth = req.headers.get("authorization") ?? "";
-  const token = auth.replace(/^Bearer\s+/i, "");
-  return config.adminAuthSecret !== null && token === config.adminAuthSecret;
-}
+import { isAdmin } from "@/lib/admin";
 
 export async function GET(req: Request) {
-  if (!(await isAdmin(req))) return fail("UNAUTHORIZED", "Admin access required.", 401);
+  // READ may keep the dev convenience bypass; writes (PUT) may not.
+  if (!isAdmin(req, { allowDevBypass: true })) return fail("UNAUTHORIZED", "Admin access required.", 401);
   const { db, adapter, bitcoin, node } = getServices();
   await initServices();
   const health = await adapter.getHealth();
   const btcHeight = await bitcoin.getHeight();
   const protocolHeight = node ? await node.getHeight() : await adapter.getCurrentHeight();
 
-  const [tokenCount] = await db.select({ c: schema.tokens.id }).from(schema.tokens).execute();
-  void tokenCount;
   const counts = {
     tokens: (await db.select().from(schema.tokens)).length,
     events: (await db.select().from(schema.chainEvents)).length,
@@ -40,13 +32,28 @@ export async function GET(req: Request) {
 }
 
 export async function PUT(req: Request) {
-  if (!(await isAdmin(req))) return fail("UNAUTHORIZED", "Admin access required.", 401);
+  // Writes require a real bearer token — the dev bypass must not authorize them.
+  if (!isAdmin(req, { allowDevBypass: false })) return fail("UNAUTHORIZED", "Admin access required.", 401);
   const { db } = getServices();
   const body = (await req.json()) as { id?: string; enabled?: boolean };
   if (!body.id) return fail("INVALID_INPUT", "Flag id required.", 400);
+
+  const before = await db.select().from(schema.featureFlags).where(eq(schema.featureFlags.id, body.id)).execute();
+  const previous = before[0]?.enabled ?? null;
+
   await db
     .update(schema.featureFlags)
     .set({ enabled: !!body.enabled, updatedAt: new Date() })
     .where(eq(schema.featureFlags.id, body.id));
+
+  // Record every flag mutation (who, what, from, to, when).
+  await db.insert(schema.adminAuditLogs).values({
+    adminId: "bearer",
+    action: "feature_flag_update",
+    targetType: "feature_flag",
+    targetId: body.id,
+    details: { from: previous, to: !!body.enabled },
+  });
+
   return ok({ id: body.id, enabled: !!body.enabled });
 }

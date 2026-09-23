@@ -23,7 +23,9 @@ async function main() {
   const storage = new RedisMockStorage(redis);
   const node = new MockChainNode(storage, network);
   await node.init();
-  await seedMockChain(node);
+  if (network === "mock") {
+    await seedMockChain(node);
+  }
 
   const adapter = new MockCRCAdapter(node);
 

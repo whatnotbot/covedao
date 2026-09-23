@@ -99,10 +99,6 @@ export function loadConfig(env: Env): RuntimeConfig {
     finalityConfirmations: int(env, "FINALITY_CONFIRMATIONS", 6),
     quoteTtlSeconds: int(env, "QUOTE_TTL_SECONDS", 120),
     quoteTtlBlocks: int(env, "QUOTE_TTL_BLOCKS", 2),
-    maxMinerFeeSats: bigintOrNull(env, "MAX_MINER_FEE_SATS"),
-    maxFeeRateSatVb: str(env, "MAX_FEE_RATE_SAT_VB")
-      ? int(env, "MAX_FEE_RATE_SAT_VB", 0)
-      : null,
     s3: str(env, "S3_ENDPOINT") && str(env, "S3_BUCKET")
       ? {
           endpoint: str(env, "S3_ENDPOINT"),
@@ -151,25 +147,26 @@ export function validateConfig(config: RuntimeConfig): void {
     }
   }
 
-  if (config.treasuryAddress) {
-    // Address-network sanity check (bc1* = mainnet/bech32, tb1* = testnet).
-    const isMainnetAddr = /^(bc1|[13])/.test(config.treasuryAddress);
-    const isTestnetAddr = /^(tb1|[mn2])/.test(config.treasuryAddress);
-    if (isMainnetNetwork(config.network) && !isMainnetAddr && !isTestnetAddr) {
-      throw new ConfigError(
-        "PLATFORM_TREASURY_ADDRESS does not look like a valid Bitcoin address.",
-      );
-    }
-    if (isMainnetNetwork(config.network) && isTestnetAddr) {
-      throw new ConfigError(
-        "PLATFORM_TREASURY_ADDRESS is a testnet address but the network is mainnet. " +
-          "This is a fatal configuration error.",
-      );
-    }
-    if (config.network === "test" && isMainnetAddr) {
-      throw new ConfigError(
-        "PLATFORM_TREASURY_ADDRESS is a mainnet address but the network is testnet.",
-      );
+  if (config.treasuryAddress && config.network !== "mock") {
+    // Address-network sanity check, for EVERY non-mock network (not just mainnet).
+    // bech32/bech32m: bc1…/tb1… (2-char hrp + '1' + 25..62 alphanumerics);
+    // base58check: 1/3 (mainnet) or m/n/2 (testnet) + 25..34 base58 chars.
+    const a = config.treasuryAddress;
+    const base58 = (prefix: string) => /^[a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(a.slice(prefix.length));
+    const isMainnetAddr = /^bc1[a-z0-9]{25,62}$/.test(a) || (/^[13]/.test(a) && base58(""));
+    const isTestnetAddr = /^tb1[a-z0-9]{25,62}$/.test(a) || (/^[mn2]/.test(a) && base58(""));
+    if (isMainnetNetwork(config.network)) {
+      if (!isMainnetAddr) {
+        throw new ConfigError(
+          "PLATFORM_TREASURY_ADDRESS must be a mainnet address (bc1/1/3) for a mainnet network.",
+        );
+      }
+    } else {
+      if (!isTestnetAddr) {
+        throw new ConfigError(
+          "PLATFORM_TREASURY_ADDRESS must be a testnet address (tb1/m/n/2) for the configured network.",
+        );
+      }
     }
   }
 }

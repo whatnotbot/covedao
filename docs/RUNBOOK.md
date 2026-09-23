@@ -16,7 +16,7 @@
 
 ## Redis failure
 
-- Redis backs cache + queue + mock-chain state (mock mode) and rate limits.
+- Redis backs cache + queue + mock-chain state (mock mode).
 - Read endpoints degrade gracefully (they read Postgres). Writes that need the
   distributed lock or queue will fail closed. Restart Redis and the worker.
 

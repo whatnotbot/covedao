@@ -71,7 +71,7 @@ export async function detectReorg(db: Database, node: MockChainNode, network: st
  * rebuild is the simplest correct reconciliation (P0.1 #15).
  */
 export async function rebuildProjections(db: Database, node: MockChainNode, network: string): Promise<void> {
-  await resetProjections(db);
+  await resetProjections(db, network);
   await syncMockToDb(db, node, network);
 }
 

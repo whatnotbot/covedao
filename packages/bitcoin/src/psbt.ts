@@ -140,6 +140,7 @@ export function buildUnsignedPsbt(params: BuildTxParams): CovePsbt {
 
   let opReturnCount = 0;
   let totalProtocolOut = 0n;
+  let trackedOutTotal = 0n;
   for (let i = 0; i < params.outputs.length; i++) {
     const o = params.outputs[i]!;
     if (o.valueSats < 0n || o.valueSats > MAX_MONEY_SATS) throw new Error("Output value out of range.");
@@ -152,6 +153,7 @@ export function buildUnsignedPsbt(params: BuildTxParams): CovePsbt {
       }
     }
     totalProtocolOut += o.valueSats;
+    trackedOutTotal += o.valueSats;
     vsize += estimateOutputVsize(script);
     if (o.address !== undefined) {
       psbt.addOutput({ address: o.address, value: Number(o.valueSats) });
@@ -171,17 +173,19 @@ export function buildUnsignedPsbt(params: BuildTxParams): CovePsbt {
   const changeDust = dustThreshold(changeScript);
   if (changeSats >= changeDust) {
     psbt.addOutput({ address: params.changeAddress, value: Number(changeSats) });
+    trackedOutTotal += changeSats;
   } else {
     // Fold dust change into the fee; never create an unrelayable change output.
     changeSats = 0n;
   }
 
-  // Recompute the ACTUAL fee from the outputs actually added (never an estimate).
+  // Recompute the ACTUAL fee from the outputs actually added (never an estimate),
+  // and cross-check the manually tracked total against the tx's actual outputs.
   const cached = (psbt as unknown as { __CACHE: { __TX: bitcoin.Transaction } }).__CACHE;
-  const actualOutTotal = cached.__TX.outs.reduce((acc, out) => acc + BigInt(out.value), 0n);
-  const actualFee = totalIn - actualOutTotal;
+  const txOutTotal = cached.__TX.outs.reduce((acc, out) => acc + BigInt(out.value), 0n);
+  if (trackedOutTotal !== txOutTotal) throw new Error("output accounting mismatch");
+  const actualFee = totalIn - txOutTotal;
   if (actualFee < 0n) throw new Error("negative fee");
-  if (actualFee !== totalIn - actualOutTotal) throw new Error("fee accounting mismatch");
   if (actualFee > params.maxMinerFeeSats) {
     throw new Error(`fee ${actualFee} exceeds max ${params.maxMinerFeeSats}`);
   }

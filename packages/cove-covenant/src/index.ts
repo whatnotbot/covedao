@@ -40,3 +40,10 @@ export {
   type MintResult,
   type RedeemResult,
 } from "./transition.js";
+export {
+  validateTokenTransfer,
+  validateRedeemTokenAccounting,
+  type TokenInput,
+  type TxOutputView,
+  type TokenTransferValidation,
+} from "./tokenUtxo.js";

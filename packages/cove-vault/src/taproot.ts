@@ -39,6 +39,61 @@ export function tapBranchHash(a: Buffer, b: Buffer): Buffer {
   return taggedHash("TapBranch", Buffer.concat([left, right]));
 }
 
+/**
+ * BIP341 MAST root for an arbitrary set of tapleaf hashes (leaves are sorted
+ * lexicographically, then pairwise-combined; the odd leaf is carried up).
+ */
+export function taprootMerkleRoot(leafHashes: Buffer[]): Buffer {
+  if (leafHashes.length === 0) throw new Error("empty leaf set");
+  let level = [...leafHashes].sort((a, b) => Buffer.compare(a, b));
+  while (level.length > 1) {
+    const next: Buffer[] = [];
+    for (let i = 0; i < level.length; i += 2) {
+      const a = level[i]!;
+      const b = level[i + 1];
+      next.push(b === undefined ? a : tapBranchHash(a, b));
+    }
+    level = next;
+  }
+  return level[0]!;
+}
+
+/**
+ * Merkle branch (sibling hashes, bottom-up) for each leaf in a BIP341 sorted
+ * pairwise-combined MAST. Key = leaf hash hex. The returned arrays are the
+ * sibling hashes to include in the control block, leaf-to-root order.
+ */
+export function merklePaths(leafHashes: Buffer[]): Map<string, Buffer[]> {
+  const paths = new Map<string, Buffer[]>();
+  for (const h of leafHashes) paths.set(h.toString("hex"), []);
+
+  interface Node {
+    hash: Buffer;
+    leaves: Buffer[];
+  }
+  let level: Node[] = [...leafHashes]
+    .sort((a, b) => Buffer.compare(a, b))
+    .map((h) => ({ hash: h, leaves: [h] }));
+
+  while (level.length > 1) {
+    const next: Node[] = [];
+    for (let i = 0; i < level.length; i += 2) {
+      const a = level[i]!;
+      const b = level[i + 1];
+      if (b === undefined) {
+        next.push(a);
+      } else {
+        const parent = { hash: tapBranchHash(a.hash, b.hash), leaves: [...a.leaves, ...b.leaves] };
+        for (const leaf of a.leaves) paths.get(leaf.toString("hex"))!.push(b.hash);
+        for (const leaf of b.leaves) paths.get(leaf.toString("hex"))!.push(a.hash);
+        next.push(parent);
+      }
+    }
+    level = next;
+  }
+  return paths;
+}
+
 /** BIP341 tweak scalar: TapTweak-tagged hash of (xonly_internal_key || merkle_root). */
 export function tapTweak(internalKey: Buffer, merkleRoot: Buffer): Buffer {
   return taggedHash("TapTweak", Buffer.concat([internalKey, merkleRoot]));

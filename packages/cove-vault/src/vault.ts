@@ -2,7 +2,14 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { numsInternalKey } from "./nums.js";
 import { buildExecutionLeaf, buildRecoveryLeaf } from "./leaves.js";
-import { LEAF_VERSION_TAPSCRIPT, tapBranchHash, tapleafHash, tweakKey } from "./taproot.js";
+import {
+  LEAF_VERSION_TAPSCRIPT,
+  merklePaths,
+  tapBranchHash,
+  tapleafHash,
+  taprootMerkleRoot,
+  tweakKey,
+} from "./taproot.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 
@@ -84,5 +91,74 @@ export function buildCoveVault(params: BuildCoveVaultParams): CoveVault {
     address,
     executionControlBlock,
     recoveryControlBlock,
+  };
+}
+
+/**
+ * Production V3 dual-op vault (§5): NUMS internal key + 3-leaf MAST
+ * (MINT execution, REDEEM execution, RECOVERY). The output key commits which
+ * policies/operations/token/state are authorized — NOT one future successor.
+ */
+
+export interface CoveVaultV3 {
+  numsKey: Buffer;
+  mintLeaf: CoveVaultLeaf;
+  redeemLeaf: CoveVaultLeaf;
+  recoveryLeaf: CoveVaultLeaf;
+  merkleRoot: Buffer;
+  outputKey: Buffer;
+  outputParity: number;
+  scriptPubKey: Buffer;
+  address: string;
+  mintControlBlock: Buffer;
+  redeemControlBlock: Buffer;
+  recoveryControlBlock: Buffer;
+}
+
+export interface BuildCoveVaultV3Params {
+  /** MINT policy identity hash (32 bytes). */
+  mintPolicyIdentityHash: Buffer;
+  /** REDEEM policy identity hash (32 bytes). */
+  redeemPolicyIdentityHash: Buffer;
+  guardianXOnly: Buffer;
+  ownerXOnly: Buffer;
+  network?: bitcoin.networks.Network;
+}
+
+export function buildCoveVaultV3(params: BuildCoveVaultV3Params): CoveVaultV3 {
+  const numsKey = numsInternalKey();
+  const mintScript = buildExecutionLeaf(params.mintPolicyIdentityHash, params.guardianXOnly);
+  const redeemScript = buildExecutionLeaf(params.redeemPolicyIdentityHash, params.guardianXOnly);
+  const recoveryScript = buildRecoveryLeaf(params.ownerXOnly);
+
+  const mintTapleaf = tapleafHash(mintScript, LEAF_VERSION_TAPSCRIPT);
+  const redeemTapleaf = tapleafHash(redeemScript, LEAF_VERSION_TAPSCRIPT);
+  const recoveryTapleaf = tapleafHash(recoveryScript, LEAF_VERSION_TAPSCRIPT);
+
+  const merkleRoot = taprootMerkleRoot([mintTapleaf, redeemTapleaf, recoveryTapleaf]);
+  const { outputKey, parity } = tweakKey(numsKey, merkleRoot);
+  const paths = merklePaths([mintTapleaf, redeemTapleaf, recoveryTapleaf]);
+  const versionByte = LEAF_VERSION_TAPSCRIPT | parity;
+
+  const controlBlockFor = (tapleaf: Buffer): Buffer =>
+    Buffer.concat([Buffer.from([versionByte]), numsKey, ...paths.get(tapleaf.toString("hex"))!]);
+
+  const scriptPubKey = Buffer.concat([Buffer.from([0x51, 0x20]), outputKey]);
+  const network = params.network ?? bitcoin.networks.regtest;
+  const address = bitcoin.address.toBech32(outputKey, 1, network.bech32);
+
+  return {
+    numsKey,
+    mintLeaf: { script: mintScript, tapleafHash: mintTapleaf },
+    redeemLeaf: { script: redeemScript, tapleafHash: redeemTapleaf },
+    recoveryLeaf: { script: recoveryScript, tapleafHash: recoveryTapleaf },
+    merkleRoot,
+    outputKey,
+    outputParity: parity,
+    scriptPubKey,
+    address,
+    mintControlBlock: controlBlockFor(mintTapleaf),
+    redeemControlBlock: controlBlockFor(redeemTapleaf),
+    recoveryControlBlock: controlBlockFor(recoveryTapleaf),
   };
 }

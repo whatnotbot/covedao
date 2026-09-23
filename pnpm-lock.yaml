@@ -199,6 +199,9 @@ importers:
       '@crclaunch/cove-economics':
         specifier: workspace:*
         version: link:../cove-economics
+      '@crclaunch/cove-wire':
+        specifier: workspace:*
+        version: link:../cove-wire
       '@crclaunch/curve':
         specifier: workspace:*
         version: link:../curve

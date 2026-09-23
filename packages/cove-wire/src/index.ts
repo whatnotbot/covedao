@@ -29,3 +29,17 @@ export {
   tokenIdHex,
   type TokenIdentityInput,
 } from "./tokenId.js";
+export {
+  COVE_WIRE_V2,
+  MAX_TRANSFER_ALLOCATIONS,
+  MAX_REDEEM_ALLOCATIONS,
+  encodeDeployV2,
+  encodeMintV2,
+  encodeTransferV2,
+  encodeRedeemV2,
+  decodeV2,
+  withinDatacarrier,
+  WireV2Error,
+  type TokenAllocation,
+  type ParsedEnvelopeV2,
+} from "./codecV2.js";

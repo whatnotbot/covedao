@@ -22,7 +22,11 @@ export {
 } from "./taproot.js";
 export {
   buildCoveVault,
+  buildCoveVaultV3,
   type CoveVault,
+  type CoveVaultV3,
   type CoveVaultLeaf,
   type BuildCoveVaultParams,
+  type BuildCoveVaultV3Params,
 } from "./vault.js";
+export { taprootMerkleRoot, merklePaths } from "./taproot.js";

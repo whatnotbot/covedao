@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@crclaunch/cove-economics": "workspace:*",
+    "@crclaunch/cove-wire": "workspace:*",
     "@crclaunch/curve": "workspace:*",
     "bitcoinjs-lib": "^6.1.7",
     "tiny-secp256k1": "^2.2.3"

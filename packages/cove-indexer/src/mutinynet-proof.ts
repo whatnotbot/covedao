@@ -213,10 +213,23 @@ async function main() {
     return { feeSats: fee.feeSats, vsize: fee.vsize };
   }
 
-  async function broadcast(hex: string): Promise<string> {
+  // B-6: broadcast with ambiguity handling — derive the txid locally, compare the
+  // Esplora-returned txid, and on a transport error re-query the EXACT txid
+  // instead of letting the next run build a second, different transaction.
+  async function broadcastSafely(hex: string): Promise<string> {
     const txid = bitcoin.Transaction.fromHex(hex).getId();
-    await provider.broadcastTransaction(hex);
-    return txid;
+    try {
+      const returned = await provider.broadcastTransaction(hex);
+      if (returned !== txid) throw new Error(`Esplora returned txid ${returned}, expected ${txid}`);
+      return txid;
+    } catch (err) {
+      const st = await provider.getTxStatus(txid);
+      if (st) {
+        console.log(`  broadcast response lost but ${txid} is observable in mempool/chain; continuing.`);
+        return txid;
+      }
+      throw new Error(`broadcast failed and ${txid} not found: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   async function confirmAndIndex(txid: string, op: string, assertState: () => void): Promise<{ height: number; txIndex: number; stateRoot: string }> {
@@ -252,8 +265,10 @@ async function main() {
       const fee = await preflight(hex);
       cumulativeFee += fee.feeSats;
       if (cumulativeFee > CFG.maxMinerFeeSats * 10n) throw new Error(`cumulative proof fee ${cumulativeFee} exceeds cap`);
-      const txid = await broadcast(hex);
-      manifest.deploy = { txid, height: 0, blockHash: "", stateRoot: "" }; saveManifest(manifest);
+      const txid = bitcoin.Transaction.fromHex(hex).getId();
+      manifest.deploy = { txid, height: 0, blockHash: "", stateRoot: "" }; saveManifest(manifest); // persist BEFORE broadcast
+      const broadcastTxid = await broadcastSafely(hex);
+      assert(broadcastTxid === txid, `broadcast returned ${broadcastTxid}, expected ${txid}`);
       const conf = await confirmAndIndex(txid, "DEPLOY", () => {
         const t = indexer.getState().tokens.get(txid);
         assert(t !== undefined && t.ticker === ticker, "deploy token not created");
@@ -268,8 +283,10 @@ async function main() {
       const fee = await preflight(hex);
       cumulativeFee += fee.feeSats;
       if (cumulativeFee > CFG.maxMinerFeeSats * 10n) throw new Error(`cumulative proof fee ${cumulativeFee} exceeds cap`);
-      const txid = await broadcast(hex);
-      manifest.mint = { txid, height: 0, blockHash: "", stateRoot: "" }; saveManifest(manifest);
+      const txid = bitcoin.Transaction.fromHex(hex).getId();
+      manifest.mint = { txid, height: 0, blockHash: "", stateRoot: "" }; saveManifest(manifest); // persist BEFORE broadcast
+      const broadcastTxid = await broadcastSafely(hex);
+      assert(broadcastTxid === txid, `broadcast returned ${broadcastTxid}, expected ${txid}`);
       const conf = await confirmAndIndex(txid, "MINT", () => {
         const dep = indexer.getState().tickerIndex.get(ticker)!;
         assert(indexer.getState().tokens.get(dep)!.confirmedSupplyAtoms === mintAmount, "mint supply wrong");
@@ -285,8 +302,10 @@ async function main() {
       const fee = await preflight(hex);
       cumulativeFee += fee.feeSats;
       if (cumulativeFee > CFG.maxMinerFeeSats * 10n) throw new Error(`cumulative proof fee ${cumulativeFee} exceeds cap`);
-      const txid = await broadcast(hex);
-      manifest.transfer = { txid, height: 0, blockHash: "", stateRoot: "" }; saveManifest(manifest);
+      const txid = bitcoin.Transaction.fromHex(hex).getId();
+      manifest.transfer = { txid, height: 0, blockHash: "", stateRoot: "" }; saveManifest(manifest); // persist BEFORE broadcast
+      const broadcastTxid = await broadcastSafely(hex);
+      assert(broadcastTxid === txid, `broadcast returned ${broadcastTxid}, expected ${txid}`);
       const conf = await confirmAndIndex(txid, "TRANSFER", () => {
         const dep = indexer.getState().tickerIndex.get(ticker)!;
         assert(indexer.getState().balances.get(actorScript)?.get(dep)?.availableAtoms === mintAmount - transferAmount, "A balance wrong");

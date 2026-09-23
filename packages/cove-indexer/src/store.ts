@@ -1,6 +1,6 @@
 import { createDb, schema, type Database } from "@crclaunch/db";
 import type { CoveState } from "@crclaunch/protocol";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { CoveIndexEvent } from "./indexer.js";
 
 /**
@@ -277,9 +277,10 @@ export class CoveStore {
       .select()
       .from(schema.coveCheckpoints)
       .where(eq(schema.coveCheckpoints.network, network))
-      .orderBy(schema.coveCheckpoints.height)
+      .orderBy(desc(schema.coveCheckpoints.height))
+      .limit(1)
       .execute();
-    const last = rows.at(-1);
+    const last = rows[0];
     return last ? { height: last.height, blockHash: last.blockHash, stateRoot: last.stateRoot } : undefined;
   }
 

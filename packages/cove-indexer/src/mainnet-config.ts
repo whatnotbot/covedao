@@ -2,32 +2,17 @@ import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
 
-import { bitcoin } from "@crclaunch/bitcoin";
-
-function classify(script: Uint8Array): string {
-  if (script.length === 22 && script[0] === 0x00 && script[1] === 0x14) return "P2WPKH";
-  if (script.length === 34 && script[0] === 0x51 && script[1] === 0x20) return "P2TR";
-  if (script.length === 25 && script[0] === 0x76 && script[1] === 0xa9 && script[2] === 0x14) return "P2PKH";
-  if (script.length === 23 && script[0] === 0xa9 && script[1] === 0x14) return "P2SH";
-  return "UNSUPPORTED";
-}
+import { decodeMainnetCustodyAddress } from "./mainnet-custody.js";
 
 function decodeAddress(label: string, address: string): void {
   try {
-    const script = bitcoin.address.toOutputScript(address, bitcoin.networks.bitcoin);
-    const type = classify(script);
-    const roundtrip = bitcoin.address.fromOutputScript(script, bitcoin.networks.bitcoin);
-    const supported = type === "P2WPKH" || type === "P2TR";
-    if (!supported) {
-      console.error(`${label}: unsupported script type ${type} (only P2WPKH/P2TR).`);
-      process.exit(1);
-    }
+    const custody = decodeMainnetCustodyAddress(address);
     console.log(`${label}`);
-    console.log(`  address:      ${roundtrip}`);
-    console.log(`  scriptPubKey: ${Buffer.from(script).toString("hex")}`);
-    console.log(`  script type:  ${type}`);
+    console.log(`  address:      ${custody.address}`);
+    console.log(`  scriptPubKey: ${custody.scriptPubKeyHex}`);
+    console.log(`  script type:  ${custody.type}`);
   } catch (e) {
-    console.error(`${label}: invalid or wrong-network address "${address}": ${e instanceof Error ? e.message : String(e)}`);
+    console.error(`${label}: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);
   }
 }

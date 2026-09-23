@@ -6,6 +6,26 @@ export type WriteOperation = "deploy" | "mint" | "market" | "graduation";
 export type ProductMode = "DEMO" | "READ_ONLY_MAINNET" | "CANONICAL_CRC";
 
 /**
+ * Cove V1 mainnet activation stage (two-stage activation).
+ * - READ_ONLY: no owner canary recorded; reads only, no writes.
+ * - OWNER_CANARY: canary recorded (genesis height + canary txid present) but
+ *   public write flags are still closed.
+ * - PUBLIC_WRITES: canary recorded AND at least one public write flag enabled.
+ */
+export type CoveMainnetActivationStage = "READ_ONLY" | "OWNER_CANARY" | "PUBLIC_WRITES";
+
+export function coveMainnetActivationStage(config: RuntimeConfig): CoveMainnetActivationStage {
+  const anyPublic =
+    config.coveFlags.deployMainnet ||
+    config.coveFlags.mintMainnet ||
+    config.coveFlags.transferMainnet;
+  const anyCoveFlag = config.coveFlags.mainnetEnabled || anyPublic;
+  if (!anyCoveFlag) return "READ_ONLY";
+  if (!anyPublic) return "OWNER_CANARY";
+  return "PUBLIC_WRITES";
+}
+
+/**
  * Derive the product mode from the configured network + safety gates.
  * - DEMO: fully simulated (mock/test networks).
  * - READ_ONLY_MAINNET: real network, reads only.

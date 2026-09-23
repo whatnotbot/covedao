@@ -55,6 +55,10 @@ export interface RuntimeConfig {
   protocolVerified: boolean;
   flags: FeatureFlags;
   coveFlags: CoveFeatureFlags;
+  /** COVE_V1_MAINNET_GENESIS_HEIGHT — null until the owner canary is recorded. */
+  coveMainnetGenesisHeight: bigint | null;
+  /** COVE_V1_MAINNET_CANARY_TXID — the confirmed canary DEPLOY txid, if recorded. */
+  coveMainnetCanaryTxid: string | null;
   bitcoinRpc: BitcoinRpcConfig | null;
   explorerUrl: string;
   treasuryAddress: string | null;

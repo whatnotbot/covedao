@@ -20,7 +20,8 @@
     "worker": "tsx src/cli.ts worker",
     "signet-proof": "tsx src/signet-proof.ts",
     "mutinynet-proof": "tsx src/mutinynet-proof.ts",
-    "mainnet-config": "tsx src/mainnet-config.ts"
+    "mainnet-config": "tsx src/mainnet-config.ts",
+    "mainnet-canary": "tsx src/mainnet-canary.ts"
   },
   "dependencies": {
     "@crclaunch/bitcoin": "workspace:*",

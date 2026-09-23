@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadConfig, validateConfig } from "../src/load.js";
+import { coveMainnetActivationStage } from "../src/flags.js";
 
 function env(overrides: Record<string, string> = {}): Record<string, string | undefined> {
   return {
@@ -73,10 +74,64 @@ describe("validateConfig (fail-closed startup gates)", () => {
     expect(() => validateConfig(config)).not.toThrow();
   });
 
-  it("refuses to boot when a Cove mainnet flag is set", () => {
+  it("refuses to boot when a Cove mainnet flag is set without a recorded canary", () => {
     const config = loadConfig(env({ COVE_MAINNET_ENABLED: "true" }));
-    expect(() => validateConfig(config)).toThrow(/Cove mainnet is not activated/);
+    expect(() => validateConfig(config)).toThrow(/owner canary is not recorded/);
     const config2 = loadConfig(env({ COVE_DEPLOY_MAINNET_ENABLED: "true" }));
-    expect(() => validateConfig(config2)).toThrow(/Cove mainnet is not activated/);
+    expect(() => validateConfig(config2)).toThrow(/owner canary is not recorded/);
+  });
+
+  it("refuses public writes when only the genesis height is set (canary txid missing)", () => {
+    const config = loadConfig(env({
+      COVE_MAINNET_ENABLED: "true",
+      COVE_V1_MAINNET_GENESIS_HEIGHT: "850000",
+    }));
+    expect(() => validateConfig(config)).toThrow(/owner canary is not recorded/);
+  });
+
+  it("refuses public writes when the canary txid is malformed", () => {
+    const config = loadConfig(env({
+      COVE_MAINNET_ENABLED: "true",
+      COVE_V1_MAINNET_GENESIS_HEIGHT: "850000",
+      COVE_V1_MAINNET_CANARY_TXID: "not-a-txid",
+    }));
+    expect(() => validateConfig(config)).toThrow(/owner canary is not recorded/);
+  });
+
+  it("accepts OWNER_CANARY stage when genesis + canary txid are recorded and no public writes", () => {
+    const config = loadConfig(env({
+      COVE_MAINNET_ENABLED: "true",
+      COVE_V1_MAINNET_GENESIS_HEIGHT: "850000",
+      COVE_V1_MAINNET_CANARY_TXID: "a".repeat(64),
+    }));
+    expect(() => validateConfig(config)).not.toThrow();
+  });
+
+  it("accepts PUBLIC_WRITES stage when canary is recorded and a public flag is set", () => {
+    const config = loadConfig(env({
+      COVE_DEPLOY_MAINNET_ENABLED: "true",
+      COVE_V1_MAINNET_GENESIS_HEIGHT: "850000",
+      COVE_V1_MAINNET_CANARY_TXID: "a".repeat(64),
+    }));
+    expect(() => validateConfig(config)).not.toThrow();
+  });
+});
+
+describe("coveMainnetActivationStage", () => {
+  const base = { COVE_V1_MAINNET_GENESIS_HEIGHT: "850000", COVE_V1_MAINNET_CANARY_TXID: "a".repeat(64) };
+
+  it("is READ_ONLY when no Cove flag is set", () => {
+    const config = loadConfig(env());
+    expect(coveMainnetActivationStage(config)).toBe("READ_ONLY");
+  });
+
+  it("is OWNER_CANARY when only the master switch is set", () => {
+    const config = loadConfig(env({ ...base, COVE_MAINNET_ENABLED: "true" }));
+    expect(coveMainnetActivationStage(config)).toBe("OWNER_CANARY");
+  });
+
+  it("is PUBLIC_WRITES when a public write flag is set", () => {
+    const config = loadConfig(env({ ...base, COVE_MINT_MAINNET_ENABLED: "true" }));
+    expect(coveMainnetActivationStage(config)).toBe("PUBLIC_WRITES");
   });
 });

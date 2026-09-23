@@ -92,6 +92,8 @@ export function loadConfig(env: Env): RuntimeConfig {
       mintMainnet: bool(env, "COVE_MINT_MAINNET_ENABLED", false),
       transferMainnet: bool(env, "COVE_TRANSFER_MAINNET_ENABLED", false),
     },
+    coveMainnetGenesisHeight: bigintOrNull(env, "COVE_V1_MAINNET_GENESIS_HEIGHT"),
+    coveMainnetCanaryTxid: str(env, "COVE_V1_MAINNET_CANARY_TXID") || null,
     bitcoinRpc: str(env, "BITCOIN_RPC_URL")
       ? {
           url: str(env, "BITCOIN_RPC_URL"),
@@ -138,13 +140,23 @@ export function validateConfig(config: RuntimeConfig): void {
     );
   }
 
-  // Cove mainnet is NOT activated (genesis is null). Any Cove mainnet flag must
-  // fail closed — this is an enforced code gate, not just .env text.
+  // Cove mainnet two-stage activation gate (fail-closed, enforced in code).
+  // Stage 1 (owner canary) requires a RECORDED canary: genesis height + canary
+  // txid. Public write flags (stage 2) cannot enable until that canary exists.
   const coveMainnetWrites = Object.values(config.coveFlags).some(Boolean);
   if (coveMainnetWrites) {
-    throw new ConfigError(
-      "A Cove mainnet flag is enabled but Cove mainnet is not activated. Refusing to boot.",
-    );
+    const recorded =
+      config.coveMainnetGenesisHeight !== null &&
+      config.coveMainnetGenesisHeight > 0n &&
+      config.coveMainnetCanaryTxid !== null &&
+      /^[0-9a-f]{64}$/.test(config.coveMainnetCanaryTxid);
+    if (!recorded) {
+      throw new ConfigError(
+        "A Cove mainnet flag is enabled but the owner canary is not recorded. " +
+          "Set COVE_V1_MAINNET_GENESIS_HEIGHT and COVE_V1_MAINNET_CANARY_TXID from a " +
+          "confirmed canary DEPLOY before enabling any Cove mainnet flag. Refusing to boot.",
+      );
+    }
   }
 
   const writesEnabled = Object.values(config.flags).some(Boolean);

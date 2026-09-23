@@ -41,3 +41,4 @@ uploads/
 .cove-signer-b.wif
 .cove-proof.json
 .cove-mutinynet-proof.json
+.cove-mainnet-canary.json

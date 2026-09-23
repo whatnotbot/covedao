@@ -14,6 +14,8 @@ export {
   isMock,
   writeModeLabel,
   productMode,
+  coveMainnetActivationStage,
   type WriteOperation,
   type ProductMode,
+  type CoveMainnetActivationStage,
 } from "./flags.js";

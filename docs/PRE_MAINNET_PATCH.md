@@ -535,4 +535,8 @@ Report at the end: which items are done, which are not, and why.
 
 # Discovered during this patch
 
-_Append here. Do not silently expand scope._
+- **S-6: signet and Mutinynet share the SAME genesis block hash** (`00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6`, verified live from both Esplora endpoints). The genesis-hash assertion therefore distinguishes the signet family from mainnet/testnet/regtest, but NOT one signet from another. Distinguishing two signets requires the signet challenge, which is out of scope.
+- **S-5: the settlement/treasury keys are INERT SINK keys** whose scriptPubKeys are FROZEN consensus constants shared by signet + mutinynet and the already-recorded Mutinynet proof. "Rotating" them would change the frozen scripts and invalidate the recorded proof + state-root vectors, so rotation is not applicable; permissions (0600) and the writer mode were already correct.
+- **S-4: `SIGHASH_DEFAULT` is 0, and bip174 `addInput` treats a `sighashType` of 0 as falsy** (`canAdd` returns false), so it cannot be set explicitly. The taproot input therefore omits `sighashType` entirely (which defaults to SIGHASH_DEFAULT in the taproot sign path).
+- **B-1: the regtest reorg clears the mempool** (persistmempool=0 + wallet `load_on_startup=false` to stop re-broadcast), so it proves the weaker property ("an orphaned, never-re-broadcast TRANSFER stays absent"), not the stronger "root equality while the TRANSFER is re-mined".
+- **B-9: `.env` `QUOTE_TTL_BLOCKS` (120) vs `.env.example` (2)** and the dead `MAX_MINER_FEE_SATS`/`MAX_FEE_RATE_SAT_VB` env vars remain open (noted, not changed in this pass).

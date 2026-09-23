@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
 
-import { CoreRpcProvider, decodeRawTransaction, type BitcoinProtocolTx } from "@crclaunch/bitcoin";
+import { CoreRpcProvider, decodeRawTransaction, type BitcoinBlock, type BitcoinProtocolTx } from "@crclaunch/bitcoin";
 import { isCoveMagic } from "@crclaunch/protocol";
 import { CoveIndexer } from "./indexer.js";
 import { assertSignetChain } from "./chain-assert.js";
@@ -56,6 +56,26 @@ async function requireSignet(provider: CoreRpcProvider): Promise<void> {
   await assertSignetChain(provider);
 }
 
+/** Bounded exponential retry for idempotent READ calls. Never for writes. */
+async function readWithRetry<T>(fn: () => Promise<T>, label: string, retries = 4): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      await new Promise((r) => setTimeout(r, 500 * 2 ** i));
+    }
+  }
+  throw new Error(`${label} failed after ${retries} retries: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
+}
+
+/** Fetch a block's hash + body with retry (B-4: no crash-loop on a transient RPC error). */
+async function fetchBlockWithRetry(provider: CoreRpcProvider, height: number): Promise<BitcoinBlock> {
+  const hash = await readWithRetry(() => provider.getBlockHash(height), `getBlockHash ${height}`);
+  return readWithRetry(() => provider.getBlock(hash), `getBlock ${hash.slice(0, 8)}`);
+}
+
 async function scanRange(
   provider: CoreRpcProvider,
   from: number,
@@ -63,8 +83,7 @@ async function scanRange(
   indexer: CoveIndexer,
 ): Promise<void> {
   for (let h = from; h <= to; h++) {
-    const hash = await provider.getBlockHash(h);
-    const block = await provider.getBlock(hash);
+    const block = await fetchBlockWithRetry(provider, h);
     const txs: BitcoinProtocolTx[] = [];
     for (let i = 0; i < block.rawTxs.length; i++) {
       const raw = block.rawTxs[i]!;
@@ -184,8 +203,7 @@ async function scanAndPersist(
 ): Promise<void> {
   const network = COVE_SIGNET_CONFIG.network;
   for (let h = from; h <= to; h++) {
-    const hash = await provider.getBlockHash(h);
-    const block = await provider.getBlock(hash);
+    const block = await fetchBlockWithRetry(provider, h);
     const txs: BitcoinProtocolTx[] = [];
     for (let i = 0; i < block.rawTxs.length; i++) {
       const raw = block.rawTxs[i]!;
@@ -202,7 +220,7 @@ async function scanAndPersist(
     }
     indexer.processBlock(h, txs);
     // Atomic: block + operations + state + checkpoint + cursor in one transaction.
-    await store.persistBlock(network, h, hash, block.previousBlockHash, indexer.getState(), indexer.getEvents(), indexer.getStateRoot());
+    await store.persistBlock(network, h, block.hash, block.previousBlockHash, indexer.getState(), indexer.getEvents(), indexer.getStateRoot());
     process.stderr.write(`  persisted block ${h} (${block.rawTxs.length} txs)\n`);
   }
 }

@@ -72,22 +72,33 @@ async function resolveSignedTxInputs(provider: CoreRpcProvider, signedHex: strin
   for (const input of tx.inputs) {
     if (input.prevTxid === "0".repeat(64)) continue;
     const prev = await provider.getPrevout(input.prevTxid, input.vout);
-    if (!prev) throw new Error(`input ${input.prevTxid}:${input.vout} prevout not found`);
+    if (!prev || prev.valueSats === undefined || prev.scriptPubKeyHex === undefined) {
+      throw new Error(`input ${input.prevTxid}:${input.vout} prevout not found`);
+    }
     input.prevScriptPubKeyHex = prev.scriptPubKeyHex;
     input.prevValueSats = prev.valueSats;
   }
   return tx;
 }
 
-/** Actual fee + fee-rate from authoritative prevouts and the final tx's vsize. */
-export function computeFee(tx: BitcoinProtocolTx, signedHex: string): { feeSats: bigint; feeRate: bigint } {
-  const inSats = tx.inputs.reduce((a, i) => a + (i.prevValueSats ?? 0n), 0n);
+/** Fee-rate cap by multiplication (a floor-divided rate would miss sub-satoshi overflow). */
+export function feeRateExceedsCap(feeSats: bigint, vsize: number, maxFeeRateSatVb: bigint): boolean {
+  return feeSats > maxFeeRateSatVb * BigInt(vsize);
+}
+
+/** Actual fee + vsize from authoritative prevouts and the final tx's vsize. */
+export function computeFee(tx: BitcoinProtocolTx, signedHex: string): { feeSats: bigint; vsize: number; feeRate: bigint } {
+  const inSats = tx.inputs.reduce((a, i) => {
+    if (i.prevValueSats === undefined) throw new Error("missing input prevout value");
+    return a + i.prevValueSats;
+  }, 0n);
   const outSats = tx.outputs.reduce((a, o) => a + o.valueSats, 0n);
   const feeSats = inSats - outSats;
   if (feeSats < 0n) throw new Error(`negative fee: inputs ${inSats} < outputs ${outSats}`);
   const vsize = bitcoin.Transaction.fromHex(signedHex).virtualSize();
+  // Display-only floor; the fee-rate CAP is enforced by multiplication (no floor).
   const feeRate = vsize <= 0 ? 0n : feeSats / BigInt(vsize);
-  return { feeSats, feeRate };
+  return { feeSats, vsize, feeRate };
 }
 
 async function waitConfirmation(provider: CoreRpcProvider, txid: string): Promise<{ height: number; hash: string; txIndex: number }> {
@@ -107,12 +118,14 @@ async function waitConfirmation(provider: CoreRpcProvider, txid: string): Promis
 async function indexConfirmedBlock(provider: CoreRpcProvider, indexer: CoveIndexer, height: number, hash: string): Promise<void> {
   const block = await provider.getBlock(hash);
   const txs: BitcoinProtocolTx[] = [];
-  for (const raw of block.rawTxs) {
+  for (let i = 0; i < block.rawTxs.length; i++) {
+    const raw = block.rawTxs[i]!;
     let tx: BitcoinProtocolTx;
     try {
       tx = decodeRawTransaction(raw, "signet");
     } catch {
-      continue;
+      // Preserve the canonical tx index via a NON_COVE placeholder.
+      tx = { txid: block.txids[i]!, version: 0, locktime: 0, inputs: [], outputs: [] };
     }
     const isCove = tx.outputs.some((o) => {
       if (o.scriptPubKeyHex === "6a") return false;
@@ -123,7 +136,9 @@ async function indexConfirmedBlock(provider: CoreRpcProvider, indexer: CoveIndex
       const input0 = tx.inputs[0]!;
       if (input0.prevTxid !== "0".repeat(64)) {
         const prev = await provider.getPrevout(input0.prevTxid, input0.vout);
-        if (!prev) throw new Error(`block ${height}: cannot resolve actor prevout ${input0.prevTxid}:${input0.vout}`);
+        if (!prev || prev.valueSats === undefined || prev.scriptPubKeyHex === undefined) {
+          throw new Error(`block ${height}: cannot resolve actor prevout ${input0.prevTxid}:${input0.vout}`);
+        }
         input0.prevScriptPubKeyHex = prev.scriptPubKeyHex;
         input0.prevValueSats = prev.valueSats;
       }
@@ -131,6 +146,22 @@ async function indexConfirmedBlock(provider: CoreRpcProvider, indexer: CoveIndex
     txs.push(tx);
   }
   indexer.processBlock(height, txs);
+}
+
+/** Index every block in [from, to] in canonical order (preserving height/txIndex). */
+async function catchUpTo(provider: CoreRpcProvider, indexer: CoveIndexer, from: number, to: number): Promise<void> {
+  for (let h = from; h <= to; h++) {
+    const hash = await provider.getBlockHash(h);
+    await indexConfirmedBlock(provider, indexer, h, hash);
+  }
+}
+
+/** Assert the confirmed tx produced a VALID Cove event with the expected op. */
+function assertEvent(indexer: CoveIndexer, txid: string, expectedOp: string): void {
+  const ev = indexer.getEvents().find((e) => e.txid === txid);
+  assert(ev !== undefined, `no indexed event for ${txid}`);
+  assert(ev!.classification === "VALID" && ev!.valid, `event ${txid} not VALID: ${ev!.classification} ${ev!.reason}`);
+  assert(ev!.operation === expectedOp, `event ${txid} op ${ev!.operation} != ${expectedOp}`);
 }
 
 async function broadcastChecked(provider: CoreRpcProvider, signedHex: string): Promise<string> {
@@ -190,7 +221,7 @@ async function main() {
   assert(info.chain === "signet", `chain is ${info.chain}, expected signet`);
   const esplora = new EsploraUtxoProvider(ESPLORA, "signet");
   const indexer = new CoveIndexer(CFG); // canonical state (advanced only on confirmation)
-
+  let indexedHeight = CFG.genesisHeight - 1;
   const actorScript = scriptOf(signerA);
 
   async function freshUtxos(signer: LocalP2WPKHSigner): Promise<ChainUtxo[]> {
@@ -201,18 +232,49 @@ async function main() {
     return verified;
   }
 
-  async function preflight(signedHex: string): Promise<{ feeSats: bigint; feeRate: bigint }> {
+  async function preflight(signedHex: string): Promise<{ feeSats: bigint; vsize: number; feeRate: bigint }> {
     const tx = await resolveSignedTxInputs(provider, signedHex);
     const fee = computeFee(tx, signedHex);
     const v = validatePure(indexer.getState(), tx, 0);
     assert(v.ok, `Cove validation failed: ${v.reason}`);
     assert(fee.feeSats <= CFG.maxMinerFeeSats, `fee ${fee.feeSats} exceeds max ${CFG.maxMinerFeeSats}`);
-    assert(fee.feeRate <= CFG.maxFeeRateSatVb, `fee rate ${fee.feeRate} exceeds max ${CFG.maxFeeRateSatVb}`);
+    // Fee-rate cap by multiplication (no flooring of the rate before comparison).
+    assert(!feeRateExceedsCap(fee.feeSats, fee.vsize, CFG.maxFeeRateSatVb), `fee rate exceeds max ${CFG.maxFeeRateSatVb} sat/vB (fee ${fee.feeSats}, vsize ${fee.vsize})`);
     return fee;
+  }
+
+  async function catchUpToTip(): Promise<void> {
+    const tip = await provider.getBestHeight();
+    if (tip > indexedHeight) {
+      await catchUpTo(provider, indexer, indexedHeight + 1, tip);
+      indexedHeight = tip;
+    }
+  }
+
+  async function confirmAndIndex(txid: string, op: string, assertState: () => void): Promise<{ height: number; txIndex: number }> {
+    const conf = await waitConfirmation(provider, txid);
+    // Index EVERY intervening block through the confirmation block (preserving
+    // exact height and txIndex), not just the confirmation block.
+    if (conf.height > indexedHeight) {
+      await catchUpTo(provider, indexer, indexedHeight + 1, conf.height);
+      indexedHeight = conf.height;
+    }
+    assertEvent(indexer, txid, op);
+    assertState();
+    return conf;
+  }
+
+  // Initialize: canonical replay from activation height to the current tip.
+  const initialTip = await provider.getBestHeight();
+  if (initialTip >= CFG.genesisHeight) {
+    await catchUpTo(provider, indexer, CFG.genesisHeight, initialTip);
+    indexedHeight = initialTip;
+    console.log(`✓ replayed genesis ${CFG.genesisHeight} → ${initialTip}`);
   }
 
   // ── DEPLOY ────────────────────────────────────────────────────────────────
   {
+    await catchUpToTip();
     const utxos = await freshUtxos(signerA);
     const coins = selectCoins(utxos, 10_000n + 1_000n);
     const psbt = buildCoveDeployPsbt({
@@ -222,15 +284,20 @@ async function main() {
     const hex = await signerA.signPsbt(psbt.psbtBase64);
     const fee = await preflight(hex);
     const txid = await broadcastChecked(provider, hex);
-    const conf = await waitConfirmation(provider, txid);
-    await indexConfirmedBlock(provider, indexer, conf.height, conf.hash);
+    const conf = await confirmAndIndex(txid, "DEPLOY", () => {
+      const token = indexer.getState().tokens.get(txid);
+      assert(token !== undefined, "FROG token not created");
+      assert(token!.ticker === "FROG", `ticker ${token!.ticker} != FROG`);
+      assert(token!.confirmedSupplyAtoms === 0n, "initial supply not 0");
+    });
     console.log(`✓ DEPLOY ${txid} @ ${conf.height} tx=${conf.txIndex} fee=${fee.feeSats} rate=${fee.feeRate}`);
   }
 
   // ── MINT (recipient = signerA, who becomes the token holder) ──────────────
+  const mintAmount = 2_000_000n * 100_000_000n;
   {
+    await catchUpToTip();
     const utxos = await freshUtxos(signerA);
-    const mintAmount = 2_000_000n * 100_000_000n;
     const coins = selectCoins(utxos, 1_010n + 1_000n);
     const psbt = buildCoveMintPsbt({
       network: "signet", ticker: "FROG", amountAtoms: mintAmount, supplyBeforeAtoms: 0n,
@@ -240,15 +307,21 @@ async function main() {
     const hex = await signerA.signPsbt(psbt.psbtBase64);
     const fee = await preflight(hex);
     const txid = await broadcastChecked(provider, hex);
-    const conf = await waitConfirmation(provider, txid);
-    await indexConfirmedBlock(provider, indexer, conf.height, conf.hash);
+    const conf = await confirmAndIndex(txid, "MINT", () => {
+      const dep = indexer.getState().tickerIndex.get("FROG")!;
+      const t = indexer.getState().tokens.get(dep)!;
+      assert(t.confirmedSupplyAtoms === mintAmount, `mint supply ${t.confirmedSupplyAtoms} != ${mintAmount}`);
+      const bal = indexer.getState().balances.get(actorScript)?.get(dep);
+      assert(bal?.availableAtoms === mintAmount, "mint balance wrong");
+    });
     console.log(`✓ MINT ${txid} @ ${conf.height} tx=${conf.txIndex} fee=${fee.feeSats}`);
   }
 
   // ── TRANSFER (signerA → signerB) ──────────────────────────────────────────
+  const transferAmount = 500_000n * 100_000_000n;
   {
+    await catchUpToTip();
     const utxos = await freshUtxos(signerA);
-    const transferAmount = 500_000n * 100_000_000n;
     const coins = selectCoins(utxos, 1_000n);
     const psbt = buildCoveTransferPsbt({
       network: "signet", ticker: "FROG", amountAtoms: transferAmount,
@@ -258,8 +331,13 @@ async function main() {
     const hex = await signerA.signPsbt(psbt.psbtBase64);
     const fee = await preflight(hex);
     const txid = await broadcastChecked(provider, hex);
-    const conf = await waitConfirmation(provider, txid);
-    await indexConfirmedBlock(provider, indexer, conf.height, conf.hash);
+    const conf = await confirmAndIndex(txid, "TRANSFER", () => {
+      const dep = indexer.getState().tickerIndex.get("FROG")!;
+      const a = indexer.getState().balances.get(actorScript)?.get(dep);
+      const b = indexer.getState().balances.get(scriptOf(signerB))?.get(dep);
+      assert(a?.availableAtoms === mintAmount - transferAmount, "A balance wrong after transfer");
+      assert(b?.availableAtoms === transferAmount, "B balance wrong after transfer");
+    });
     console.log(`✓ TRANSFER ${txid} @ ${conf.height} tx=${conf.txIndex} fee=${fee.feeSats}`);
   }
 

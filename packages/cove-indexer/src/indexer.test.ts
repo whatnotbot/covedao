@@ -179,6 +179,16 @@ describe("CoveIndexer (binary envelope, classification, tx index)", () => {
     expect(idx.getState().reserveSats).toBe(0n); // rejected mint did not credit reserve
   });
 
+  it("preserves canonical tx index when a preceding tx is a NON_COVE placeholder", () => {
+    const idx = new CoveIndexer(CFG);
+    const placeholder: BitcoinProtocolTx = { txid: "9".repeat(64), version: 0, locktime: 0, inputs: [], outputs: [] };
+    const deploy = tx(encodeCoveDeploy("FROG"), [{ index: 1, scriptPubKeyHex: CFG.treasuryScript, valueSats: 10_000n }], "d".repeat(64));
+    idx.processBlock(CFG.genesisHeight, [placeholder, deploy]);
+    const deployEvent = idx.getEvents().find((e) => e.operation === "DEPLOY");
+    expect(deployEvent).toBeDefined();
+    expect(deployEvent!.txIndex).toBe(1); // not 0 — the placeholder preserved the index
+  });
+
   it("restart reconstruction matches and continues correctly (resume evidence)", () => {
     const deploy = tx(encodeCoveDeploy("FROG"), [{ index: 1, scriptPubKeyHex: CFG.treasuryScript, valueSats: 10_000n }], "d".repeat(64));
     const mint = tx(encodeCoveMint("FROG", 200_000_000_000_000n, 0n), [

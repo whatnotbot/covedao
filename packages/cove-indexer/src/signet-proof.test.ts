@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bitcoin, type BitcoinProtocolTx } from "@crclaunch/bitcoin";
 import { createCoveState } from "@crclaunch/protocol";
-import { computeFee, validatePure } from "./signet-proof.js";
+import { computeFee, feeRateExceedsCap, validatePure } from "./signet-proof.js";
 
 function buildSignedHex(inputs: { valueSats: bigint }[], outputs: { valueSats: bigint }[]): string {
   const tx = new bitcoin.Transaction();
@@ -40,6 +40,20 @@ describe("computeFee (authoritative prevouts → actual fee)", () => {
       outputs: [{ index: 0, scriptPubKeyHex: "0014" + "bb".repeat(20), valueSats: 1_000n }],
     };
     expect(() => computeFee(tx, buildSignedHex([{ valueSats: 900n }], [{ valueSats: 1_000n }]))).toThrow(/negative fee/);
+  });
+});
+
+describe("feeRateExceedsCap (multiplication, no floor)", () => {
+  it("catches fractional fee-rate overflow that floor-division would miss", () => {
+    // fee 101 sats over 50 vbytes = 2.02 sat/vB. Floor division gives 2 (<= cap 2),
+    // but multiplication 101 > 2*50 = 100 correctly flags it.
+    expect(feeRateExceedsCap(101n, 50, 2n)).toBe(true);
+    expect(101n / 50n).toBe(2n); // the floor would have passed
+  });
+
+  it("accepts exactly-at-cap fee", () => {
+    expect(feeRateExceedsCap(100n, 50, 2n)).toBe(false);
+    expect(feeRateExceedsCap(99n, 50, 2n)).toBe(false);
   });
 });
 

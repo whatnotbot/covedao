@@ -1,5 +1,6 @@
 import * as bitcoin from "bitcoinjs-lib";
-import type { ChainUtxo } from "./provider.js";
+import type { BitcoinBlock, ChainUtxo } from "./provider.js";
+import { decodeRawTransaction, type BitcoinProtocolTx } from "./decoder.js";
 import { btcNetwork, type NetworkName } from "./decoder.js";
 
 interface EsploraUtxoJson {
@@ -43,5 +44,113 @@ export class EsploraUtxoProvider {
         confirmations: Math.max(0, confirmations),
       };
     });
+  }
+}
+
+interface EsploraTxVin {
+  txid: string;
+  vout: number;
+  prevout?: { value: number; scriptpubkey: string };
+}
+interface EsploraTxJson {
+  txid: string;
+  vin: EsploraTxVin[];
+  vout: { value: number; scriptpubkey: string }[];
+  status?: { confirmed: boolean; block_height?: number; block_hash?: string };
+}
+
+/**
+ * Minimal Esplora-backed CHAIN provider (tip, block hash, block txs, raw tx,
+ * prevout, UTXOs, tx status, broadcast) for a custom signet such as Mutinynet.
+ * It never touches Core RPC or the default-signet endpoints.
+ */
+export class EsploraChainProvider {
+  constructor(
+    private readonly baseUrl: string,
+    private readonly network: NetworkName = "signet",
+  ) {}
+
+  private async get<T>(path: string): Promise<T> {
+    const res = await fetch(`${this.baseUrl}${path}`, { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) throw new Error(`Esplora ${path} HTTP ${res.status}`);
+    return (await res.json()) as T;
+  }
+
+  private async getText(path: string): Promise<string> {
+    const res = await fetch(`${this.baseUrl}${path}`, { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) throw new Error(`Esplora ${path} HTTP ${res.status}`);
+    return (await res.text()).trim();
+  }
+
+  async getBestHeight(): Promise<number> {
+    return Number.parseInt(await this.getText("/blocks/tip/height"), 10);
+  }
+
+  async getBlockHash(height: number): Promise<string> {
+    return this.getText(`/block-height/${height}`);
+  }
+
+  async getBlock(hash: string): Promise<BitcoinBlock> {
+    const txids = await this.get<string[]>(`/block/${hash}/txids`);
+    const meta = await this.get<{ id: string; height: number; previousblockhash?: string }>(`/block/${hash}`);
+    const rawTxs: string[] = [];
+    for (const txid of txids) {
+      rawTxs.push(await this.getText(`/tx/${txid}/hex`));
+    }
+    return { hash, height: meta.height, previousBlockHash: meta.previousblockhash ?? "", txids, rawTxs };
+  }
+
+  async getRawTransaction(txid: string): Promise<string> {
+    return this.getText(`/tx/${txid}/hex`);
+  }
+
+  async getTransaction(txid: string): Promise<BitcoinProtocolTx> {
+    const raw = await this.getRawTransaction(txid);
+    const tx = decodeRawTransaction(raw, this.network);
+    for (const input of tx.inputs) {
+      if (input.prevTxid === "0".repeat(64)) continue;
+      const prev = await this.getPrevout(input.prevTxid, input.vout);
+      if (prev) {
+        input.prevScriptPubKeyHex = prev.scriptPubKeyHex;
+        input.prevValueSats = prev.valueSats;
+      }
+    }
+    return tx;
+  }
+
+  async getPrevout(txid: string, vout: number): Promise<ChainUtxo | undefined> {
+    const tx = await this.get<EsploraTxJson>(`/tx/${txid}`);
+    const out = tx.vout[vout];
+    if (!out) return undefined;
+    return {
+      txid,
+      vout,
+      scriptPubKeyHex: out.scriptpubkey,
+      valueSats: BigInt(Math.round(out.value)),
+      confirmations: tx.status?.block_height !== undefined ? Math.max(0, (await this.getBestHeight()) - tx.status.block_height + 1) : 0,
+    };
+  }
+
+  async getTxStatus(txid: string): Promise<{ confirmed: boolean; blockHeight?: number; blockHash?: string } | null> {
+    try {
+      const s = await this.get<{ confirmed: boolean; block_height?: number; block_hash?: string }>(`/tx/${txid}/status`);
+      return { confirmed: s.confirmed, blockHeight: s.block_height, blockHash: s.block_hash };
+    } catch {
+      return null;
+    }
+  }
+
+  async broadcastTransaction(hex: string): Promise<string> {
+    const res = await fetch(`${this.baseUrl}/tx`, {
+      method: "POST",
+      body: hex,
+      headers: { "content-type": "text/plain" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Esplora broadcast HTTP ${res.status}: ${text.slice(0, 200)}`);
+    }
+    return (await res.text()).trim();
   }
 }

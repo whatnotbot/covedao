@@ -39,4 +39,4 @@ export {
   DUST_RELAY_FEE_SAT_PER_KVB,
 } from "./dust.js";
 export { LocalP2WPKHSigner, type WalletSigner } from "./signer.js";
-export { EsploraUtxoProvider } from "./esplora.js";
+export { EsploraUtxoProvider, EsploraChainProvider } from "./esplora.js";

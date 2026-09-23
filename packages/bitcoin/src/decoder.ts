@@ -1,6 +1,6 @@
 import * as bitcoin from "bitcoinjs-lib";
 
-export type NetworkName = "signet" | "testnet4" | "testnet" | "regtest" | "mainnet";
+export type NetworkName = "signet" | "mutinynet" | "testnet4" | "testnet" | "regtest" | "mainnet";
 
 export function btcNetwork(name: NetworkName): bitcoin.networks.Network {
   switch (name) {
@@ -8,9 +8,10 @@ export function btcNetwork(name: NetworkName): bitcoin.networks.Network {
       return bitcoin.networks.bitcoin;
     case "regtest":
       return bitcoin.networks.regtest;
-    // signet, testnet3, and testnet4 share address encodings ("tb"/bech32);
-    // bitcoinjs-lib has no dedicated signet network, so testnet params are used.
+    // signet, mutinynet (custom signet), testnet3, and testnet4 share address
+    // encodings ("tb"/bech32); bitcoinjs-lib has no dedicated signet network.
     case "signet":
+    case "mutinynet":
     case "testnet4":
     case "testnet":
     default:

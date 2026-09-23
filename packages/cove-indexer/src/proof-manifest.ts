@@ -14,7 +14,7 @@ export interface ProofStep {
  */
 export interface ProofManifest {
   protocol: "cove";
-  network: "signet";
+  network: "signet" | "mutinynet";
   ticker: string;
   signerA: string;
   signerB: string;

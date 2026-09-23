@@ -6,7 +6,7 @@ import type { Sats } from "@crclaunch/curve";
  * protocol version (they may only specify RPC URL / DB URL / poll interval).
  */
 export interface CoveConfig {
-  network: "signet" | "regtest";
+  network: "signet" | "regtest" | "mutinynet";
   /** First canonical block for Cove V1; Cove-looking txs below this are ignored. */
   genesisHeight: number;
   /** Canonical settlement/reserve script (mint combined curve+fee output). */
@@ -43,6 +43,24 @@ export const COVE_V1_MAINNET_GENESIS_HEIGHT: number | null = null;
 export const COVE_V1_SIGNET_CONFIG: CoveConfig = {
   network: "signet",
   genesisHeight: COVE_V1_SIGNET_GENESIS_HEIGHT,
+  settlementScript: "001468a5c1ce1047fa51ba0a2170329c3f9396c2a0b8",
+  treasuryScript: "0014c168131539d3062ff2c66bd0833a9c5d8c355f46",
+  launchFeeSats: 10_000n,
+  primaryMintFeeBps: 100n,
+  minContributionSats: 1_000n,
+  maxFeeRateSatVb: 50n,
+  maxMinerFeeSats: 50_000n,
+};
+
+/**
+ * Mutinynet (custom signet) Cove config. Same economics and scripts; a SEPARATE
+ * network namespace + activation height. Chosen activation height = the
+ * Mutinynet tip at proof time (3449383) — no Cove tx existed before it.
+ */
+export const COVE_MUTINYNET_GENESIS_HEIGHT = 3449383;
+export const COVE_MUTINYNET_CONFIG: CoveConfig = {
+  network: "mutinynet",
+  genesisHeight: COVE_MUTINYNET_GENESIS_HEIGHT,
   settlementScript: "001468a5c1ce1047fa51ba0a2170329c3f9396c2a0b8",
   treasuryScript: "0014c168131539d3062ff2c66bd0833a9c5d8c355f46",
   launchFeeSats: 10_000n,

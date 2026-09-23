@@ -18,7 +18,8 @@
     "status": "tsx src/cli.ts status",
     "test:integration": "tsx src/store.integration.ts",
     "worker": "tsx src/cli.ts worker",
-    "signet-proof": "tsx src/signet-proof.ts"
+    "signet-proof": "tsx src/signet-proof.ts",
+    "mutinynet-proof": "tsx src/mutinynet-proof.ts"
   },
   "dependencies": {
     "@crclaunch/bitcoin": "workspace:*",

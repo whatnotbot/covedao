@@ -1,12 +1,14 @@
 /**
- * Cove V1 graduation + virtual liquidity pool demo (deterministic, offline).
+ * LEGACY / REFERENCE — Cove V1 graduation + virtual constant-product liquidity
+ * pool demo (deterministic, offline).
  *
  * Simulates the full product lifecycle: DEPLOY FROG → MINT all 840M public
  * supply → GRADUATE (seed the virtual constant-product pool) → BUY → BUY →
  * SELL, and prints a transcript of exactly where BTC and tokens move.
  *
- * This is a mock/regtest/testing simulator. It does NOT touch mainnet, change
- * the Cove V1 wire consensus, or alter the frozen state root.
+ * This is a mock/regtest/testing simulator and is NOT the production token
+ * protocol. It does NOT touch mainnet, change the Cove V1 wire consensus, or
+ * alter the frozen state root. See docs/COVE_COVENANT_ARCHITECTURE.md.
  */
 import {
   ATOMS_PER_TOKEN,

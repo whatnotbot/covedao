@@ -64,14 +64,16 @@ async function scanRange(
     const hash = await provider.getBlockHash(h);
     const block = await provider.getBlock(hash);
     const txs: BitcoinProtocolTx[] = [];
-    for (const raw of block.rawTxs) {
+    for (let i = 0; i < block.rawTxs.length; i++) {
+      const raw = block.rawTxs[i]!;
       let tx: BitcoinProtocolTx;
       try {
         tx = decodeRawTransaction(raw, "signet");
       } catch (err) {
-        // Malformed transaction data (not infrastructure): skip safely.
-        process.stderr.write(`  skipped undecodable tx in block ${h}: ${err instanceof Error ? err.message : String(err)}\n`);
-        continue;
+        // Malformed transaction data (not infrastructure): keep its canonical
+        // index via a NON_COVE placeholder so later tx indices are preserved.
+        tx = { txid: block.txids[i]!, version: 0, locktime: 0, inputs: [], outputs: [] };
+        process.stderr.write(`  skipped undecodable tx #${i} in block ${h}: ${err instanceof Error ? err.message : String(err)}\n`);
       }
       // ResolveActor failure is NOT swallowed: it propagates and halts the block
       // before the cursor advances (a Cove candidate must have a resolved actor).
@@ -183,13 +185,15 @@ async function scanAndPersist(
     const hash = await provider.getBlockHash(h);
     const block = await provider.getBlock(hash);
     const txs: BitcoinProtocolTx[] = [];
-    for (const raw of block.rawTxs) {
+    for (let i = 0; i < block.rawTxs.length; i++) {
+      const raw = block.rawTxs[i]!;
       let tx: BitcoinProtocolTx;
       try {
         tx = decodeRawTransaction(raw, "signet");
       } catch (err) {
-        process.stderr.write(`  skipped undecodable tx in block ${h}: ${err instanceof Error ? err.message : String(err)}\n`);
-        continue;
+        // Preserve canonical tx index via a NON_COVE placeholder.
+        tx = { txid: block.txids[i]!, version: 0, locktime: 0, inputs: [], outputs: [] };
+        process.stderr.write(`  skipped undecodable tx #${i} in block ${h}: ${err instanceof Error ? err.message : String(err)}\n`);
       }
       if (isCoveCandidate(tx)) await resolveActor(provider, tx);
       txs.push(tx);
@@ -251,7 +255,16 @@ async function cmdWorker(): Promise<void> {
     const stored = await store.getCursor(network);
     if (stored) {
       const storedHeight = Number(stored.height);
-      let chainHashAtHeight: string | undefined;
+      const tipBackward = tip < storedHeight;
+      if (tipBackward) {
+        console.error(`REORG: tip ${tip} moved below stored cursor ${storedHeight}. Rebuilding.`);
+        await store.clearCove(network);
+        indexer = new CoveIndexer(COVE_SIGNET_CONFIG);
+        await scanAndPersist(provider, store, indexer, GENESIS, tip);
+        from = tip + 1;
+        continue;
+      }
+      let chainHashAtHeight: string;
       try {
         chainHashAtHeight = await provider.getBlockHash(storedHeight);
       } catch {
@@ -259,11 +272,9 @@ async function cmdWorker(): Promise<void> {
         await new Promise((r) => setTimeout(r, pollMs));
         continue;
       }
-      const tipBackward = tip < storedHeight;
-      const hashMismatch = chainHashAtHeight !== stored.blockHash;
-      if (tipBackward || hashMismatch) {
+      if (chainHashAtHeight !== stored.blockHash) {
         console.error(
-          `REORG: tip ${tip}, stored ${storedHeight}:${stored.blockHash.slice(0, 8)}, chain@${storedHeight}=${chainHashAtHeight.slice(0, 8)}. Rebuilding.`,
+          `REORG: stored ${storedHeight}:${stored.blockHash.slice(0, 8)}, chain@${storedHeight}=${chainHashAtHeight.slice(0, 8)}. Rebuilding.`,
         );
         await store.clearCove(network);
         indexer = new CoveIndexer(COVE_SIGNET_CONFIG);

@@ -3,7 +3,9 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
 
 import type { BitcoinProtocolTx } from "@crclaunch/bitcoin";
-import { encodeCoveDeploy, encodeCoveMint, encodeCoveTransfer } from "@crclaunch/protocol";
+import { createCoveState, encodeCoveDeploy, encodeCoveMint, encodeCoveTransfer } from "@crclaunch/protocol";
+import { schema } from "@crclaunch/db";
+import { eq } from "drizzle-orm";
 import { CoveIndexer } from "./indexer.js";
 import { COVE_SIGNET_CONFIG } from "./config.js";
 import { CoveStore } from "./store.js";
@@ -105,6 +107,30 @@ async function main() {
 
   console.log(`  state root: ${rootA}`);
   console.log("✅ Cove persistent indexer integration test PASSED");
+
+  // ── persistBlock atomicity: injected mid-transaction failure rolls back ────
+  const badHeight = 999_999;
+  const badEvent = {
+    blockHeight: badHeight,
+    txIndex: 2_147_483_648, // > int4 max → Postgres error on cove_operations insert
+    txid: "f".repeat(64),
+    operation: "DEPLOY",
+    classification: "VALID" as const,
+    valid: true,
+    reason: null,
+  };
+  let threw = false;
+  try {
+    await store.persistBlock(NETWORK, badHeight, "c".repeat(64), "d".repeat(64), createCoveState(), [badEvent], "deadbeef");
+  } catch {
+    threw = true;
+  }
+  assert(threw, "persistBlock threw on injected mid-transaction failure");
+  const blocksAtBad = await store.db.select().from(schema.coveBlocks).where(eq(schema.coveBlocks.height, BigInt(badHeight))).execute();
+  const opsAtBad = await store.db.select().from(schema.coveOperations).where(eq(schema.coveOperations.blockHeight, BigInt(badHeight))).execute();
+  assert(blocksAtBad.length === 0, "block insert rolled back");
+  assert(opsAtBad.length === 0, "operation insert rolled back");
+
   await store.clearCove(NETWORK);
   process.exit(0);
 }

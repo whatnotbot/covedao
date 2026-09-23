@@ -32,6 +32,17 @@ export class LocalP2WPKHSigner implements WalletSigner {
     this.keyPair = ECPair.fromWIF(wif, btcNetwork(network));
   }
 
+  /** Generate a fresh secure-random P2WPKH signer (never print the WIF). */
+  static makeRandom(network: NetworkName = "signet"): LocalP2WPKHSigner {
+    const kp = ECPair.makeRandom({ network: btcNetwork(network) });
+    return new LocalP2WPKHSigner(kp.toWIF(), network);
+  }
+
+  /** Export the WIF (caller must write it to a secure owner-controlled file). */
+  toWIF(): string {
+    return this.keyPair.toWIF();
+  }
+
   getNetwork(): NetworkName {
     return this.network;
   }

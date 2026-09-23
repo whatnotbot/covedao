@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SIGNET_GENESIS_HASH, isSignetGenesis } from "./chain-assert.js";
+import { MAINNET_GENESIS_HASH, SIGNET_GENESIS_HASH, isMainnetGenesis, isSignetGenesis } from "./chain-assert.js";
 
 describe("isSignetGenesis", () => {
   it("accepts the signet genesis hash", () => {
@@ -16,5 +16,15 @@ describe("isSignetGenesis", () => {
 
   it("rejects the testnet genesis hash", () => {
     expect(isSignetGenesis("000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943")).toBe(false);
+  });
+});
+
+describe("isMainnetGenesis", () => {
+  it("accepts the mainnet genesis hash", () => {
+    expect(isMainnetGenesis(MAINNET_GENESIS_HASH)).toBe(true);
+  });
+
+  it("rejects the signet genesis hash", () => {
+    expect(isMainnetGenesis(SIGNET_GENESIS_HASH)).toBe(false);
   });
 });

@@ -33,6 +33,7 @@ import {
   type RuntimeConfig,
 } from "@crclaunch/config";
 import { CoveIndexer } from "./indexer.js";
+import { assertMainnetChain } from "./chain-assert.js";
 import { computeFee, feeRateExceedsCap } from "./signet-proof.js";
 import { decodeMainnetCustodyAddress } from "./mainnet-custody.js";
 
@@ -328,6 +329,7 @@ async function broadcastAndConfirm(
   cfg: CoveConfig,
   indexer: CoveIndexer,
   indexedHeight: number,
+  rpc: CoreRpcProvider,
 ): Promise<number> {
   const provider = new EsploraChainProvider(esploraUrl(), "mainnet");
   const step = stepOf(manifest, action);
@@ -339,7 +341,9 @@ async function broadcastAndConfirm(
   step.signedHex = signedHex;
   saveManifest(manifest);
 
-  const broadcastTxid = await provider.broadcastTransaction(signedHex);
+  // Broadcast through CORE (the host that validated the chain + mempool), not
+  // Esplora — the validating host is the sending host (A-6).
+  const broadcastTxid = await rpc.broadcastTransaction(signedHex);
   assert(broadcastTxid === txid, `broadcast returned ${broadcastTxid}, expected ${txid}`);
   console.log(`✓ broadcast ${txid}`);
 
@@ -435,6 +439,18 @@ async function main(): Promise<void> {
   }
   console.log(`✓ replayed canonical state ${H} → ${tip}`);
 
+  // A-6: --confirm-mainnet requires a Bitcoin Core mainnet RPC on the SAME host
+  // that will broadcast, chain-verified by genesis hash, before any send.
+  const rpc = confirmMainnet
+    ? new CoreRpcProvider({ url: requireEnv("COVE_MAINNET_RPC_URL"), maxFeeRateSatVb: cfg.maxFeeRateSatVb })
+    : undefined;
+  if (rpc) {
+    const info = await rpc.getBlockchainInfo();
+    assert(info.chain === "main", `RPC chain is ${info.chain}, expected main`);
+    await assertMainnetChain(rpc);
+    console.log(`✓ Core RPC on mainnet (genesis verified; tip=${info.blocks})`);
+  }
+
   for (;;) {
     const action = decideNextCanaryAction(indexer.getState(), manifest);
     if (action === "DONE") {
@@ -469,7 +485,7 @@ async function main(): Promise<void> {
       // LOST: never construct a replacement. Re-broadcast the SAME signed tx only.
       if (confirmMainnet && step.signedHex) {
         console.log(`recorded ${action} ${step.broadcastTxid} is not in mempool/chain. Re-broadcasting the SAME signed tx (never a replacement).`);
-        indexedHeight = await broadcastAndConfirm(action, step.signedHex, manifest, cfg, indexer, indexedHeight);
+        indexedHeight = await broadcastAndConfirm(action, step.signedHex, manifest, cfg, indexer, indexedHeight, rpc!);
         continue; // re-decide
       }
       console.log(`recorded ${action} ${step.broadcastTxid} is not in mempool/chain. Re-run with --confirm-mainnet to re-broadcast the SAME tx; refusing to construct a replacement.`);
@@ -499,15 +515,16 @@ async function main(): Promise<void> {
     console.log(`  fee      ${fee.feeSats} sats (${fee.vsize} vB, ${fee.feeRate} sat/vB)`);
 
     // Core RPC testmempoolaccept — REQUIRED to broadcast under --confirm-mainnet.
-    if (RPC_URL) {
-      const rpc = new CoreRpcProvider({ url: RPC_URL, maxFeeRateSatVb: cfg.maxFeeRateSatVb });
-      const info = await rpc.getBlockchainInfo();
-      assert(info.chain === "main", `RPC chain is ${info.chain}, expected main`);
-      const pre = await rpc.testMempoolAccept(signedHex, cfg.maxFeeRateSatVb);
+    if (confirmMainnet) {
+      // rpc is guaranteed present (created + chain-verified above).
+      const pre = await rpc!.testMempoolAccept(signedHex, cfg.maxFeeRateSatVb);
       assert(pre.allowed, `testmempoolaccept rejected: ${pre.rejectReason ?? "unknown"}`);
-      console.log(`✓ testmempoolaccept allowed (chain=${info.chain}, tip=${info.blocks})`);
-    } else if (confirmMainnet) {
-      throw new Error("--confirm-mainnet requires COVE_MAINNET_RPC_URL (Bitcoin Core mainnet RPC) and a successful testmempoolaccept. Broadcasting is forbidden without Core.");
+      console.log(`✓ testmempoolaccept allowed`);
+    } else if (RPC_URL) {
+      // Optional preflight for the non-broadcast "validate + summarize" flow.
+      const pre = await new CoreRpcProvider({ url: RPC_URL, maxFeeRateSatVb: cfg.maxFeeRateSatVb }).testMempoolAccept(signedHex, cfg.maxFeeRateSatVb);
+      assert(pre.allowed, `testmempoolaccept rejected: ${pre.rejectReason ?? "unknown"}`);
+      console.log(`✓ testmempoolaccept allowed (preflight; no broadcast)`);
     } else {
       console.log("⚠ no COVE_MAINNET_RPC_URL set — skipped testmempoolaccept (broadcast is disabled without --confirm-mainnet).");
     }
@@ -519,7 +536,7 @@ async function main(): Promise<void> {
       process.exit(0);
     }
 
-    indexedHeight = await broadcastAndConfirm(action, signedHex, manifest, cfg, indexer, indexedHeight);
+    indexedHeight = await broadcastAndConfirm(action, signedHex, manifest, cfg, indexer, indexedHeight, rpc!);
   }
 }
 

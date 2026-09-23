@@ -10,8 +10,15 @@ import type { BitcoinChainProvider } from "@crclaunch/bitcoin";
  */
 export const SIGNET_GENESIS_HASH = "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6";
 
+/** Bitcoin mainnet genesis block hash. */
+export const MAINNET_GENESIS_HASH = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+
 export function isSignetGenesis(hash: string): boolean {
   return hash.toLowerCase() === SIGNET_GENESIS_HASH;
+}
+
+export function isMainnetGenesis(hash: string): boolean {
+  return hash.toLowerCase() === MAINNET_GENESIS_HASH;
 }
 
 /**
@@ -24,6 +31,21 @@ export async function assertSignetChain(provider: Pick<BitcoinChainProvider, "ge
   if (!isSignetGenesis(genesis)) {
     throw new Error(
       `genesis block hash ${genesis} is not signet (${SIGNET_GENESIS_HASH}); refusing to proceed on a non-signet chain`,
+    );
+  }
+}
+
+/**
+ * Refuse to broadcast unless the Core provider is on Bitcoin mainnet. This runs
+ * on the SAME host that will broadcast, so a misconfigured RPC URL (testnet,
+ * signet, or a hostile node) cannot be used to send the canary to the wrong
+ * chain.
+ */
+export async function assertMainnetChain(provider: Pick<BitcoinChainProvider, "getBlockHash">): Promise<void> {
+  const genesis = await provider.getBlockHash(0);
+  if (!isMainnetGenesis(genesis)) {
+    throw new Error(
+      `genesis block hash ${genesis} is not mainnet (${MAINNET_GENESIS_HASH}); refusing to broadcast`,
     );
   }
 }

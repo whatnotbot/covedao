@@ -27,9 +27,7 @@ import {
   type CoveState,
 } from "@crclaunch/protocol";
 import {
-  isCoveMainnetCanaryAsserted,
   loadConfig,
-  validateConfig,
   type RuntimeConfig,
 } from "@crclaunch/config";
 import { CoveIndexer } from "./indexer.js";
@@ -83,21 +81,23 @@ function optionalEnv(key: string): string | undefined {
 }
 
 /**
- * A-1: the mainnet write gates (COVE_*_MAINNET_ENABLED, validateConfig, the
- * full canary proof) live in @crclaunch/config, which the broadcast process
- * never loaded before. This runs them BEFORE any mainnet config is touched, so
- * a mainnet broadcast is impossible unless the runtime flags are explicitly
- * enabled and the full canary proof is recorded.
+ * PRE-CANARY execution gate. This must NOT require a pre-existing canary proof:
+ * the canary is what PRODUCES that proof, so requiring it first is a circular
+ * bootstrap gate. What it does require is that public writes are still closed —
+ * the owner canary runs in a world where COVE_DEPLOY/MINT/TRANSFER_MAINNET_ENABLED
+ * are all false; public staging opens only AFTER the proof is recorded (enforced
+ * by validateConfig in @crclaunch/config, the post-canary gate).
  */
-export function assertMainnetRuntimeGates(env: NodeJS.ProcessEnv): RuntimeConfig {
+export function assertCanaryPreflightGates(env: NodeJS.ProcessEnv): RuntimeConfig {
   const runtime = loadConfig(env);
-  validateConfig(runtime);
-  if (!runtime.coveFlags.mainnetEnabled) {
-    throw new Error("COVE_MAINNET_ENABLED must be true to run the mainnet canary.");
+  const { deployMainnet, mintMainnet, transferMainnet } = runtime.coveFlags;
+  if (deployMainnet || mintMainnet || transferMainnet) {
+    throw new Error(
+      "Public write flags (COVE_DEPLOY/MINT/TRANSFER_MAINNET_ENABLED) must be false while running the owner canary. " +
+        "Public staging opens only after the canary proof is recorded.",
+    );
   }
-  if (!isCoveMainnetCanaryAsserted(runtime)) {
-    throw new Error("Cove mainnet canary proof is incomplete (needs H + DEPLOY/MINT/TRANSFER txids + matching state/replay roots).");
-  }
+  // Deliberately does NOT require COVE_MAINNET_ENABLED or a recorded canary proof.
   return runtime;
 }
 
@@ -344,6 +344,12 @@ async function broadcastAndConfirm(
   step.signedHex = signedHex;
   saveManifest(manifest);
 
+  // Invariant: EVERY mainnet broadcast (including the LOST/resume re-broadcast
+  // path) is preceded by a successful testmempoolaccept on the Core host.
+  const pre = await rpc.testMempoolAccept(signedHex, cfg.maxFeeRateSatVb);
+  assert(pre.allowed, `testmempoolaccept rejected: ${pre.rejectReason ?? "unknown"}`);
+  console.log(`✓ testmempoolaccept allowed before broadcast`);
+
   // Broadcast through CORE (the host that validated the chain + mempool), not
   // Esplora — the validating host is the sending host (A-6).
   const broadcastTxid = await rpc.broadcastTransaction(signedHex);
@@ -379,8 +385,8 @@ function broadcastTxidMatches(step: CanaryStep, txid: string): boolean {
 async function main(): Promise<void> {
   const confirmMainnet = process.argv.includes("--confirm-mainnet");
 
-  // Runtime write gates (A-1) run first, before any mainnet config is used.
-  assertMainnetRuntimeGates(process.env);
+  // Pre-canary gate (public writes closed; NO pre-existing proof required).
+  assertCanaryPreflightGates(process.env);
 
   // Committed consensus config — env never defines it.
   const cfg: CoveConfig = COVE_V1_MAINNET_CONFIG;

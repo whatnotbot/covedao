@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useWallet } from "@/components/WalletProvider";
+import { verifyWalletTransaction } from "@/lib/verify-wallet-tx";
 
 const TOKENOMICS = [
   ["Supply", "1,000,000,000"],
@@ -64,6 +65,7 @@ export default function LaunchPage() {
         return;
       }
 
+      verifyWalletTransaction(bj.data.unsignedTx, address);
       const signed = await signPsbt(bj.data.unsignedTx.psbtBase64);
       const c = await fetch("/api/launch/broadcast", {
         method: "POST",

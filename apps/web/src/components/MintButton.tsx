@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWallet } from "./WalletProvider";
 import { fmtSats, fmtTokens } from "@/lib/format";
+import { verifyWalletTransaction } from "@/lib/verify-wallet-tx";
+import type { UnsignedProtocolTransaction } from "@crclaunch/protocol";
 
 interface Quote {
   quoteId: string;
@@ -34,7 +36,7 @@ export function MintButton({
   const [mode, setMode] = useState<"EXACT_TOKENS" | "EXACT_SATS">("EXACT_TOKENS");
   const [amount, setAmount] = useState("");
   const [quote, setQuote] = useState<Quote | null>(null);
-  const [unsigned, setUnsigned] = useState<{ psbtBase64: string } | null>(null);
+  const [unsigned, setUnsigned] = useState<UnsignedProtocolTransaction | null>(null);
   const [step, setStep] = useState<"quote" | "review" | "done">("quote");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +117,8 @@ export function MintButton({
     setBusy(true);
     setError(null);
     try {
-      const signed = await signPsbt(unsigned.psbtBase64);
+      verifyWalletTransaction(unsigned, address);
+      const signed = await signPsbt(unsigned.psbtBase64!);
       const res = await fetch("/api/mint/broadcast", {
         method: "POST",
         headers: { "content-type": "application/json" },

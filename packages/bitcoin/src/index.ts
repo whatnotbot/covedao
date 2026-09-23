@@ -41,6 +41,8 @@ export {
 export {
   LocalP2WPKHSigner,
   decodeUnsignedOutputs,
+  decodePsbtOutputs,
+  scriptToAddress,
   psbtIntent,
   type WalletSigner,
   type SignPsbtIntent,

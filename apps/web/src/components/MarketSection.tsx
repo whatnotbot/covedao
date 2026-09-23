@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "./WalletProvider";
 import { fmtPricePerMillion, fmtSats, fmtTokens } from "@/lib/format";
+import { verifyWalletTransaction } from "@/lib/verify-wallet-tx";
 
 interface Listing {
   listingId: string;
@@ -55,6 +56,7 @@ export function MarketSection({ deploymentId, ticker }: { deploymentId: string; 
         setError(bj.error?.message ?? "Build failed.");
         return;
       }
+      verifyWalletTransaction(bj.data.unsignedTx, address);
       const signed = await signPsbt(bj.data.unsignedTx.psbtBase64);
       const c = await fetch("/api/market/broadcast", {
         method: "POST",

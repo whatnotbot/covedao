@@ -181,8 +181,20 @@ export class CoveStore {
           target: [schema.coveBlocks.network, schema.coveBlocks.height],
           set: { hash, parentHash, canonical: true },
         });
-      // operations
+      // operations — with a persistence-layer replay guard (B-7). A txid re-applied
+      // at a DIFFERENT height than it was first recorded is a replay, not idempotent
+      // re-persistence, and must be rejected before any future loadState fast-path.
       for (const e of events) {
+        const existing = await tx
+          .select()
+          .from(schema.coveOperations)
+          .where(and(eq(schema.coveOperations.network, network), eq(schema.coveOperations.txid, e.txid)))
+          .execute();
+        if (existing[0] && existing[0].blockHeight !== BigInt(e.blockHeight)) {
+          throw new Error(
+            `REPLAY: txid ${e.txid} re-applied at height ${e.blockHeight} (already recorded at ${existing[0].blockHeight})`,
+          );
+        }
         await tx
           .insert(schema.coveOperations)
           .values({

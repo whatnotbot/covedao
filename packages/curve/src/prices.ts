@@ -1,6 +1,6 @@
-import type { Sats, TokenAtoms } from "./types.js";
+import type { Sats, DisplayTokens } from "./types.js";
 import {
-  PUBLIC_SUPPLY_ATOMS,
+  PUBLIC_SUPPLY_TOKENS,
   STAGE_COUNT,
   STAGE_PRICES_SATS_PER_MILLION,
   TOKENS_PER_STAGE,
@@ -24,11 +24,11 @@ export function isCurveError(e: unknown): e is CurveError {
  * Supply of 0 → stage 1. Supply of exactly 42,000,000 → stage 2.
  * At/above public supply the result is clamped to stage 20 (sold out).
  */
-export function getStageForSupply(supply: TokenAtoms): number {
+export function getStageForSupply(supply: DisplayTokens): number {
   if (supply < 0n) {
     throw new CurveError("NEGATIVE_SUPPLY", "Supply cannot be negative.");
   }
-  if (supply >= PUBLIC_SUPPLY_ATOMS) {
+  if (supply >= PUBLIC_SUPPLY_TOKENS) {
     return STAGE_COUNT;
   }
   const stage = Number(supply / TOKENS_PER_STAGE) + 1;
@@ -49,8 +49,8 @@ export function getStagePrice(stage: number): Sats {
 
 /** Inclusive [start, end] supply range (in atoms) for a stage. */
 export function getStageSupplyRange(stage: number): {
-  start: TokenAtoms;
-  end: TokenAtoms;
+  start: DisplayTokens;
+  end: DisplayTokens;
 } {
   if (!Number.isInteger(stage) || stage < 1 || stage > STAGE_COUNT) {
     throw new CurveError(

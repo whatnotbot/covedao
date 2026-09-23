@@ -22,7 +22,7 @@ import {
 } from "@crclaunch/db";
 import type { MockChainNode, MockCRCAdapter } from "@crclaunch/protocol";
 import type { RuntimeConfig } from "@crclaunch/config";
-import { PUBLIC_SUPPLY_ATOMS, TOTAL_SUPPLY_ATOMS, GRADUATION_RESERVE_ATOMS } from "@crclaunch/curve";
+import { PUBLIC_SUPPLY_TOKENS, TOTAL_SUPPLY_TOKENS, GRADUATION_RESERVE_TOKENS } from "@crclaunch/curve";
 import type { TokenStatus } from "@crclaunch/db";
 import {
   getBlock,
@@ -96,9 +96,9 @@ export async function syncMockToDb(db: Database, node: MockChainNode, network: s
           creatorAddress: mt.creatorAddress,
           network,
           status: target,
-          totalSupplyAtoms: TOTAL_SUPPLY_ATOMS,
-          publicSupplyAtoms: PUBLIC_SUPPLY_ATOMS,
-          reserveSupplyAtoms: GRADUATION_RESERVE_ATOMS,
+          totalSupplyAtoms: TOTAL_SUPPLY_TOKENS,
+          publicSupplyAtoms: PUBLIC_SUPPLY_TOKENS,
+          reserveSupplyAtoms: GRADUATION_RESERVE_TOKENS,
         });
         await updateTokenState(tx, row.id, {
           confirmedMintedAtoms: mt.confirmedMintedAtoms,

@@ -7,7 +7,7 @@ import {
   isCurveError,
   STAGE_PRICES_SATS_PER_MILLION,
   TOKENS_PER_STAGE,
-  PUBLIC_SUPPLY_ATOMS,
+  PUBLIC_SUPPLY_TOKENS,
   STAGE_COUNT,
 } from "../src/index.js";
 
@@ -49,8 +49,8 @@ describe("stage pricing", () => {
   });
 
   it("supply at/above public supply clamps to final stage", () => {
-    expect(getStageForSupply(PUBLIC_SUPPLY_ATOMS)).toBe(STAGE_COUNT);
-    expect(getStageForSupply(PUBLIC_SUPPLY_ATOMS + 1n)).toBe(STAGE_COUNT);
+    expect(getStageForSupply(PUBLIC_SUPPLY_TOKENS)).toBe(STAGE_COUNT);
+    expect(getStageForSupply(PUBLIC_SUPPLY_TOKENS + 1n)).toBe(STAGE_COUNT);
   });
 
   it("negative supply throws", () => {

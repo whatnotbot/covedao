@@ -1,9 +1,10 @@
 import { CoreRpcProvider, decodeRawTransaction, type BitcoinProtocolTx } from "@crclaunch/bitcoin";
-import { parseCoveEnvelope } from "@crclaunch/protocol";
+import { isCoveMagic } from "@crclaunch/protocol";
 import { CoveIndexer } from "./indexer.js";
 import { COVE_SIGNET_CONFIG } from "./config.js";
 
 const DEFAULT_RPC_URL = "https://bitcoin-signet-rpc.publicnode.com";
+const GENESIS = COVE_SIGNET_CONFIG.genesisHeight;
 
 function argValue(flag: string, fallback?: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -23,34 +24,37 @@ function intArg(flag: string, fallback: number): number {
   return n;
 }
 
-/**
- * A transaction is a Cove candidate only if vout 0 carries an OP_RETURN whose
- * payload parses as a Cove V1 envelope. Non-Cove txs (99.99% of signet) skip
- * prevout resolution entirely, keeping the scan cheap.
- */
+/** A tx is a Cove candidate only if some canonical OP_RETURN carries Cove magic. */
 function isCoveCandidate(tx: BitcoinProtocolTx): boolean {
-  const data = tx.outputs[0]?.opReturnData;
-  if (!data) return false;
-  return parseCoveEnvelope(data).ok;
+  for (const out of tx.outputs) {
+    const data = out.opReturnData;
+    if (data && isCoveMagic(data)) return true;
+  }
+  return false;
 }
 
-/** Resolve input 0's spent-UTXO scriptPubKey from the full node. */
+/** Resolve input 0's spent-UTXO scriptPubKey from the full node (direct only). */
 async function resolveActor(provider: CoreRpcProvider, tx: BitcoinProtocolTx): Promise<void> {
   const input0 = tx.inputs[0];
   if (!input0 || input0.prevScriptPubKeyHex) return;
   if (input0.prevTxid === "0".repeat(64)) return; // coinbase
-  const prevRaw = await provider.getRawTransaction(input0.prevTxid);
-  const prev = decodeRawTransaction(prevRaw, "signet");
-  const out = prev.outputs[input0.vout];
-  if (out) input0.prevScriptPubKeyHex = out.scriptPubKeyHex;
+  const prevOut = await provider.getPrevout(input0.prevTxid, input0.vout);
+  if (prevOut) input0.prevScriptPubKeyHex = prevOut.scriptPubKeyHex;
+}
+
+async function requireSignet(provider: CoreRpcProvider): Promise<void> {
+  const info = await provider.getBlockchainInfo();
+  if (info.chain !== "signet") {
+    throw new Error(`Chain mismatch: expected signet, got ${info.chain}. Refusing to index.`);
+  }
 }
 
 async function scanRange(
   provider: CoreRpcProvider,
   from: number,
   to: number,
-): Promise<CoveIndexer> {
-  const indexer = new CoveIndexer(COVE_SIGNET_CONFIG);
+  indexer: CoveIndexer,
+): Promise<void> {
   for (let h = from; h <= to; h++) {
     const hash = await provider.getBlockHash(h);
     const block = await provider.getBlock(hash);
@@ -65,37 +69,44 @@ async function scanRange(
     indexer.processBlock(h, txs);
     process.stderr.write(`  indexed block ${h} (${block.rawTxs.length} txs)\n`);
   }
-  return indexer;
 }
 
 function printStats(label: string, indexer: CoveIndexer): void {
   const s = indexer.getStats();
   console.log(`\n${label}`);
-  console.log(`  blocks        ${s.processedBlocks}`);
-  console.log(`  transactions  ${s.processedTxs}`);
-  console.log(`  cove txs      ${s.coveTxs}`);
-  console.log(`  valid ops     ${s.validOps}`);
-  console.log(`  invalid ops   ${s.invalidOps}`);
-  console.log(`  tokens        ${s.tokens}`);
-  console.log(`  reserve sats  ${s.reserveSats}`);
-  console.log(`  treasury sats ${s.treasurySats}`);
-  console.log(`  state root    ${s.stateRoot}`);
+  console.log(`  blocks            ${s.processedBlocks}`);
+  console.log(`  transactions      ${s.processedTxs}`);
+  console.log(`  cove candidates   ${s.coveCandidateTxs}`);
+  console.log(`  valid ops         ${s.validOps}`);
+  console.log(`  invalid ops       ${s.invalidOps}`);
+  console.log(`  tokens            ${s.tokens}`);
+  console.log(`  reserve sats      ${s.reserveSats}`);
+  console.log(`  treasury sats     ${s.treasurySats}`);
+  console.log(`  state root        ${s.stateRoot}`);
 }
 
 async function cmdIndex(): Promise<void> {
   const provider = new CoreRpcProvider({ url: process.env.COVE_RPC_URL ?? DEFAULT_RPC_URL });
+  await requireSignet(provider);
   const tip = await provider.getBestHeight();
   const to = intArg("--to", tip);
-  const from = intArg("--from", Math.max(0, to - 4));
-  console.log(`Cove index: signet blocks ${from}..${to} (tip ${tip})`);
-  const indexer = await scanRange(provider, from, to);
-  printStats("Indexed state", indexer);
+  const fromFlag = argValue("--from");
+  const from = fromFlag !== undefined ? intArg("--from", GENESIS) : GENESIS;
+  const canonical = fromFlag === undefined;
+  console.log(`Cove index: signet blocks ${from}..${to} (tip ${tip}, genesis ${GENESIS})`);
+  if (!canonical) {
+    console.log("  ⚠ NON-CANONICAL PARTIAL SCAN: --from is above genesis; state root is NOT canonical.");
+  }
+  const indexer = new CoveIndexer(COVE_SIGNET_CONFIG);
+  await scanRange(provider, from, to, indexer);
+  printStats(canonical ? "Canonical indexed state" : "PARTIAL indexed state", indexer);
+
   const events = indexer.getEvents();
   if (events.length > 0) {
     console.log(`\nCove activity (${events.length} events):`);
     for (const e of events) {
       console.log(
-        `  h=${e.blockHeight} ${e.txid} op=${e.operation} valid=${e.valid} reason=${e.reason}`,
+        `  h=${e.blockHeight} tx=${e.txIndex} ${e.txid} op=${e.operation} class=${e.classification} valid=${e.valid} reason=${e.reason}`,
       );
     }
   } else {
@@ -105,17 +116,21 @@ async function cmdIndex(): Promise<void> {
 
 async function cmdVerify(): Promise<void> {
   const provider = new CoreRpcProvider({ url: process.env.COVE_RPC_URL ?? DEFAULT_RPC_URL });
+  await requireSignet(provider);
   const tip = await provider.getBestHeight();
   const to = intArg("--to", tip);
-  const from = intArg("--from", Math.max(0, to - 4));
-  console.log(`Cove verify: independently re-indexing signet blocks ${from}..${to}`);
-  const a = await scanRange(provider, from, to);
-  const b = await scanRange(provider, from, to);
+  console.log(`Cove verify: clean state from genesis ${GENESIS}..${to}`);
+  const a = new CoveIndexer(COVE_SIGNET_CONFIG);
+  await scanRange(provider, GENESIS, to, a);
+  const b = new CoveIndexer(COVE_SIGNET_CONFIG);
+  await scanRange(provider, GENESIS, to, b);
   const ra = a.getStateRoot();
   const rb = b.getStateRoot();
   console.log(`  run A root ${ra}`);
   console.log(`  run B root ${rb}`);
-  if (ra === rb) {
+  console.log(`  tokens    ${a.getStats().tokens} / ${b.getStats().tokens}`);
+  console.log(`  valid ops ${a.getStats().validOps} / ${b.getStats().validOps}`);
+  if (ra === rb && a.getStats().tokens === b.getStats().tokens) {
     console.log("  REPLAY-DETERMINISTIC ✓");
   } else {
     console.error("  REPLAY MISMATCH ✗ (determinism violated)");
@@ -126,17 +141,19 @@ async function cmdVerify(): Promise<void> {
 function cmdStatus(): void {
   const empty = new CoveIndexer(COVE_SIGNET_CONFIG);
   console.log("Cove V1 status (Bitcoin signet)");
-  console.log(`  protocol            cove`);
-  console.log(`  version             1`);
-  console.log(`  network             signet`);
-  console.log(`  rpc                 ${process.env.COVE_RPC_URL ?? DEFAULT_RPC_URL}`);
-  console.log(`  treasury (P2TR)     ${COVE_SIGNET_CONFIG.treasuryScript}  [PLACEHOLDER]`);
-  console.log(`  reserve  (P2WPKH)   ${COVE_SIGNET_CONFIG.reserveScript}  [PLACEHOLDER]`);
-  console.log(`  launch fee          10,000 sats`);
-  console.log(`  primary mint fee    1.00%`);
-  console.log(`  empty-state root    ${empty.getStateRoot()}`);
-  console.log(`\n  NOTE: treasury/reserve are placeholder scripts for this sprint;`);
-  console.log(`        no one holds keys for them. Replace before any deployment.`);
+  console.log(`  protocol          cove`);
+  console.log(`  version           1`);
+  console.log(`  network           signet`);
+  console.log(`  rpc               ${process.env.COVE_RPC_URL ?? DEFAULT_RPC_URL}`);
+  console.log(`  activation height ${GENESIS}`);
+  console.log(`  settlement script ${COVE_SIGNET_CONFIG.settlementScript} (P2WPKH, signet test key)`);
+  console.log(`  treasury script   ${COVE_SIGNET_CONFIG.treasuryScript} (P2WPKH, signet test key)`);
+  console.log(`  launch fee        10,000 sats`);
+  console.log(`  primary mint fee  1.00%`);
+  console.log(`  min contribution  1,000 sats`);
+  console.log(`  empty-state root  ${empty.getStateRoot()}`);
+  console.log(`\n  NOTE: settlement/treasury are signet TEST keys (see .cove-signet-keys.json,`);
+  console.log(`        gitignored). Mainnet destinations are undefined.`);
 }
 
 const cmd = process.argv[2];

@@ -4,7 +4,7 @@ import {
   quoteExactSats,
   getStagePrice,
   CurveError,
-  PUBLIC_SUPPLY_ATOMS,
+  PUBLIC_SUPPLY_TOKENS,
   TOKENS_PER_STAGE,
 } from "../src/index.js";
 
@@ -66,10 +66,10 @@ describe("quoteExactTokens (EXACT_TOKENS)", () => {
 
   it("CURVE-010: request greater than remaining public supply is rejected", () => {
     expect(() =>
-      quoteExactTokens({ desiredTokens: PUBLIC_SUPPLY_ATOMS + 1n, currentSupply: 0n }),
+      quoteExactTokens({ desiredTokens: PUBLIC_SUPPLY_TOKENS + 1n, currentSupply: 0n }),
     ).toThrow(CurveError);
     expect(() =>
-      quoteExactTokens({ desiredTokens: 2n, currentSupply: PUBLIC_SUPPLY_ATOMS - 1n }),
+      quoteExactTokens({ desiredTokens: 2n, currentSupply: PUBLIC_SUPPLY_TOKENS - 1n }),
     ).toThrow(CurveError);
   });
 
@@ -130,13 +130,13 @@ describe("quoteExactSats (EXACT_SATS)", () => {
 
   it("full supply is purchasable at exactly 24,196,788 sats", () => {
     const q = quoteExactSats({ availableSats: 24_196_788n, currentSupply: 0n });
-    expect(q.tokens).toBe(PUBLIC_SUPPLY_ATOMS);
+    expect(q.tokens).toBe(PUBLIC_SUPPLY_TOKENS);
     expect(q.curveContributionSats).toBe(24_196_788n);
   });
 
   it("remainder stays in wallet (never overspends)", () => {
     const q = quoteExactSats({ availableSats: 24_196_788n + 500n, currentSupply: 0n });
-    expect(q.tokens).toBe(PUBLIC_SUPPLY_ATOMS);
+    expect(q.tokens).toBe(PUBLIC_SUPPLY_TOKENS);
     expect(q.curveContributionSats).toBe(24_196_788n); // 500 sats remainder stays in wallet
   });
 
@@ -152,13 +152,13 @@ describe("quoteExactSats (EXACT_SATS)", () => {
 
   it("sold-out supply rejected", () => {
     expect(() =>
-      quoteExactSats({ availableSats: 1_000n, currentSupply: PUBLIC_SUPPLY_ATOMS }),
+      quoteExactSats({ availableSats: 1_000n, currentSupply: PUBLIC_SUPPLY_TOKENS }),
     ).toThrow(CurveError);
   });
 
   it("EXACT_SATS with huge sats never overspends and caps at public supply", () => {
     const q = quoteExactSats({ availableSats: 2n ** 64n, currentSupply: 0n });
-    expect(q.tokens).toBe(PUBLIC_SUPPLY_ATOMS);
+    expect(q.tokens).toBe(PUBLIC_SUPPLY_TOKENS);
     expect(q.curveContributionSats).toBe(24_196_788n);
   });
 });

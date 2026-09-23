@@ -1,9 +1,9 @@
-import type { Sats, TokenAtoms } from "./types.js";
+import type { Sats, DisplayTokens } from "./types.js";
 import {
-  GRADUATION_RESERVE_ATOMS,
-  PUBLIC_SUPPLY_ATOMS,
+  GRADUATION_RESERVE_TOKENS,
+  PUBLIC_SUPPLY_TOKENS,
   STAGE_PRICES_SATS_PER_MILLION,
-  TOTAL_SUPPLY_ATOMS,
+  TOTAL_SUPPLY_TOKENS,
   TOKENS_PER_STAGE,
 } from "./constants.js";
 
@@ -25,10 +25,10 @@ export function getTheoreticalFullRaise(): Sats {
  * in tests. Production always validates the canonical constants.
  */
 export interface CurveConfigInput {
-  totalSupplyAtoms?: TokenAtoms;
-  publicSupplyAtoms?: TokenAtoms;
-  reserveSupplyAtoms?: TokenAtoms;
-  tokensPerStage?: TokenAtoms;
+  totalSupplyTokens?: DisplayTokens;
+  publicSupplyTokens?: DisplayTokens;
+  reserveSupplyTokens?: DisplayTokens;
+  tokensPerStage?: DisplayTokens;
   stagePrices?: readonly Sats[];
 }
 
@@ -37,14 +37,14 @@ export interface CurveConfigInput {
  * list of invariant violations (empty when valid).
  */
 export function validateCurveConfig(input: CurveConfigInput = {}): string[] {
-  const total = input.totalSupplyAtoms ?? TOTAL_SUPPLY_ATOMS;
-  const publicSupply = input.publicSupplyAtoms ?? PUBLIC_SUPPLY_ATOMS;
-  const reserve = input.reserveSupplyAtoms ?? GRADUATION_RESERVE_ATOMS;
+  const total = input.totalSupplyTokens ?? TOTAL_SUPPLY_TOKENS;
+  const publicSupply = input.publicSupplyTokens ?? PUBLIC_SUPPLY_TOKENS;
+  const reserve = input.reserveSupplyTokens ?? GRADUATION_RESERVE_TOKENS;
   const tokensPerStage = input.tokensPerStage ?? TOKENS_PER_STAGE;
   const prices = input.stagePrices ?? STAGE_PRICES_SATS_PER_MILLION;
 
   const problems: string[] = [];
-  if (total !== 1_000_000_000n) problems.push("TOTAL_SUPPLY_ATOMS must be 1B.");
+  if (total !== 1_000_000_000n) problems.push("TOTAL_SUPPLY_TOKENS must be 1B.");
   if (publicSupply + reserve !== total) {
     problems.push("public + reserve must equal total supply.");
   }
@@ -69,18 +69,18 @@ export function validateCurveConfig(input: CurveConfigInput = {}): string[] {
   return problems;
 }
 
-export function getPublicMintProgress(supply: TokenAtoms): {
-  mintedAtoms: TokenAtoms;
-  totalAtoms: TokenAtoms;
+export function getPublicMintProgress(supply: DisplayTokens): {
+  mintedTokens: DisplayTokens;
+  totalTokens: DisplayTokens;
   /** Basis points minted (0..10000). */
   bps: number;
 } {
-  const clamped = supply < 0n ? 0n : supply > PUBLIC_SUPPLY_ATOMS ? PUBLIC_SUPPLY_ATOMS : supply;
-  const bps = Number((clamped * 10_000n) / PUBLIC_SUPPLY_ATOMS);
-  return { mintedAtoms: clamped, totalAtoms: PUBLIC_SUPPLY_ATOMS, bps };
+  const clamped = supply < 0n ? 0n : supply > PUBLIC_SUPPLY_TOKENS ? PUBLIC_SUPPLY_TOKENS : supply;
+  const bps = Number((clamped * 10_000n) / PUBLIC_SUPPLY_TOKENS);
+  return { mintedTokens: clamped, totalTokens: PUBLIC_SUPPLY_TOKENS, bps };
 }
 
-export function getRemainingPublicSupply(supply: TokenAtoms): TokenAtoms {
-  const remaining = PUBLIC_SUPPLY_ATOMS - supply;
+export function getRemainingPublicSupply(supply: DisplayTokens): DisplayTokens {
+  const remaining = PUBLIC_SUPPLY_TOKENS - supply;
   return remaining < 0n ? 0n : remaining;
 }

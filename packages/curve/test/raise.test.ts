@@ -4,11 +4,11 @@ import {
   validateCurveConfig,
   getPublicMintProgress,
   getRemainingPublicSupply,
-  PUBLIC_SUPPLY_ATOMS,
-  TOTAL_SUPPLY_ATOMS,
-  GRADUATION_RESERVE_ATOMS,
-  CREATOR_PREMINE_ATOMS,
-  TEAM_ALLOCATION_ATOMS,
+  PUBLIC_SUPPLY_TOKENS,
+  TOTAL_SUPPLY_TOKENS,
+  GRADUATION_RESERVE_TOKENS,
+  CREATOR_PREMINE_TOKENS,
+  TEAM_ALLOCATION_TOKENS,
   STAGE_COUNT,
   STAGE_PRICES_SATS_PER_MILLION,
 } from "../src/index.js";
@@ -30,11 +30,11 @@ describe("raise economics", () => {
 
   it("validateCurveConfig flags each invariant violation", () => {
     const prices = [...STAGE_PRICES_SATS_PER_MILLION];
-    expect(validateCurveConfig({ totalSupplyAtoms: 999_999_999n })).toContain(
-      "TOTAL_SUPPLY_ATOMS must be 1B.",
+    expect(validateCurveConfig({ totalSupplyTokens: 999_999_999n })).toContain(
+      "TOTAL_SUPPLY_TOKENS must be 1B.",
     );
     expect(
-      validateCurveConfig({ publicSupplyAtoms: 800_000_000n, reserveSupplyAtoms: 100_000_000n }),
+      validateCurveConfig({ publicSupplyTokens: 800_000_000n, reserveSupplyTokens: 100_000_000n }),
     ).toContain("public + reserve must equal total supply.");
     expect(validateCurveConfig({ stagePrices: prices.slice(0, 19) })).toContain(
       "Must be exactly 20 stages.",
@@ -58,23 +58,23 @@ describe("raise economics", () => {
   });
 
   it("V1 tokenomics are standardized (84/16, zero premine/team)", () => {
-    expect(TOTAL_SUPPLY_ATOMS).toBe(1_000_000_000n);
-    expect(PUBLIC_SUPPLY_ATOMS).toBe(840_000_000n);
-    expect(GRADUATION_RESERVE_ATOMS).toBe(160_000_000n);
-    expect(CREATOR_PREMINE_ATOMS).toBe(0n);
-    expect(TEAM_ALLOCATION_ATOMS).toBe(0n);
-    expect(PUBLIC_SUPPLY_ATOMS + GRADUATION_RESERVE_ATOMS).toBe(TOTAL_SUPPLY_ATOMS);
+    expect(TOTAL_SUPPLY_TOKENS).toBe(1_000_000_000n);
+    expect(PUBLIC_SUPPLY_TOKENS).toBe(840_000_000n);
+    expect(GRADUATION_RESERVE_TOKENS).toBe(160_000_000n);
+    expect(CREATOR_PREMINE_TOKENS).toBe(0n);
+    expect(TEAM_ALLOCATION_TOKENS).toBe(0n);
+    expect(PUBLIC_SUPPLY_TOKENS + GRADUATION_RESERVE_TOKENS).toBe(TOTAL_SUPPLY_TOKENS);
     expect(STAGE_COUNT).toBe(20);
   });
 
   it("getPublicMintProgress computes integer basis points", () => {
     expect(getPublicMintProgress(0n)).toEqual({
-      mintedAtoms: 0n,
-      totalAtoms: PUBLIC_SUPPLY_ATOMS,
+      mintedTokens: 0n,
+      totalTokens: PUBLIC_SUPPLY_TOKENS,
       bps: 0,
     });
-    expect(getPublicMintProgress(PUBLIC_SUPPLY_ATOMS).bps).toBe(10_000);
-    expect(getPublicMintProgress(PUBLIC_SUPPLY_ATOMS / 2n).bps).toBe(5_000);
+    expect(getPublicMintProgress(PUBLIC_SUPPLY_TOKENS).bps).toBe(10_000);
+    expect(getPublicMintProgress(PUBLIC_SUPPLY_TOKENS / 2n).bps).toBe(5_000);
     // 63% example from spec.
     const p = getPublicMintProgress(529_200_000n);
     expect(p.bps).toBe(6_300);
@@ -85,11 +85,11 @@ describe("raise economics", () => {
   });
 
   it("getPublicMintProgress clamps over-supply to full", () => {
-    expect(getPublicMintProgress(PUBLIC_SUPPLY_ATOMS + 1n).bps).toBe(10_000);
+    expect(getPublicMintProgress(PUBLIC_SUPPLY_TOKENS + 1n).bps).toBe(10_000);
   });
 
   it("getRemainingPublicSupply clamps at zero", () => {
-    expect(getRemainingPublicSupply(0n)).toBe(PUBLIC_SUPPLY_ATOMS);
+    expect(getRemainingPublicSupply(0n)).toBe(PUBLIC_SUPPLY_TOKENS);
     expect(getRemainingPublicSupply(840_000_000n)).toBe(0n);
     expect(getRemainingPublicSupply(900_000_000n)).toBe(0n);
   });

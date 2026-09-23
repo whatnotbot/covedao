@@ -36,3 +36,4 @@ blob-report/
 .local/
 data/
 uploads/
+.cove-signet-keys.json

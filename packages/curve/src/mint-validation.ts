@@ -1,6 +1,6 @@
-import { PUBLIC_SUPPLY_ATOMS } from "./constants.js";
+import { PUBLIC_SUPPLY_TOKENS } from "./constants.js";
 import { quoteExactTokens } from "./quote.js";
-import type { Sats, TokenAtoms } from "./types.js";
+import type { Sats, DisplayTokens } from "./types.js";
 
 /**
  * Canonical mint validation rule for the `crc-launch-v1` profile (proposed).
@@ -16,12 +16,12 @@ export interface CanonicalMintInput {
   profile: string;
   tickerExists: boolean;
   /** Confirmed canonical public supply in token units (1 token = 1 unit). */
-  confirmedSupplyTokens: TokenAtoms;
-  requestedAmountTokens: TokenAtoms;
+  confirmedSupplyTokens: DisplayTokens;
+  requestedAmountTokens: DisplayTokens;
   paymentSats: Sats;
   replayed: boolean;
   /** Supply the operation was built against; mismatch ⇒ stale-state rejection. */
-  claimedSupplyBeforeTokens?: TokenAtoms;
+  claimedSupplyBeforeTokens?: DisplayTokens;
 }
 
 export interface CanonicalMintResult {
@@ -51,7 +51,7 @@ export function validateCanonicalMint(input: CanonicalMintInput): CanonicalMintR
   ) {
     return { valid: false, requiredPaymentSats: null, reason: "stale supply" };
   }
-  const remaining = PUBLIC_SUPPLY_ATOMS - input.confirmedSupplyTokens;
+  const remaining = PUBLIC_SUPPLY_TOKENS - input.confirmedSupplyTokens;
   if (input.requestedAmountTokens > remaining) {
     return { valid: false, requiredPaymentSats: null, reason: "exceeds remaining public supply" };
   }

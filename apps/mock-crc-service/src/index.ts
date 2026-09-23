@@ -13,14 +13,14 @@ import {
   getStageForSupply,
   quoteExactTokens,
   getRemainingPublicSupply,
-  TOTAL_SUPPLY_ATOMS,
-  PUBLIC_SUPPLY_ATOMS,
+  TOTAL_SUPPLY_TOKENS,
+  PUBLIC_SUPPLY_TOKENS,
 } from "@crclaunch/curve";
 
 const PORT = Number(process.env.PORT ?? 4390);
 const DECIMALS = 8;
 const ONE = 10n ** BigInt(DECIMALS);
-const MAX_ATOMS = TOTAL_SUPPLY_ATOMS * ONE;
+const MAX_ATOMS = TOTAL_SUPPLY_TOKENS * ONE;
 
 interface Token {
   deploymentId: string;
@@ -118,7 +118,7 @@ const server = createServer(async (req, res) => {
         return json(res, 400, { authorized: false, reason: e instanceof Error ? e.message : "invalid mint" });
       }
       token.confirmedMintedAtoms = quote.supplyAfter * ONE;
-      if (token.confirmedMintedAtoms >= PUBLIC_SUPPLY_ATOMS * ONE) token.status = "SOLD_OUT";
+      if (token.confirmedMintedAtoms >= PUBLIC_SUPPLY_TOKENS * ONE) token.status = "SOLD_OUT";
       const opId = `op-${++opCounter}`;
       operations.set(opId, { id: opId, kind: "mint", status: "accepted" });
       return json(res, 200, {

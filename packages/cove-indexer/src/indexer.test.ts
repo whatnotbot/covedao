@@ -2,152 +2,144 @@ import { describe, expect, it } from "vitest";
 import type { BitcoinProtocolTx } from "@crclaunch/bitcoin";
 import { CoveIndexer } from "./indexer.js";
 import { COVE_SIGNET_CONFIG } from "./config.js";
+import { encodeCoveDeploy, encodeCoveMint, encodeCoveTransfer } from "@crclaunch/protocol";
 
-const TREASURY = COVE_SIGNET_CONFIG.treasuryScript;
-const RESERVE = COVE_SIGNET_CONFIG.reserveScript;
+const CFG = COVE_SIGNET_CONFIG;
 const ACTOR = "0014" + "aa".repeat(20);
 const RECIPIENT = "5120" + "bb".repeat(32);
 
-const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
-const opReturnOut = (json: string) => ({
-  index: 0,
-  scriptPubKeyHex: "6a" + Buffer.from(json, "utf8").toString("hex"),
-  valueSats: 0n,
-  opReturnData: enc(json),
-});
+function opReturnOut(payload: Uint8Array, index = 0) {
+  const len = payload.length.toString(16).padStart(2, "0");
+  return {
+    index,
+    scriptPubKeyHex: `6a${len}${Buffer.from(payload).toString("hex")}`,
+    valueSats: 0n,
+    opReturnData: payload,
+  };
+}
 
-function deployTx(txid = "d".repeat(64)): BitcoinProtocolTx {
+function tx(opReturn: Uint8Array, extraOuts: { index: number; scriptPubKeyHex: string; valueSats: bigint }[], txid = "a".repeat(64)): BitcoinProtocolTx {
   return {
     txid,
     version: 2,
     locktime: 0,
-    inputs: [
-      { prevTxid: "a".repeat(64), vout: 0, sequence: 0xfffffffd, prevScriptPubKeyHex: ACTOR },
-    ],
-    outputs: [
-      opReturnOut('{"p":"cove","v":1,"op":"deploy","tick":"FROG"}'),
-      { index: 1, scriptPubKeyHex: TREASURY, valueSats: 10_000n },
-    ],
+    inputs: [{ prevTxid: "b".repeat(64), vout: 0, sequence: 0xfffffffd, prevScriptPubKeyHex: ACTOR }],
+    outputs: [opReturnOut(opReturn, 0), ...extraOuts],
   };
 }
 
-function mintTx(
-  amount: bigint,
-  supplyBefore: bigint,
-  curve: bigint,
-  fee: bigint,
-  txid = "e".repeat(64),
-): BitcoinProtocolTx {
-  return {
-    txid,
-    version: 2,
-    locktime: 0,
-    inputs: [
-      { prevTxid: "a".repeat(64), vout: 1, sequence: 0xfffffffd, prevScriptPubKeyHex: ACTOR },
-    ],
-    outputs: [
-      opReturnOut(
-        `{"p":"cove","v":1,"op":"mint","tick":"FROG","amt":"${amount}","s":"${supplyBefore}"}`,
-      ),
-      { index: 1, scriptPubKeyHex: RECIPIENT, valueSats: 546n },
-      { index: 2, scriptPubKeyHex: RESERVE, valueSats: curve },
-      { index: 3, scriptPubKeyHex: TREASURY, valueSats: fee },
-    ],
-  };
-}
-
-function transferTx(amount: bigint, txid = "f".repeat(64)): BitcoinProtocolTx {
-  return {
-    txid,
-    version: 2,
-    locktime: 0,
-    inputs: [
-      { prevTxid: "a".repeat(64), vout: 2, sequence: 0xfffffffd, prevScriptPubKeyHex: RECIPIENT },
-    ],
-    outputs: [
-      opReturnOut(`{"p":"cove","v":1,"op":"transfer","tick":"FROG","amt":"${amount}"}`),
-      { index: 1, scriptPubKeyHex: "0014" + "cc".repeat(20), valueSats: 546n },
-    ],
-  };
-}
-
-describe("CoveIndexer", () => {
-  it("indexes a full deploy → mint → transfer sequence deterministically", () => {
-    const idx = new CoveIndexer(COVE_SIGNET_CONFIG);
-    idx.processBlock(100, [deployTx()]);
-    idx.processBlock(101, [mintTx(1_000_000n, 0n, 500n, 5n)]);
-    idx.processBlock(102, [transferTx(100_000n)]);
-
+describe("CoveIndexer (binary envelope, classification, tx index)", () => {
+  it("indexes deploy → mint → transfer with txIndex ordering", () => {
+    const idx = new CoveIndexer(CFG);
+    idx.processBlock(CFG.genesisHeight, [
+      tx(encodeCoveDeploy("FROG"), [{ index: 1, scriptPubKeyHex: CFG.treasuryScript, valueSats: 10_000n }], "d".repeat(64)),
+    ]);
+    idx.processBlock(CFG.genesisHeight + 1, [
+      tx(encodeCoveMint("FROG", 200_000_000_000_000n, 0n), [
+        { index: 1, scriptPubKeyHex: RECIPIENT, valueSats: 330n },
+        { index: 2, scriptPubKeyHex: CFG.settlementScript, valueSats: 1010n },
+      ], "e".repeat(64)),
+    ]);
     const stats = idx.getStats();
-    expect(stats.processedBlocks).toBe(3);
-    expect(stats.coveTxs).toBe(3);
-    expect(stats.validOps).toBe(3);
-    expect(stats.invalidOps).toBe(0);
+    expect(stats.validOps).toBe(2);
     expect(stats.tokens).toBe(1);
-    expect(stats.reserveSats).toBe(500n);
-    expect(stats.treasurySats).toBe(10_005n);
+    expect(stats.reserveSats).toBe(1000n);
+    expect(stats.treasurySats).toBe(10_010n);
     expect(stats.stateRoot).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("ignores non-Cove transactions", () => {
-    const idx = new CoveIndexer(COVE_SIGNET_CONFIG);
-    const plain: BitcoinProtocolTx = {
-      txid: "9".repeat(64),
+  it("classifies non-Cove OP_RETURN as NON_COVE (not invalid)", () => {
+    const idx = new CoveIndexer(CFG);
+    const plain = tx(new TextEncoder().encode("coinbin.org"), [
+      { index: 1, scriptPubKeyHex: RECIPIENT, valueSats: 546n },
+    ]);
+    const r = idx.processTx(CFG.genesisHeight, 0, plain);
+    expect(r.classification).toBe("NON_COVE");
+    expect(idx.getStats().coveCandidateTxs).toBe(0);
+    expect(idx.getStats().invalidOps).toBe(0);
+  });
+
+  it("classifies Cove-magic-but-malformed as MALFORMED_COVE", () => {
+    const idx = new CoveIndexer(CFG);
+    const bad = new Uint8Array([0x43, 0x4f, 0x56, 0x45, 0x02, 0x02, 0x46]); // COVE + wrong version + garbage
+    const r = idx.processTx(CFG.genesisHeight, 0, tx(bad, []));
+    expect(r.classification).toBe("MALFORMED_COVE");
+    expect(idx.getStats().invalidOps).toBe(1);
+  });
+
+  it("rejects multiple Cove envelopes in one tx", () => {
+    const idx = new CoveIndexer(CFG);
+    const two = {
+      txid: "a".repeat(64),
       version: 2,
       locktime: 0,
-      inputs: [{ prevTxid: "a".repeat(64), vout: 0, sequence: 0, prevScriptPubKeyHex: ACTOR }],
-      outputs: [{ index: 0, scriptPubKeyHex: "0014" + "ab".repeat(20), valueSats: 1_000n }],
+      inputs: [{ prevTxid: "b".repeat(64), vout: 0, sequence: 0, prevScriptPubKeyHex: ACTOR }],
+      outputs: [
+        opReturnOut(encodeCoveDeploy("FROG"), 0),
+        opReturnOut(encodeCoveDeploy("TOAD"), 1),
+        { index: 2, scriptPubKeyHex: CFG.treasuryScript, valueSats: 10_000n },
+      ],
+    } as BitcoinProtocolTx;
+    const r = idx.processTx(CFG.genesisHeight, 0, two);
+    expect(r.classification).toBe("MULTIPLE_COVE_OPERATIONS");
+    expect(idx.getStats().tokens).toBe(0);
+  });
+
+  it("earlier txIndex wins for duplicate ticker; later is stale", () => {
+    const idx = new CoveIndexer(CFG);
+    const deploy = (txid: string) =>
+      tx(encodeCoveDeploy("FROG"), [{ index: 1, scriptPubKeyHex: CFG.treasuryScript, valueSats: 10_000n }], txid);
+    // Two DEPLOY FROG in the same block; index 0 valid, index 1 rejected.
+    const block = [deploy("d".repeat(64)), deploy("e".repeat(64))];
+    idx.processBlock(CFG.genesisHeight, block);
+    const events = idx.getEvents();
+    expect(events[0]!.txIndex).toBe(0);
+    expect(events[0]!.valid).toBe(true);
+    expect(events[1]!.txIndex).toBe(1);
+    expect(events[1]!.reason).toBe("TICKER_TAKEN");
+    expect(idx.getStats().validOps).toBe(1);
+    expect(idx.getStats().invalidOps).toBe(1);
+  });
+
+  it("reorg rebuild is deterministic", () => {
+    const build = (mintAmount: bigint) => {
+      const idx = new CoveIndexer(CFG);
+      idx.processBlock(CFG.genesisHeight, [
+        tx(encodeCoveDeploy("FROG"), [{ index: 1, scriptPubKeyHex: CFG.treasuryScript, valueSats: 10_000n }], "d".repeat(64)),
+      ]);
+      idx.processBlock(CFG.genesisHeight + 1, [
+        tx(encodeCoveMint("FROG", mintAmount, 0n), [
+          { index: 1, scriptPubKeyHex: RECIPIENT, valueSats: 330n },
+          { index: 2, scriptPubKeyHex: CFG.settlementScript, valueSats: 1010n },
+        ], "e".repeat(64)),
+      ]);
+      return idx;
     };
-    idx.processBlock(1, [plain]);
-    expect(idx.getStats().coveTxs).toBe(0);
-    expect(idx.getStats().processedTxs).toBe(1);
+    const a = build(200_000_000_000_000n);
+    const fork = build(300_000_000_000_000n);
+    expect(fork.getStateRoot()).not.toBe(a.getStateRoot());
+    const restored = build(200_000_000_000_000n);
+    expect(restored.getStateRoot()).toBe(a.getStateRoot());
   });
 
-  it("records invalid Cove operations without mutating state", () => {
-    const idx = new CoveIndexer(COVE_SIGNET_CONFIG);
-    idx.processBlock(1, [deployTx()]);
-    // Overpay the curve → invalid, no state change.
-    idx.processBlock(2, [mintTx(1_000_000n, 0n, 999n, 5n)]);
-    const stats = idx.getStats();
-    expect(stats.validOps).toBe(1);
-    expect(stats.invalidOps).toBe(1);
-    expect(stats.tokens).toBe(1);
-    expect(stats.reserveSats).toBe(0n); // mint rejected
-  });
-
-  it("is replay-deterministic (two independent runs yield the same root)", () => {
-    const a = new CoveIndexer(COVE_SIGNET_CONFIG);
-    const b = new CoveIndexer(COVE_SIGNET_CONFIG);
-    for (const idx of [a, b]) {
-      idx.processBlock(1, [deployTx()]);
-      idx.processBlock(2, [mintTx(1_000_000n, 0n, 500n, 5n)]);
-    }
-    expect(a.getStateRoot()).toBe(b.getStateRoot());
-  });
-
-  it("rebuilds deterministically after a reorg (different fork → different root, restore → original)", () => {
-    const original = new CoveIndexer(COVE_SIGNET_CONFIG);
-    original.processBlock(1, [deployTx()]);
-    original.processBlock(2, [mintTx(1_000_000n, 0n, 500n, 5n)]);
-    const originalRoot = original.getStateRoot();
-
-    // Alternative fork: block 2 is a different mint amount.
-    const fork = new CoveIndexer(COVE_SIGNET_CONFIG);
-    fork.processBlock(1, [deployTx()]);
-    fork.processBlock(2, [mintTx(2_000_000n, 0n, 1_000n, 10n)]);
-    expect(fork.getStateRoot()).not.toBe(originalRoot);
-
-    // Rebuild the original chain from scratch → same root as before.
-    const restored = new CoveIndexer(COVE_SIGNET_CONFIG);
-    restored.processBlock(1, [deployTx()]);
-    restored.processBlock(2, [mintTx(1_000_000n, 0n, 500n, 5n)]);
-    expect(restored.getStateRoot()).toBe(originalRoot);
-  });
-
-  it("has a stable empty-state root", () => {
-    const a = new CoveIndexer(COVE_SIGNET_CONFIG);
-    const b = new CoveIndexer(COVE_SIGNET_CONFIG);
-    expect(a.getStateRoot()).toBe(b.getStateRoot());
-    expect(a.getStateRoot()).toMatch(/^[0-9a-f]{64}$/);
+  it("transfer requires continuation (via full pipeline)", () => {
+    const idx = new CoveIndexer(CFG);
+    idx.processBlock(CFG.genesisHeight, [
+      tx(encodeCoveDeploy("FROG"), [{ index: 1, scriptPubKeyHex: CFG.treasuryScript, valueSats: 10_000n }], "d".repeat(64)),
+    ]);
+    idx.processBlock(CFG.genesisHeight + 1, [
+      tx(encodeCoveMint("FROG", 200_000_000_000_000n, 0n), [
+        { index: 1, scriptPubKeyHex: RECIPIENT, valueSats: 330n },
+        { index: 2, scriptPubKeyHex: CFG.settlementScript, valueSats: 1010n },
+      ], "e".repeat(64)),
+    ]);
+    // Transfer WITHOUT continuation output (only recipient) → invalid.
+    const noCont = tx(encodeCoveTransfer("FROG", 50_000_000_000_000n), [
+      { index: 1, scriptPubKeyHex: "0014" + "cc".repeat(20), valueSats: 294n },
+    ], "f".repeat(64));
+    noCont.inputs[0]!.prevScriptPubKeyHex = RECIPIENT; // sender is RECIPIENT
+    const r = idx.processTx(CFG.genesisHeight + 2, 0, noCont);
+    expect(r.valid).toBe(false);
+    expect(r.reason).toBe("MISSING_CONTINUATION");
   });
 });

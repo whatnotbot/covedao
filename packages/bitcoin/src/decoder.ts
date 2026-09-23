@@ -121,3 +121,27 @@ export function opReturnPayload(script: Buffer): Uint8Array | undefined {
   }
   return script.subarray(offset, offset + len);
 }
+
+/**
+ * Strict canonical OP_RETURN extraction for Cove: exactly
+ * `OP_RETURN <single minimal push> <end>`. Returns the payload bytes, or
+ * undefined when the script has trailing pushes/opcodes or a non-minimal push.
+ */
+export function parseCanonicalOpReturn(script: Uint8Array): Uint8Array | undefined {
+  if (script.length < 2 || script[0] !== 0x6a) return undefined;
+  const len = script[1]!;
+  if (len >= 1 && len <= 75) {
+    // direct push (minimal): 0x6a <len> <payload>, nothing after.
+    if (script.length !== 2 + len) return undefined;
+    return script.subarray(2, 2 + len);
+  }
+  if (len === 0x4c && script.length >= 4) {
+    // OP_PUSHDATA1: minimal requires payload length >= 76.
+    const l = script[2]!;
+    if (l < 76) return undefined; // non-minimal
+    if (script.length !== 3 + l) return undefined;
+    return script.subarray(3, 3 + l);
+  }
+  // OP_PUSHDATA2/4 or anything else: non-canonical for Cove.
+  return undefined;
+}

@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import type { Sats, TokenAtoms } from "@crclaunch/curve";
+import type { Sats, DisplayTokens } from "@crclaunch/curve";
 import {
-  PUBLIC_SUPPLY_ATOMS,
-  RESERVE_SUPPLY_ATOMS,
-  TOTAL_SUPPLY_ATOMS,
+  PUBLIC_SUPPLY_TOKENS,
+  RESERVE_SUPPLY_TOKENS,
+  TOTAL_SUPPLY_TOKENS,
   computePlatformFee,
   getStageForSupply,
   quoteExactTokens,
@@ -110,7 +110,7 @@ function emitEvent(
     deploymentId?: string | null;
     walletFrom?: string | null;
     walletTo?: string | null;
-    tokenAmountAtoms?: TokenAtoms | null;
+    tokenAmountAtoms?: DisplayTokens | null;
     btcAmountSats?: Sats | null;
     payload?: unknown;
   },
@@ -194,7 +194,7 @@ function validateTx(
       }
       const amount = p.tokenAmountAtoms ?? 0n;
       if (amount <= 0n) return { valid: false, reason: "ZERO_QUANTITY", normalized: null };
-      const remaining = PUBLIC_SUPPLY_ATOMS - token.confirmedMintedAtoms;
+      const remaining = PUBLIC_SUPPLY_TOKENS - token.confirmedMintedAtoms;
       if (amount > remaining) return { valid: false, reason: "EXCEEDS_REMAINING_SUPPLY", normalized: null };
 
       // Recompute economics deterministically — never trust payload.
@@ -355,7 +355,7 @@ function validateTx(
     case "GRADUATION": {
       const token = state.tokens[p.deploymentId ?? ""];
       if (!token) return { valid: false, reason: "TOKEN_NOT_FOUND", normalized: null };
-      if (token.confirmedMintedAtoms !== PUBLIC_SUPPLY_ATOMS) {
+      if (token.confirmedMintedAtoms !== PUBLIC_SUPPLY_TOKENS) {
         return { valid: false, reason: "NOT_SOLD_OUT", normalized: null };
       }
       if (token.status !== "SOLD_OUT" && token.status !== "GRADUATING") {
@@ -394,9 +394,9 @@ function applyNormalized(
         name: n.name,
         creatorAddress: n.creatorAddress,
         network: state.network,
-        totalSupplyAtoms: TOTAL_SUPPLY_ATOMS,
-        publicSupplyAtoms: PUBLIC_SUPPLY_ATOMS,
-        reserveSupplyAtoms: RESERVE_SUPPLY_ATOMS,
+        totalSupplyAtoms: TOTAL_SUPPLY_TOKENS,
+        publicSupplyAtoms: PUBLIC_SUPPLY_TOKENS,
+        reserveSupplyAtoms: RESERVE_SUPPLY_TOKENS,
         confirmedMintedAtoms: 0n,
         pendingMintedAtoms: 0n,
         currentStage: 1,
@@ -427,7 +427,7 @@ function applyNormalized(
       state.platformTreasurySats += n.platformFeeSats;
       token.confirmedMintedAtoms += n.tokenAmountAtoms;
       token.currentStage = getStageForSupply(token.confirmedMintedAtoms);
-      if (token.confirmedMintedAtoms === PUBLIC_SUPPLY_ATOMS) token.status = "SOLD_OUT";
+      if (token.confirmedMintedAtoms === PUBLIC_SUPPLY_TOKENS) token.status = "SOLD_OUT";
       emitEvent(state, tx, blockHeight, blockHash, "MINT", {
         deploymentId: n.deploymentId,
         walletFrom: n.buyerAddress,

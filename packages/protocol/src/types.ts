@@ -1,12 +1,12 @@
 import type { Network } from "@crclaunch/config";
-import type { Sats, TokenAtoms, TxId } from "@crclaunch/curve";
+import type { Sats, DisplayTokens, TxId } from "@crclaunch/curve";
 
 export type {
   Network,
   ProtocolHealth,
   ProtocolHealthState,
 } from "@crclaunch/config";
-export type { Sats, TokenAtoms, TxId, BasisPoints } from "@crclaunch/curve";
+export type { Sats, DisplayTokens, TxId, BasisPoints } from "@crclaunch/curve";
 
 export type ProtocolOperation =
   | "DEPLOY"
@@ -33,11 +33,11 @@ export interface ProtocolToken {
   name: string | null;
   creatorAddress: string;
   network: Network;
-  totalSupplyAtoms: TokenAtoms;
-  publicSupplyAtoms: TokenAtoms;
-  reserveSupplyAtoms: TokenAtoms;
-  confirmedMintedAtoms: TokenAtoms;
-  pendingMintedAtoms: TokenAtoms;
+  totalSupplyAtoms: DisplayTokens;
+  publicSupplyAtoms: DisplayTokens;
+  reserveSupplyAtoms: DisplayTokens;
+  confirmedMintedAtoms: DisplayTokens;
+  pendingMintedAtoms: DisplayTokens;
   currentStage: number;
   deployHeight: bigint | null;
   status: "LIVE" | "SOLD_OUT" | "GRADUATING" | "GRADUATED";
@@ -63,7 +63,7 @@ export interface ProtocolEvent {
   deploymentId: TxId | null;
   walletFrom: string | null;
   walletTo: string | null;
-  tokenAmountAtoms: TokenAtoms | null;
+  tokenAmountAtoms: DisplayTokens | null;
   btcAmountSats: Sats | null;
   payload: unknown;
 }
@@ -92,7 +92,7 @@ export interface TransactionOutput {
   address: string | null;
   amountSats: Sats;
   kind: OutputKind;
-  tokenAmountAtoms?: TokenAtoms;
+  tokenAmountAtoms?: DisplayTokens;
 }
 
 export interface TransactionInput {
@@ -105,14 +105,14 @@ export interface TransactionInput {
 export interface TransactionSummary {
   operation: ProtocolOperation;
   ticker?: string;
-  tokenAmountAtoms?: TokenAtoms;
+  tokenAmountAtoms?: DisplayTokens;
   curveContributionSats?: Sats;
   platformFeeSats?: Sats;
   protocolFeeSats?: Sats;
   minerFeeSats?: Sats;
   launchFeeSats?: Sats;
   totalSpendSats?: Sats;
-  buyerReceivesAtoms?: TokenAtoms;
+  buyerReceivesAtoms?: DisplayTokens;
   sellerReceivesSats?: Sats;
   outputCount: number;
 }
@@ -155,18 +155,18 @@ export interface BuildMintInput {
   ticker: string;
   buyerAddress: string;
   treasuryAddress: string;
-  tokenAmountAtoms: TokenAtoms;
+  tokenAmountAtoms: DisplayTokens;
   curveContributionSats: Sats;
   platformFeeSats: Sats;
   minerFeeSats: Sats;
-  currentSupplyAtoms: TokenAtoms;
+  currentSupplyAtoms: DisplayTokens;
   stateHash: string;
 }
 
 export interface BuildSellInput {
   deploymentId: TxId;
   sellerAddress: string;
-  tokenAmountAtoms: TokenAtoms;
+  tokenAmountAtoms: DisplayTokens;
   askingPriceSats: Sats;
   expiryHeight: bigint;
 }
@@ -175,7 +175,7 @@ export interface BuildBuyInput {
   deploymentId: TxId;
   listingId: string;
   buyerAddress: string;
-  tokenAmountAtoms: TokenAtoms;
+  tokenAmountAtoms: DisplayTokens;
   totalPriceSats: Sats;
   sellerAddress: string;
   protocolFeeSats: Sats;
@@ -195,7 +195,7 @@ export interface DecodedProtocolTransaction {
   inputs: TransactionInput[];
   outputs: TransactionOutput[];
   ticker?: string;
-  tokenAmountAtoms?: TokenAtoms;
+  tokenAmountAtoms?: DisplayTokens;
 }
 
 /** Result of decoding a signed transaction: identity + operation + txid. */
@@ -219,7 +219,7 @@ export interface ProtocolListing {
   id: string;
   deploymentId: string;
   sellerAddress: string;
-  tokenAmountAtoms: TokenAtoms;
+  tokenAmountAtoms: DisplayTokens;
   askingPriceSats: Sats;
   creationHeight: bigint;
   expiryHeight: bigint;

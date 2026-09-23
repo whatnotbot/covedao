@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computePlatformFee, PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
+import { computePlatformFee, PUBLIC_SUPPLY_TOKENS } from "@crclaunch/curve";
 import { MemoryStorage } from "./store.js";
 import { MockChainNode } from "./node.js";
 import { MockCRCAdapter } from "./adapter.js";
@@ -57,7 +57,7 @@ describe("mock chain end-to-end", () => {
       ticker: "FROG",
       buyerAddress: buyer,
       treasuryAddress: TREASURY,
-      tokenAmountAtoms: PUBLIC_SUPPLY_ATOMS,
+      tokenAmountAtoms: PUBLIC_SUPPLY_TOKENS,
       curveContributionSats: curve,
       platformFeeSats: platformFee,
       minerFeeSats: minerFee,
@@ -68,10 +68,10 @@ describe("mock chain end-to-end", () => {
     await node.mineBlock();
 
     const soldOut = await adapter.getTokenByDeployment(token!.deploymentId);
-    expect(soldOut!.confirmedMintedAtoms).toBe(PUBLIC_SUPPLY_ATOMS);
+    expect(soldOut!.confirmedMintedAtoms).toBe(PUBLIC_SUPPLY_TOKENS);
     expect(soldOut!.status).toBe("SOLD_OUT");
     const buyerBal = await node.getWalletBalance(buyer);
-    expect(buyerBal.tokens[token!.deploymentId]).toBe(PUBLIC_SUPPLY_ATOMS);
+    expect(buyerBal.tokens[token!.deploymentId]).toBe(PUBLIC_SUPPLY_TOKENS);
 
     // GRADUATE
     await adapter.graduate(token!.deploymentId);
@@ -118,7 +118,7 @@ describe("mock chain end-to-end", () => {
     const buyer2Bal = await node.getWalletBalance(buyer2);
     expect(buyer2Bal.tokens[token!.deploymentId]).toBe(askAmount);
     const sellerBal = await node.getWalletBalance(buyer);
-    expect(sellerBal.tokens[token!.deploymentId]).toBe(PUBLIC_SUPPLY_ATOMS - askAmount);
+    expect(sellerBal.tokens[token!.deploymentId]).toBe(PUBLIC_SUPPLY_TOKENS - askAmount);
 
     const events = await adapter.getEvents(1n, 100n);
     const types = events.map((e) => e.eventType);
@@ -146,13 +146,13 @@ describe("mock chain end-to-end", () => {
     // Both mint the final tokens from the same stale supply snapshot.
     const mint1 = await adapter.buildMint({
       deploymentId: token.deploymentId, ticker: "RACE", buyerAddress: b1, treasuryAddress: TREASURY,
-      tokenAmountAtoms: PUBLIC_SUPPLY_ATOMS, curveContributionSats: 24_196_788n,
+      tokenAmountAtoms: PUBLIC_SUPPLY_TOKENS, curveContributionSats: 24_196_788n,
       platformFeeSats: computePlatformFee(24_196_788n, 100n), minerFeeSats: 450n,
       currentSupplyAtoms: 0n, stateHash,
     });
     const mint2 = await adapter.buildMint({
       deploymentId: token.deploymentId, ticker: "RACE", buyerAddress: b2, treasuryAddress: TREASURY,
-      tokenAmountAtoms: PUBLIC_SUPPLY_ATOMS, curveContributionSats: 24_196_788n,
+      tokenAmountAtoms: PUBLIC_SUPPLY_TOKENS, curveContributionSats: 24_196_788n,
       platformFeeSats: computePlatformFee(24_196_788n, 100n), minerFeeSats: 450n,
       currentSupplyAtoms: 0n, stateHash,
     });
@@ -165,7 +165,7 @@ describe("mock chain end-to-end", () => {
     const tx2 = await adapter.getTransaction(mint2.psbtBase64 ? txidOf(mint2.psbtBase64) : "");
     expect([tx1.status, tx2.status].sort()).toEqual(["CONFIRMED", "REJECTED"]);
     const after = await adapter.getTokenByDeployment(token.deploymentId);
-    expect(after!.confirmedMintedAtoms).toBe(PUBLIC_SUPPLY_ATOMS);
+    expect(after!.confirmedMintedAtoms).toBe(PUBLIC_SUPPLY_TOKENS);
   });
 
   it("3-block reorg reconciles derived state", async () => {

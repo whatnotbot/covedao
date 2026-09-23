@@ -1,4 +1,4 @@
-import type { Sats, TokenAtoms } from "@crclaunch/curve";
+import type { Atoms, Sats } from "@crclaunch/curve";
 
 /** Canonical protocol identity: hex scriptPubKey (what Bitcoin commits to). */
 export type ProtocolOwnerId = string;
@@ -14,22 +14,23 @@ export interface CoveProtocolOutput {
 
 /**
  * Normalized Cove transaction produced by the Bitcoin decoder + envelope
- * parser. Protocol logic consumes only this shape, never provider-specific
- * JSON. Token amounts are WHOLE tokens (the canonical curve unit).
+ * parser + mapper. Protocol logic consumes only this shape, never
+ * provider-specific JSON. Token amounts are ATOMS (8 decimals).
  */
 export interface CoveTransaction {
-  protocol: "cove";
-  version: 1;
   operation: CoveOperationKind;
   txid: string;
+  /** Transaction index within its block (consensus ordering). */
+  txIndex: number;
   /** Owner derived from input 0's spent UTXO scriptPubKey. */
   actor: ProtocolOwnerId;
   /** Recipient derived from vout 1 (mint/transfer). */
   recipient?: ProtocolOwnerId;
-  /** Ticker reference (DEPLOY, and the unique deployment key for MINT/TRANSFER). */
+  /** Actor continuation output derived from vout 2 (transfer). */
+  continuation?: ProtocolOwnerId;
   ticker?: string;
-  tokenAmount?: TokenAtoms;
-  supplyBefore?: TokenAtoms;
+  amountAtoms?: Atoms;
+  supplyBeforeAtoms?: Atoms;
   protocolOutputs: CoveProtocolOutput[];
 }
 
@@ -37,14 +38,14 @@ export interface CoveToken {
   deploymentId: string;
   ticker: string;
   creator: ProtocolOwnerId;
-  confirmedSupply: TokenAtoms;
-  publicSupply: TokenAtoms;
+  confirmedSupplyAtoms: Atoms;
+  publicSupplyAtoms: Atoms;
   currentStage: number;
 }
 
 export interface CoveBalance {
-  available: TokenAtoms;
-  locked: TokenAtoms;
+  availableAtoms: Atoms;
+  lockedAtoms: Atoms;
 }
 
 export interface CoveState {

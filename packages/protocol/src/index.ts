@@ -115,16 +115,32 @@ export {
 } from "./canonical-mock.js";
 
 export {
-  parseCoveEnvelope,
-  COVE_PROTOCOL,
+  COVE_MAGIC,
   COVE_VERSION,
+  OP_DEPLOY,
+  OP_MINT,
+  OP_TRANSFER,
+  COVE_DEPLOY_LEN,
+  COVE_MINT_LEN,
+  COVE_TRANSFER_LEN,
+  encodeCoveDeploy,
+  encodeCoveMint,
+  encodeCoveTransfer,
+  decodeCoveEnvelope,
+  isCoveMagic,
   type CoveEnvelope,
   type CoveOp,
   type CoveDeploy,
   type CoveMint,
   type CoveTransfer,
-  type CoveParseResult,
-} from "./cove/parser.js";
+  type CoveDecodeResult,
+} from "./cove/envelope.js";
+export {
+  COVE_V1_SIGNET_GENESIS_HEIGHT,
+  COVE_V1_MAINNET_GENESIS_HEIGHT,
+  COVE_V1_SIGNET_CONFIG,
+  type CoveConfig,
+} from "./cove/config.js";
 export {
   createCoveState,
   type CoveState,
@@ -136,14 +152,18 @@ export {
   type CoveProtocolOutput,
   type CoveValidationResult,
 } from "./cove/types.js";
-export { validateCoveOperation, applyCoveOperation, type CoveConfig } from "./cove/validator.js";
+export {
+  validateCoveOperation,
+  applyCoveOperation,
+  isSupportedScript,
+} from "./cove/validator.js";
 export { toCoveTransaction, type CoveMapResult } from "./cove/mapper.js";
 export { computeStateRoot } from "./cove/state-root.js";
 export {
   buildCoveDeployPsbt,
   buildCoveMintPsbt,
   buildCoveTransferPsbt,
-  RECIPIENT_DUST_SATS,
+  anchorAmount,
   type BuildDeployParams,
   type BuildMintParams,
   type BuildTransferParams,

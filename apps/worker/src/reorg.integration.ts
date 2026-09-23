@@ -10,7 +10,7 @@ import {
   MockCRCAdapter,
   MOCK_TREASURY_ADDRESS,
 } from "@crclaunch/protocol";
-import { quoteExactTokens, computePlatformFee, PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
+import { quoteExactTokens, computePlatformFee, PUBLIC_SUPPLY_TOKENS } from "@crclaunch/curve";
 import { detectReorg, rebuildProjections, syncMockToDb } from "./sync.js";
 
 function assert(cond: boolean, msg: string): void {
@@ -177,7 +177,7 @@ async function main() {
   await syncMockToDb(db, node, network);
 
   // Mint the full public supply (SOLD_OUT), then graduate.
-  await mintToken(node, adapter, frogId, BUYER, PUBLIC_SUPPLY_ATOMS);
+  await mintToken(node, adapter, frogId, BUYER, PUBLIC_SUPPLY_TOKENS);
   await node.mineBlock();
   await syncMockToDb(db, node, network);
   await graduateToken(node, adapter, frogId);
@@ -226,7 +226,7 @@ async function main() {
     (t) => t.ticker === "FROG",
   )[0];
   assert(
-    frogAfterReorg!.confirmedMintedAtoms === PUBLIC_SUPPLY_ATOMS,
+    frogAfterReorg!.confirmedMintedAtoms === PUBLIC_SUPPLY_TOKENS,
     "FROG supply intact after reorg",
   );
 

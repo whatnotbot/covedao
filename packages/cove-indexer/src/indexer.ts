@@ -1,25 +1,35 @@
 import type { BitcoinProtocolTx } from "@crclaunch/bitcoin";
+import { parseCanonicalOpReturn } from "@crclaunch/bitcoin";
 import {
   applyCoveOperation,
   computeStateRoot,
   createCoveState,
-  parseCoveEnvelope,
+  decodeCoveEnvelope,
+  isCoveMagic,
   toCoveTransaction,
   validateCoveOperation,
 } from "@crclaunch/protocol";
 import type { CoveConfig, CoveState } from "@crclaunch/protocol";
 
+export type CoveTxClassification =
+  | "NON_COVE"
+  | "MALFORMED_COVE"
+  | "VALID"
+  | "INVALID"
+  | "MULTIPLE_COVE_OPERATIONS";
+
 export interface CoveIndexEvent {
   blockHeight: number;
+  txIndex: number;
   txid: string;
-  /** DEPLOY | MINT | TRANSFER, or null when the tx is not a Cove tx. */
   operation: string | null;
-  valid: boolean | null;
+  classification: CoveTxClassification;
+  valid: boolean;
   reason: string | null;
 }
 
 export interface ProcessTxResult {
-  isCove: boolean;
+  classification: CoveTxClassification;
   operation?: string;
   valid?: boolean;
   reason?: string | null;
@@ -28,7 +38,7 @@ export interface ProcessTxResult {
 export interface CoveIndexStats {
   processedBlocks: number;
   processedTxs: number;
-  coveTxs: number;
+  coveCandidateTxs: number;
   validOps: number;
   invalidOps: number;
   tokens: number;
@@ -38,17 +48,16 @@ export interface CoveIndexStats {
 }
 
 /**
- * Deterministic Cove indexer. State is a pure function of the ordered stream
- * of decoded Bitcoin transactions (the event log). The indexer performs no
- * network I/O and holds no keys; prevouts must be resolved by the caller
- * (the CLI resolves them from a full node).
+ * Deterministic Cove indexer (pure state fold). Performs no network/DB I/O and
+ * holds no keys; prevouts must be resolved by the caller. Block/tx order is
+ * the ONLY ordering input (height ASC, txIndex ASC).
  */
 export class CoveIndexer {
   private state: CoveState;
   private events: CoveIndexEvent[] = [];
   private processedBlocks = 0;
   private processedTxs = 0;
-  private coveTxs = 0;
+  private coveCandidateTxs = 0;
   private validOps = 0;
   private invalidOps = 0;
 
@@ -56,35 +65,55 @@ export class CoveIndexer {
     this.state = createCoveState();
   }
 
-  /** Process a whole block's transactions in canonical order. */
   processBlock(height: number, txs: BitcoinProtocolTx[]): void {
     this.processedBlocks += 1;
-    for (const tx of txs) {
-      this.processTx(height, tx);
+    for (let i = 0; i < txs.length; i++) {
+      this.processTx(height, i, txs[i]!);
     }
   }
 
-  /** Process one decoded transaction (prevout for input 0 must be resolved). */
-  processTx(height: number, btcTx: BitcoinProtocolTx): ProcessTxResult {
+  processTx(height: number, txIndex: number, btcTx: BitcoinProtocolTx): ProcessTxResult {
     this.processedTxs += 1;
 
-    // The Cove envelope lives in vout 0 as an OP_RETURN.
-    const envOut = btcTx.outputs[0];
-    if (!envOut?.opReturnData) {
-      return { isCove: false };
-    }
-    this.coveTxs += 1;
-
-    const parsed = parseCoveEnvelope(envOut.opReturnData);
-    if (!parsed.ok) {
-      this.recordInvalid(height, btcTx.txid, null, parsed.reason ?? "PARSE_ERROR");
-      return { isCove: true, valid: false, reason: parsed.reason };
+    // Scan every output for a canonical OP_RETURN whose payload carries Cove
+    // magic. A Cove envelope may exist ONLY at vout 0 (single-envelope rule).
+    const coveOutputs: { index: number; payload: Uint8Array }[] = [];
+    for (const out of btcTx.outputs) {
+      if (out.scriptPubKeyHex === "6a") continue; // bare OP_RETURN, no data
+      const payload = parseCanonicalOpReturn(Buffer.from(out.scriptPubKeyHex, "hex"));
+      if (payload && isCoveMagic(payload)) {
+        coveOutputs.push({ index: out.index, payload });
+      }
     }
 
-    const mapped = toCoveTransaction(btcTx, parsed.envelope!);
+    if (coveOutputs.length === 0) return { classification: "NON_COVE" };
+    this.coveCandidateTxs += 1;
+
+    if (coveOutputs.length > 1) {
+      this.invalidOps += 1;
+      this.record(height, txIndex, btcTx.txid, null, "MULTIPLE_COVE_OPERATIONS", false, "MULTIPLE_COVE_OPERATIONS");
+      return { classification: "MULTIPLE_COVE_OPERATIONS", valid: false, reason: "MULTIPLE_COVE_OPERATIONS" };
+    }
+
+    const coveOut = coveOutputs[0]!;
+    if (coveOut.index !== 0) {
+      this.invalidOps += 1;
+      this.record(height, txIndex, btcTx.txid, null, "INVALID", false, "WRONG_VOUT");
+      return { classification: "INVALID", valid: false, reason: "WRONG_VOUT" };
+    }
+
+    const decoded = decodeCoveEnvelope(coveOut.payload);
+    if (!decoded.ok) {
+      this.invalidOps += 1;
+      this.record(height, txIndex, btcTx.txid, null, "MALFORMED_COVE", false, decoded.reason ?? "MALFORMED_COVE");
+      return { classification: "MALFORMED_COVE", valid: false, reason: decoded.reason };
+    }
+
+    const mapped = toCoveTransaction(btcTx, decoded.envelope!, txIndex);
     if (!mapped.ok) {
-      this.recordInvalid(height, btcTx.txid, parsed.envelope!.op, mapped.reason);
-      return { isCove: true, operation: parsed.envelope!.op, valid: false, reason: mapped.reason };
+      this.invalidOps += 1;
+      this.record(height, txIndex, btcTx.txid, decoded.envelope!.op, "INVALID", false, mapped.reason);
+      return { classification: "INVALID", operation: decoded.envelope!.op, valid: false, reason: mapped.reason };
     }
 
     const result = validateCoveOperation(this.state, mapped.tx, this.config);
@@ -94,24 +123,25 @@ export class CoveIndexer {
     } else {
       this.invalidOps += 1;
     }
-    this.events.push({
-      blockHeight: height,
-      txid: btcTx.txid,
-      operation: mapped.tx.operation,
-      valid: result.valid,
-      reason: result.reason,
-    });
+    this.record(height, txIndex, btcTx.txid, mapped.tx.operation, result.valid ? "VALID" : "INVALID", result.valid, result.reason);
     return {
-      isCove: true,
+      classification: result.valid ? "VALID" : "INVALID",
       operation: mapped.tx.operation,
       valid: result.valid,
       reason: result.reason,
     };
   }
 
-  private recordInvalid(height: number, txid: string, op: string | null, reason: string): void {
-    this.invalidOps += 1;
-    this.events.push({ blockHeight: height, txid, operation: op, valid: false, reason });
+  private record(
+    height: number,
+    txIndex: number,
+    txid: string,
+    op: string | null,
+    classification: CoveTxClassification,
+    valid: boolean,
+    reason: string | null,
+  ): void {
+    this.events.push({ blockHeight: height, txIndex, txid, operation: op, classification, valid, reason });
   }
 
   getState(): CoveState {
@@ -130,7 +160,7 @@ export class CoveIndexer {
     return {
       processedBlocks: this.processedBlocks,
       processedTxs: this.processedTxs,
-      coveTxs: this.coveTxs,
+      coveCandidateTxs: this.coveCandidateTxs,
       validOps: this.validOps,
       invalidOps: this.invalidOps,
       tokens: this.state.tokens.size,

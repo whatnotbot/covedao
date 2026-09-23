@@ -18,13 +18,22 @@ export interface ChainUtxo {
   confirmations: number;
 }
 
+export interface BlockchainInfo {
+  chain: string;
+  blocks: number;
+  bestBlockHash: string;
+}
+
 export interface BitcoinChainProvider {
   getBestHeight(): Promise<number>;
   getBlockHash(height: number): Promise<string>;
   getBlock(hash: string): Promise<BitcoinBlock>;
   getRawTransaction(txid: string): Promise<string>;
-  /** Fetch + resolve prevout script/value for each input of the transaction. */
+  getBlockchainInfo(): Promise<BlockchainInfo>;
+  /** Fetch + resolve DIRECT prevout script/value for each input (no recursion). */
   getTransaction(txid: string): Promise<BitcoinProtocolTx>;
+  /** Resolve a single prevout (previous tx output) by txid:vout. */
+  getPrevout(txid: string, vout: number): Promise<ChainUtxo | undefined>;
   getUtxos(scriptOrAddress: string): Promise<ChainUtxo[]>;
   broadcastTransaction(hex: string): Promise<string>;
   estimateFeeRate(): Promise<bigint>;
@@ -36,9 +45,20 @@ interface RpcConfig {
   password?: string;
 }
 
+/**
+ * Convert Bitcoin Core's `estimatesmartfee.feerate` (BTC/kvB) to sat/vB.
+ * sat/vB = BTC/kvB × 100,000 (1 BTC = 1e8 sats; 1 kvB = 1000 vB).
+ * Pure helper so the conversion is unit-testable without an RPC.
+ */
+export function btcPerKvbToSatPerVb(btcPerKvb: number): bigint {
+  if (!Number.isFinite(btcPerKvb) || btcPerKvb <= 0) return 2n;
+  return BigInt(Math.max(1, Math.round(btcPerKvb * 100_000)));
+}
+
 /** Bitcoin Core JSON-RPC provider (deterministic full-node-backed indexing). */
 export class CoreRpcProvider implements BitcoinChainProvider {
   private id = 0;
+  private decodedCache = new Map<string, BitcoinProtocolTx>();
   constructor(private readonly cfg: RpcConfig) {}
 
   private async call<T>(method: string, params: unknown[] = []): Promise<T> {
@@ -64,6 +84,13 @@ export class CoreRpcProvider implements BitcoinChainProvider {
 
   async getBlockHash(height: number): Promise<string> {
     return this.call<string>("getblockhash", [height]);
+  }
+
+  async getBlockchainInfo(): Promise<BlockchainInfo> {
+    const info = await this.call<{ chain: string; blocks: number; bestblockhash: string }>(
+      "getblockchaininfo",
+    );
+    return { chain: info.chain, blocks: info.blocks, bestBlockHash: info.bestblockhash };
   }
 
   async getBlock(hash: string): Promise<BitcoinBlock> {
@@ -92,13 +119,36 @@ export class CoreRpcProvider implements BitcoinChainProvider {
     return this.call<string>("getrawtransaction", [txid, false]);
   }
 
-  async getTransaction(txid: string): Promise<BitcoinProtocolTx> {
+  /** Decode a raw transaction (cached; correctness never depends on the cache). */
+  private async getDecodedTransaction(txid: string): Promise<BitcoinProtocolTx> {
+    const cached = this.decodedCache.get(txid);
+    if (cached) return cached;
     const raw = await this.getRawTransaction(txid);
     const tx = decodeRawTransaction(raw);
-    // Resolve prevout info for each input.
+    this.decodedCache.set(txid, tx);
+    return tx;
+  }
+
+  /** Resolve a single prevout without recursing into its ancestors. */
+  async getPrevout(txid: string, vout: number): Promise<ChainUtxo | undefined> {
+    const prev = await this.getDecodedTransaction(txid);
+    const out = prev.outputs[vout];
+    if (!out) return undefined;
+    return {
+      txid,
+      vout,
+      scriptPubKeyHex: out.scriptPubKeyHex,
+      valueSats: out.valueSats,
+      confirmations: 0, // unknown; caller derives from height if needed
+    };
+  }
+
+  async getTransaction(txid: string): Promise<BitcoinProtocolTx> {
+    const tx = await this.getDecodedTransaction(txid);
+    // Resolve DIRECT prevouts only — never recursively walk ancestry.
     for (const input of tx.inputs) {
-      const prev = await this.getTransaction(input.prevTxid);
-      const prevOut = prev.outputs[input.vout];
+      if (input.prevTxid === "0".repeat(64)) continue; // coinbase
+      const prevOut = await this.getPrevout(input.prevTxid, input.vout);
       if (prevOut) {
         input.prevScriptPubKeyHex = prevOut.scriptPubKeyHex;
         input.prevValueSats = prevOut.valueSats;
@@ -117,8 +167,13 @@ export class CoreRpcProvider implements BitcoinChainProvider {
   }
 
   async estimateFeeRate(): Promise<bigint> {
-    const btcPerKvb = await this.call<number>("estimatesmartfee", [2]);
-    if (typeof btcPerKvb !== "number" || !Number.isFinite(btcPerKvb)) return 2n;
-    return BigInt(Math.max(1, Math.round(btcPerKvb * 100_000))); // sats/kvB
+    // estimatesmartfee returns an OBJECT { feerate (BTC/kvB), blocks, errors? }.
+    const res = await this.call<{ feerate?: number; errors?: string[] }>("estimatesmartfee", [2]);
+    const btcPerKvb = res?.feerate;
+    if (typeof btcPerKvb !== "number" || !Number.isFinite(btcPerKvb) || btcPerKvb <= 0) {
+      return 2n; // fallback: 2 sat/vB
+    }
+    // sat/vB = BTC/kvB × 100,000 (1 BTC = 1e8 sats; 1 kvB = 1000 vB).
+    return btcPerKvbToSatPerVb(btcPerKvb);
   }
 }

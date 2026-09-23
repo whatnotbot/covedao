@@ -1,32 +1,32 @@
-import type { Sats, TokenAtoms } from "./types.js";
-import { PRICE_UNIT_ATOMS, PUBLIC_SUPPLY_ATOMS, TOKENS_PER_STAGE } from "./constants.js";
+import type { Sats, DisplayTokens } from "./types.js";
+import { PRICE_UNIT_TOKENS, PUBLIC_SUPPLY_TOKENS, TOKENS_PER_STAGE } from "./constants.js";
 import { CurveError, getStageForSupply, getStagePrice } from "./prices.js";
 import { ceilDiv } from "./fees.js";
 
 export interface ExactTokensInput {
-  desiredTokens: TokenAtoms;
-  currentSupply: TokenAtoms;
+  desiredTokens: DisplayTokens;
+  currentSupply: DisplayTokens;
 }
 
 export interface ExactSatsInput {
   availableSats: Sats;
-  currentSupply: TokenAtoms;
+  currentSupply: DisplayTokens;
 }
 
 export interface QuoteResult {
-  tokens: TokenAtoms;
+  tokens: DisplayTokens;
   curveContributionSats: Sats;
   startingStage: number;
   endingStage: number;
-  supplyBefore: TokenAtoms;
-  supplyAfter: TokenAtoms;
+  supplyBefore: DisplayTokens;
+  supplyAfter: DisplayTokens;
 }
 
-function assertSupply(supply: TokenAtoms): void {
+function assertSupply(supply: DisplayTokens): void {
   if (supply < 0n) {
     throw new CurveError("NEGATIVE_SUPPLY", "Supply cannot be negative.");
   }
-  if (supply >= PUBLIC_SUPPLY_ATOMS) {
+  if (supply >= PUBLIC_SUPPLY_TOKENS) {
     throw new CurveError("MINT_SOLD_OUT", "Public mint is sold out.");
   }
 }
@@ -43,7 +43,7 @@ export function quoteExactTokens(input: ExactTokensInput): QuoteResult {
   }
   assertSupply(currentSupply);
 
-  const remainingPublic = PUBLIC_SUPPLY_ATOMS - currentSupply;
+  const remainingPublic = PUBLIC_SUPPLY_TOKENS - currentSupply;
   if (desiredTokens > remainingPublic) {
     throw new CurveError(
       "EXCEEDS_REMAINING_SUPPLY",
@@ -64,7 +64,7 @@ export function quoteExactTokens(input: ExactTokensInput): QuoteResult {
     const remainingInStage = stageEnd - supply;
     const chunk = remaining < remainingInStage ? remaining : remainingInStage;
     const price = getStagePrice(stage);
-    const cost = ceilDiv(chunk * price, PRICE_UNIT_ATOMS);
+    const cost = ceilDiv(chunk * price, PRICE_UNIT_TOKENS);
     totalSats += cost;
     supply += chunk;
     remaining -= chunk;
@@ -98,7 +98,7 @@ export function quoteExactSats(input: ExactSatsInput): QuoteResult {
   let remainingSats = availableSats;
   let totalTokens = 0n;
 
-  while (remainingSats > 0n && supply < PUBLIC_SUPPLY_ATOMS) {
+  while (remainingSats > 0n && supply < PUBLIC_SUPPLY_TOKENS) {
     const stage = getStageForSupply(supply);
     endingStage = stage;
     const stageEnd = BigInt(stage) * TOKENS_PER_STAGE;
@@ -106,10 +106,10 @@ export function quoteExactSats(input: ExactSatsInput): QuoteResult {
     const price = getStagePrice(stage);
 
     // Max tokens t with ceil(t*price/1M) <= remainingSats  <=>  t*price <= remainingSats*1M.
-    const maxAffordableInStage = (remainingSats * PRICE_UNIT_ATOMS) / price;
+    const maxAffordableInStage = (remainingSats * PRICE_UNIT_TOKENS) / price;
     const chunk = maxAffordableInStage < remainingInStage ? maxAffordableInStage : remainingInStage;
 
-    const cost = ceilDiv(chunk * price, PRICE_UNIT_ATOMS);
+    const cost = ceilDiv(chunk * price, PRICE_UNIT_TOKENS);
     totalTokens += chunk;
     supply += chunk;
     remainingSats -= cost;

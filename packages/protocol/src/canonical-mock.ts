@@ -1,8 +1,8 @@
 import {
   STAGE_COUNT,
   STAGE_PRICES_SATS_PER_MILLION,
-  TOTAL_SUPPLY_ATOMS,
-  CREATOR_PREMINE_ATOMS,
+  TOTAL_SUPPLY_TOKENS,
+  CREATOR_PREMINE_TOKENS,
   getStageForSupply,
   quoteExactTokens,
   getMinimumContribution,
@@ -29,7 +29,7 @@ import { toProtocolToken } from "./mock/adapter.js";
 
 const DECIMALS = 8;
 const ONE_TOKEN = 10n ** BigInt(DECIMALS);
-const TOTAL_ATOMS_8DP = TOTAL_SUPPLY_ATOMS * ONE_TOKEN;
+const TOTAL_ATOMS_8DP = TOTAL_SUPPLY_TOKENS * ONE_TOKEN;
 
 /** crc-launch-v1 standardized issuance profile (proposed). */
 export function crcLaunchV1DeploymentRules(): DeploymentRules {
@@ -41,7 +41,7 @@ export function crcLaunchV1DeploymentRules(): DeploymentRules {
     reserveBps: 1600,
     stageCount: STAGE_COUNT,
     priceTableSatsPerMillion: STAGE_PRICES_SATS_PER_MILLION,
-    creatorPremineAtoms: CREATOR_PREMINE_ATOMS * ONE_TOKEN,
+    creatorPremineAtoms: CREATOR_PREMINE_TOKENS * ONE_TOKEN,
   };
 }
 

@@ -1,5 +1,5 @@
 import type { Network } from "@crclaunch/config";
-import type { Sats, TokenAtoms } from "@crclaunch/curve";
+import type { Sats, DisplayTokens } from "@crclaunch/curve";
 import type { ProtocolConfig } from "../validation/config.js";
 import type {
   ProtocolEventType,
@@ -19,7 +19,7 @@ export interface MockTxPayload {
   listingId?: string;
   buyerAddress?: string;
   sellerAddress?: string;
-  tokenAmountAtoms?: TokenAtoms;
+  tokenAmountAtoms?: DisplayTokens;
   curveContributionSats?: Sats;
   platformFeeSats?: Sats;
   protocolFeeSats?: Sats;
@@ -28,7 +28,7 @@ export interface MockTxPayload {
   askingPriceSats?: Sats;
   totalPriceSats?: Sats;
   expiryHeight?: bigint;
-  supplyBeforeAtoms?: TokenAtoms;
+  supplyBeforeAtoms?: DisplayTokens;
 }
 
 export interface MockTxEnvelope {
@@ -67,11 +67,11 @@ export interface MockToken {
   name: string | null;
   creatorAddress: string;
   network: Network;
-  totalSupplyAtoms: TokenAtoms;
-  publicSupplyAtoms: TokenAtoms;
-  reserveSupplyAtoms: TokenAtoms;
-  confirmedMintedAtoms: TokenAtoms;
-  pendingMintedAtoms: TokenAtoms;
+  totalSupplyAtoms: DisplayTokens;
+  publicSupplyAtoms: DisplayTokens;
+  reserveSupplyAtoms: DisplayTokens;
+  confirmedMintedAtoms: DisplayTokens;
+  pendingMintedAtoms: DisplayTokens;
   currentStage: number;
   deployHeight: bigint;
   status: "LIVE" | "SOLD_OUT" | "GRADUATING" | "GRADUATED";
@@ -83,7 +83,7 @@ export interface MockListing {
   id: string;
   deploymentId: string;
   sellerAddress: string;
-  tokenAmountAtoms: TokenAtoms;
+  tokenAmountAtoms: DisplayTokens;
   askingPriceSats: Sats;
   creationHeight: bigint;
   expiryHeight: bigint;
@@ -100,7 +100,7 @@ export interface MockEvent {
   deploymentId: string | null;
   walletFrom: string | null;
   walletTo: string | null;
-  tokenAmountAtoms: TokenAtoms | null;
+  tokenAmountAtoms: DisplayTokens | null;
   btcAmountSats: Sats | null;
   payload: unknown;
   canonical: boolean;
@@ -108,9 +108,9 @@ export interface MockEvent {
 
 export interface WalletBalance {
   btcSats: Sats;
-  tokens: Record<string, TokenAtoms>;
+  tokens: Record<string, DisplayTokens>;
   /** tokens locked in open listings (not spendable). */
-  lockedTokens: Record<string, TokenAtoms>;
+  lockedTokens: Record<string, DisplayTokens>;
 }
 
 export interface MockChainState {

@@ -9,7 +9,7 @@ import {
   insertDraftToken,
   upsertTokenMetadata,
 } from "@crclaunch/db";
-import { TOTAL_SUPPLY_ATOMS, PUBLIC_SUPPLY_ATOMS, GRADUATION_RESERVE_ATOMS } from "@crclaunch/curve";
+import { TOTAL_SUPPLY_TOKENS, PUBLIC_SUPPLY_TOKENS, GRADUATION_RESERVE_TOKENS } from "@crclaunch/curve";
 import { treasuryAddress } from "@/lib/treasury";
 
 export async function POST(req: Request) {
@@ -86,9 +86,9 @@ export async function POST(req: Request) {
       creatorAddress: walletAddress,
       network: config.network,
       status: "DEPLOY_AWAITING_SIGNATURE",
-      totalSupplyAtoms: TOTAL_SUPPLY_ATOMS,
-      publicSupplyAtoms: PUBLIC_SUPPLY_ATOMS,
-      reserveSupplyAtoms: GRADUATION_RESERVE_ATOMS,
+      totalSupplyAtoms: TOTAL_SUPPLY_TOKENS,
+      publicSupplyAtoms: PUBLIC_SUPPLY_TOKENS,
+      reserveSupplyAtoms: GRADUATION_RESERVE_TOKENS,
     });
     await upsertTokenMetadata(db, token.deploymentTxid, {
       description,

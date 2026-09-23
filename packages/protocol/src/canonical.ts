@@ -1,4 +1,4 @@
-import type { Sats, TokenAtoms } from "@crclaunch/curve";
+import type { Sats, Atoms } from "@crclaunch/curve";
 
 /**
  * Higher-level canonical CRC integration contract.
@@ -46,14 +46,14 @@ export interface DeploymentAuthorization {
 
 export interface DeploymentRules {
   profile: string;
-  maxSupplyAtoms: TokenAtoms;
+  maxSupplyAtoms: Atoms;
   decimals: number;
   /** basis points of supply reserved for progressive public issuance (0..10000) */
   publicBps: number;
   reserveBps: number;
   stageCount: number;
   priceTableSatsPerMillion: readonly Sats[];
-  creatorPremineAtoms: TokenAtoms;
+  creatorPremineAtoms: Atoms;
 }
 
 export interface MintRules {
@@ -61,24 +61,24 @@ export interface MintRules {
   profile: string;
   stageCount: number;
   priceTableSatsPerMillion: readonly Sats[];
-  remainingPublicSupplyAtoms: TokenAtoms;
+  remainingPublicSupplyAtoms: Atoms;
   minimumContributionSats: Sats;
 }
 
 export interface MintAuthorizationRequest {
   deploymentId: string;
   walletAddress: string;
-  requestedAmountAtoms: TokenAtoms;
+  requestedAmountAtoms: Atoms;
 }
 
 export interface MintAuthorization {
   authorized: boolean;
   requiredPaymentSats: Sats;
-  tokenAmountAtoms: TokenAtoms;
+  tokenAmountAtoms: Atoms;
   startingStage: number;
   endingStage: number;
-  supplyBeforeAtoms: TokenAtoms;
-  supplyAfterAtoms: TokenAtoms;
+  supplyBeforeAtoms: Atoms;
+  supplyAfterAtoms: Atoms;
   authorizationId?: string;
   expiresAt?: string;
   reason?: string;
@@ -119,9 +119,9 @@ export interface CanonicalTokenState {
   deploymentId: string;
   ticker: string;
   status: string;
-  totalSupplyAtoms: TokenAtoms;
-  confirmedMintedAtoms: TokenAtoms;
-  remainingPublicSupplyAtoms: TokenAtoms;
+  totalSupplyAtoms: Atoms;
+  confirmedMintedAtoms: Atoms;
+  remainingPublicSupplyAtoms: Atoms;
   currentStage: number;
   reserveSats: Sats;
   stateHash: string;
@@ -132,7 +132,7 @@ export interface CanonicalActivityItem {
   blockHeight: bigint;
   type: string;
   ticker?: string;
-  amountAtoms?: TokenAtoms;
+  amountAtoms?: Atoms;
   btcSats?: Sats;
   timestamp: string;
 }

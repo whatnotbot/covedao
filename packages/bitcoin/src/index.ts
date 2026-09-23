@@ -4,6 +4,7 @@ export { MockBitcoinProvider } from "./mock.js";
 export {
   decodeRawTransaction,
   opReturnPayload,
+  parseCanonicalOpReturn,
   outputAddress,
   btcNetwork,
   bitcoin,
@@ -14,8 +15,25 @@ export {
 } from "./decoder.js";
 export {
   CoreRpcProvider,
+  btcPerKvbToSatPerVb,
   type BitcoinChainProvider,
   type BitcoinBlock,
   type ChainUtxo,
+  type BlockchainInfo,
 } from "./provider.js";
-export { buildUnsignedPsbt, opReturnScript, type CovePsbt, type BuildTxParams } from "./psbt.js";
+export {
+  buildUnsignedPsbt,
+  opReturnScript,
+  opReturnScriptData,
+  estimateInputVsize,
+  estimateOutputVsize,
+  type CovePsbt,
+  type BuildTxParams,
+} from "./psbt.js";
+export {
+  dustThreshold,
+  isWitnessProgram,
+  isP2WPKH,
+  isP2TR,
+  DUST_RELAY_FEE_SAT_PER_KVB,
+} from "./dust.js";

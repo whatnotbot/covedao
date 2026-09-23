@@ -1,7 +1,12 @@
+import { fileURLToPath } from "node:url";
+import { config as loadEnv } from "dotenv";
+loadEnv({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
+
 import { CoreRpcProvider, decodeRawTransaction, type BitcoinProtocolTx } from "@crclaunch/bitcoin";
 import { isCoveMagic } from "@crclaunch/protocol";
 import { CoveIndexer } from "./indexer.js";
 import { COVE_SIGNET_CONFIG } from "./config.js";
+import { CoveStore } from "./store.js";
 
 const DEFAULT_RPC_URL = "https://bitcoin-signet-rpc.publicnode.com";
 const GENESIS = COVE_SIGNET_CONFIG.genesisHeight;
@@ -157,13 +162,88 @@ function cmdStatus(): void {
 }
 
 const cmd = process.argv[2];
+
+/** Scan + persist a block range into a persistent store, in height/tx order. */
+async function scanAndPersist(
+  provider: CoreRpcProvider,
+  store: CoveStore,
+  indexer: CoveIndexer,
+  from: number,
+  to: number,
+): Promise<void> {
+  const network = COVE_SIGNET_CONFIG.network;
+  for (let h = from; h <= to; h++) {
+    const hash = await provider.getBlockHash(h);
+    const block = await provider.getBlock(hash);
+    const txs: BitcoinProtocolTx[] = [];
+    for (const raw of block.rawTxs) {
+      const tx = decodeRawTransaction(raw, "signet");
+      if (isCoveCandidate(tx)) await resolveActor(provider, tx);
+      txs.push(tx);
+    }
+    await store.saveBlock(network, h, hash, block.previousBlockHash);
+    indexer.processBlock(h, txs);
+    await store.saveOperations(network, indexer.getEvents());
+    await store.saveState(network, indexer.getState(), h, hash, indexer.getStateRoot());
+    process.stderr.write(`  persisted block ${h} (${block.rawTxs.length} txs)\n`);
+  }
+}
+
+/**
+ * Continuous indexer (item 15): read cursor → read tip → fetch next block →
+ * check previousBlockHash → process in order → persist → advance → repeat.
+ * On a parent-hash mismatch it fails closed and rebuilds from genesis.
+ */
+async function cmdWorker(): Promise<void> {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL is not set (worker requires persistence).");
+  const pollMs = Number(process.env.COVE_POLL_INTERVAL_MS ?? "15000");
+  const provider = new CoreRpcProvider({ url: process.env.COVE_RPC_URL ?? DEFAULT_RPC_URL });
+  await requireSignet(provider);
+  const store = new CoveStore(url);
+  const network = COVE_SIGNET_CONFIG.network;
+
+  // Resume from stored cursor, else from activation height.
+  const cursor = await store.getCursor(network);
+  let from = cursor ? Number(cursor.height) + 1 : GENESIS;
+  let indexer = new CoveIndexer(COVE_SIGNET_CONFIG);
+  console.log(`Cove worker: resuming from height ${from} (activation ${GENESIS})`);
+
+  for (;;) {
+    const tip = await provider.getBestHeight();
+    if (from > tip) {
+      await new Promise((r) => setTimeout(r, pollMs));
+      continue;
+    }
+    // Reorg check: the next block's parent must equal the stored tip hash.
+    const stored = await store.getCursor(network);
+    if (stored && from > GENESIS) {
+      const nextHash = await provider.getBlockHash(from);
+      const nextBlock = await provider.getBlock(nextHash);
+      if (stored.blockHash !== nextBlock.previousBlockHash) {
+        console.error(`REORG detected at ${from}: parent ${nextBlock.previousBlockHash} != tip ${stored.blockHash}. Rebuilding.`);
+        await store.clearCove(network);
+        indexer = new CoveIndexer(COVE_SIGNET_CONFIG);
+        from = GENESIS;
+        await scanAndPersist(provider, store, indexer, from, tip);
+        from = tip + 1;
+        continue;
+      }
+    }
+    await scanAndPersist(provider, store, indexer, from, tip);
+    from = tip + 1;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+}
+
 (async () => {
   try {
     if (cmd === "index") await cmdIndex();
     else if (cmd === "verify") await cmdVerify();
     else if (cmd === "status") cmdStatus();
+    else if (cmd === "worker") await cmdWorker();
     else {
-      console.error("Usage: cove <index|verify|status> [--from N] [--to N]");
+      console.error("Usage: cove <index|verify|status|worker> [--from N] [--to N]");
       process.exitCode = 1;
     }
   } catch (err) {

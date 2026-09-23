@@ -16,7 +16,8 @@
     "index": "tsx src/cli.ts index",
     "verify": "tsx src/cli.ts verify",
     "status": "tsx src/cli.ts status",
-    "test:integration": "tsx src/store.integration.ts"
+    "test:integration": "tsx src/store.integration.ts",
+    "worker": "tsx src/cli.ts worker"
   },
   "dependencies": {
     "@crclaunch/bitcoin": "workspace:*",

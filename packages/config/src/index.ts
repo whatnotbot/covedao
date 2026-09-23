@@ -14,7 +14,7 @@ export {
   validateConfig,
   ConfigError,
   isMainnetNetwork,
-  isCoveMainnetCanaryComplete,
+  isCoveMainnetCanaryAsserted,
 } from "./load.js";
 export {
   canWriteMainnet,

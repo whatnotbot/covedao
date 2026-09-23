@@ -137,10 +137,19 @@ export function isMainnetNetwork(network: Network): boolean {
 const TXID_RE = /^[0-9a-f]{64}$/;
 
 /**
- * A complete owner canary proof requires: a committed future activation height,
- * all three confirmed lifecycle txids, and matching final/replay state roots.
+ * Whether the owner's canary self-attestation is syntactically complete: a
+ * committed future activation height, three 64-hex txids, and matching
+ * final/replay state-root strings.
+ *
+ * IMPORTANT: this is an ASSERTION, not a proof. It performs six regex tests and
+ * one string equality — it does NOT query mainnet for those txids, does not
+ * recompute the state root from those blocks, and does not compare against the
+ * `.cove-mainnet-canary.json` manifest. It is named `…Asserted` so a
+ * self-attestation is never mistaken for chain verification. The chain-level
+ * verification happens in the canary process (cove-indexer), which replays and
+ * confirms the txids and recomputes the root before recording them.
  */
-export function isCoveMainnetCanaryComplete(config: RuntimeConfig): boolean {
+export function isCoveMainnetCanaryAsserted(config: RuntimeConfig): boolean {
   return (
     config.coveMainnetGenesisHeight !== null &&
     config.coveMainnetGenesisHeight > 0n &&
@@ -175,7 +184,7 @@ export function validateConfig(config: RuntimeConfig): void {
   // three txids + matching final/replay roots) before ANY Cove mainnet flag —
   // including public writes — may enable.
   const coveMainnetWrites = Object.values(config.coveFlags).some(Boolean);
-  if (coveMainnetWrites && !isCoveMainnetCanaryComplete(config)) {
+  if (coveMainnetWrites && !isCoveMainnetCanaryAsserted(config)) {
     throw new ConfigError(
       "A Cove mainnet flag is enabled but the full owner canary proof is not recorded. " +
         "Requires COVE_V1_MAINNET_GENESIS_HEIGHT (future H), the confirmed DEPLOY/MINT/TRANSFER " +

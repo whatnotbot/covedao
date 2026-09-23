@@ -27,7 +27,7 @@ import {
   type CoveState,
 } from "@crclaunch/protocol";
 import {
-  isCoveMainnetCanaryComplete,
+  isCoveMainnetCanaryAsserted,
   loadConfig,
   validateConfig,
   type RuntimeConfig,
@@ -87,7 +87,7 @@ export function assertMainnetRuntimeGates(env: NodeJS.ProcessEnv): RuntimeConfig
   if (!runtime.coveFlags.mainnetEnabled) {
     throw new Error("COVE_MAINNET_ENABLED must be true to run the mainnet canary.");
   }
-  if (!isCoveMainnetCanaryComplete(runtime)) {
+  if (!isCoveMainnetCanaryAsserted(runtime)) {
     throw new Error("Cove mainnet canary proof is incomplete (needs H + DEPLOY/MINT/TRANSFER txids + matching state/replay roots).");
   }
   return runtime;

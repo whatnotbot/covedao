@@ -58,6 +58,15 @@ export function btcPerKvbToSatPerVb(btcPerKvb: number): bigint {
   return BigInt(Math.max(1, Math.round(btcPerKvb * 100_000)));
 }
 
+/**
+ * Build the `testmempoolaccept` RPC params. Core expects `[[<hex>], maxfeerate]`
+ * (the tx array is separate from the optional BTC/kvB maxfeerate), NOT
+ * `[[<hex>, maxfeerate]]`.
+ */
+export function testMempoolAcceptParams(hex: string, maxfeerateBtcPerKvb?: number): unknown[] {
+  return maxfeerateBtcPerKvb === undefined ? [[hex]] : [[hex], maxfeerateBtcPerKvb];
+}
+
 /** Bitcoin Core JSON-RPC provider (deterministic full-node-backed indexing). */
 export class CoreRpcProvider implements BitcoinChainProvider {
   private id = 0;
@@ -155,6 +164,23 @@ export class CoreRpcProvider implements BitcoinChainProvider {
     };
   }
 
+  /**
+   * Get the current UTXO for txid:vout (Core `gettxout`). Returns null when the
+   * output is already spent — the authoritative "unspent" check.
+   */
+  async getTxout(txid: string, vout: number): Promise<{ scriptPubKeyHex: string; valueSats: bigint; confirmations: number } | null> {
+    const res = await this.call<{ scriptPubKey?: { hex: string }; value?: number; confirmations?: number } | null>(
+      "gettxout",
+      [txid, vout],
+    );
+    if (!res || !res.scriptPubKey || typeof res.value !== "number") return null;
+    return {
+      scriptPubKeyHex: res.scriptPubKey.hex,
+      valueSats: BigInt(Math.round(res.value * 1e8)),
+      confirmations: res.confirmations ?? 0,
+    };
+  }
+
   async getTransaction(txid: string): Promise<BitcoinProtocolTx> {
     const tx = await this.getDecodedTransaction(txid);
     // Resolve DIRECT prevouts only — never recursively walk ancestry.
@@ -187,10 +213,14 @@ export class CoreRpcProvider implements BitcoinChainProvider {
    * the node's rejection reason.
    */
   async testMempoolAccept(hex: string, maxFeeRateSatVb?: bigint): Promise<{ allowed: boolean; rejectReason?: string }> {
-    const maxfeerate = (maxFeeRateSatVb ?? this.cfg.maxFeeRateSatVb) ? Number(maxFeeRateSatVb ?? this.cfg.maxFeeRateSatVb) / 100_000 : undefined;
+    const maxfeerate = maxFeeRateSatVb !== undefined
+      ? Number(maxFeeRateSatVb) / 100_000
+      : this.cfg.maxFeeRateSatVb
+        ? Number(this.cfg.maxFeeRateSatVb) / 100_000
+        : undefined;
     const res = await this.call<{ allowed: boolean; "reject-reason"?: string }[]>(
       "testmempoolaccept",
-      maxfeerate === undefined ? [[hex]] : [[hex, maxfeerate]],
+      testMempoolAcceptParams(hex, maxfeerate),
     );
     const r = res?.[0];
     if (!r) return { allowed: false, rejectReason: "no result" };

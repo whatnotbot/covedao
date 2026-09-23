@@ -140,6 +140,120 @@ export class CoveStore {
     return rows[0] ? { height: rows[0].height, blockHash: rows[0].blockHash } : undefined;
   }
 
+  /**
+   * Persist one indexed block ATOMICALLY: block record, operations, full state
+   * projections, checkpoint and cursor commit in a single DB transaction. A
+   * crash mid-write can never leave the cursor ahead of the state.
+   */
+  async persistBlock(
+    network: string,
+    height: number,
+    hash: string,
+    parentHash: string,
+    state: CoveState,
+    events: readonly CoveIndexEvent[],
+    stateRoot: string,
+  ): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      // block
+      await tx
+        .insert(schema.coveBlocks)
+        .values({ network, height: BigInt(height), hash, parentHash })
+        .onConflictDoUpdate({
+          target: [schema.coveBlocks.network, schema.coveBlocks.height],
+          set: { hash, parentHash, canonical: true },
+        });
+      // operations
+      for (const e of events) {
+        await tx
+          .insert(schema.coveOperations)
+          .values({
+            network,
+            txid: e.txid,
+            blockHeight: BigInt(e.blockHeight),
+            txIndex: e.txIndex,
+            operation: e.operation,
+            classification: e.classification,
+            valid: e.valid,
+            reason: e.reason,
+          })
+          .onConflictDoUpdate({
+            target: [schema.coveOperations.network, schema.coveOperations.txid],
+            set: { blockHeight: BigInt(e.blockHeight), txIndex: e.txIndex, valid: e.valid, reason: e.reason },
+          });
+      }
+      // tokens
+      for (const [deploymentId, t] of state.tokens) {
+        await tx
+          .insert(schema.coveTokens)
+          .values({
+            network,
+            deploymentId,
+            ticker: t.ticker,
+            creator: t.creator,
+            confirmedSupplyAtoms: t.confirmedSupplyAtoms,
+            currentStage: t.currentStage,
+          })
+          .onConflictDoUpdate({
+            target: [schema.coveTokens.network, schema.coveTokens.deploymentId],
+            set: { confirmedSupplyAtoms: t.confirmedSupplyAtoms, currentStage: t.currentStage },
+          });
+      }
+      // balances + prune drained-to-zero entries
+      const stateKeys = new Set<string>();
+      for (const [owner, m] of state.balances) {
+        for (const [deploymentId, b] of m) {
+          stateKeys.add(`${owner}:${deploymentId}`);
+          await tx
+            .insert(schema.coveBalances)
+            .values({
+              network,
+              ownerScript: owner,
+              deploymentId,
+              availableAtoms: b.availableAtoms,
+              lockedAtoms: 0n,
+            })
+            .onConflictDoUpdate({
+              target: [schema.coveBalances.network, schema.coveBalances.ownerScript, schema.coveBalances.deploymentId],
+              set: { availableAtoms: b.availableAtoms, lockedAtoms: 0n },
+            });
+        }
+      }
+      const existing = await tx
+        .select()
+        .from(schema.coveBalances)
+        .where(eq(schema.coveBalances.network, network));
+      for (const row of existing) {
+        if (!stateKeys.has(`${row.ownerScript}:${row.deploymentId}`)) {
+          await tx
+            .delete(schema.coveBalances)
+            .where(
+              and(
+                eq(schema.coveBalances.network, network),
+                eq(schema.coveBalances.ownerScript, row.ownerScript),
+                eq(schema.coveBalances.deploymentId, row.deploymentId),
+              ),
+            );
+        }
+      }
+      // checkpoint + cursor (same height/hash/root — atomic with everything above)
+      await tx
+        .insert(schema.coveCheckpoints)
+        .values({ network, height: BigInt(height), blockHash: hash, stateRoot })
+        .onConflictDoUpdate({
+          target: [schema.coveCheckpoints.network, schema.coveCheckpoints.height],
+          set: { blockHash: hash, stateRoot },
+        });
+      await tx
+        .insert(schema.coveCursor)
+        .values({ network, height: BigInt(height), blockHash: hash })
+        .onConflictDoUpdate({
+          target: [schema.coveCursor.network],
+          set: { height: BigInt(height), blockHash: hash },
+        });
+    });
+  }
+
   async getLatestCheckpoint(network: string): Promise<{ height: bigint; blockHash: string; stateRoot: string } | undefined> {
     const rows = await this.db
       .select()

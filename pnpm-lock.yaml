@@ -182,6 +182,10 @@ importers:
         version: 2.1.9(@types/node@22.20.4)
 
   packages/config:
+    dependencies:
+      bitcoinjs-lib:
+        specifier: ^6.1.7
+        version: 6.1.8
     devDependencies:
       typescript:
         specifier: ^5.7.2

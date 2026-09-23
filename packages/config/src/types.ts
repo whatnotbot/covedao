@@ -20,6 +20,17 @@ export interface FeatureFlags {
   graduationMainnet: boolean;
 }
 
+export interface CoveFeatureFlags {
+  /** COVE_MAINNET_ENABLED */
+  mainnetEnabled: boolean;
+  /** COVE_DEPLOY_MAINNET_ENABLED */
+  deployMainnet: boolean;
+  /** COVE_MINT_MAINNET_ENABLED */
+  mintMainnet: boolean;
+  /** COVE_TRANSFER_MAINNET_ENABLED */
+  transferMainnet: boolean;
+}
+
 export interface BitcoinRpcConfig {
   url: string;
   user: string | null;
@@ -43,6 +54,7 @@ export interface RuntimeConfig {
   protocolUrl: string | null;
   protocolVerified: boolean;
   flags: FeatureFlags;
+  coveFlags: CoveFeatureFlags;
   bitcoinRpc: BitcoinRpcConfig | null;
   explorerUrl: string;
   treasuryAddress: string | null;

@@ -28,11 +28,11 @@ describe("validateConfig (fail-closed startup gates)", () => {
 
   it("rejects a garbage treasury address on a test (non-mock) network", () => {
     const config = loadConfig(env({ CRC_NETWORK: "test", PLATFORM_TREASURY_ADDRESS: "not-an-address" }));
-    expect(() => validateConfig(config)).toThrow(/must be a testnet address/);
+    expect(() => validateConfig(config)).toThrow(/valid testnet/);
   });
 
   it("accepts a valid testnet treasury address on a test network", () => {
-    const config = loadConfig(env({ CRC_NETWORK: "test", PLATFORM_TREASURY_ADDRESS: "tb1q000000000000000000000000000000000000000" }));
+    const config = loadConfig(env({ CRC_NETWORK: "test", PLATFORM_TREASURY_ADDRESS: "tb1q9lvsfd9mpl0h8fpfxxlspfcchdpxptws8kg6fa" }));
     expect(() => validateConfig(config)).not.toThrow();
   });
 
@@ -41,8 +41,42 @@ describe("validateConfig (fail-closed startup gates)", () => {
       CRC_NETWORK: "mainnet",
       CRC_DEPLOY_MAINNET_ENABLED: "true",
       CRC_PROTOCOL_VERIFIED: "true",
-      PLATFORM_TREASURY_ADDRESS: "tb1q000000000000000000000000000000000000000",
+      PLATFORM_TREASURY_ADDRESS: "tb1q9lvsfd9mpl0h8fpfxxlspfcchdpxptws8kg6fa",
     }));
-    expect(() => validateConfig(config)).toThrow(/must be a mainnet address/);
+    expect(() => validateConfig(config)).toThrow(/valid mainnet/);
+  });
+
+  it("rejects a checksum-corrupted bech32 address (real decoding, not regex)", () => {
+    const bad = "tb1q9lvsfd9mpl0h8fpfxxlspfcchdpxptws8kg6fb"; // last char corrupted
+    const config = loadConfig(env({ CRC_NETWORK: "test", PLATFORM_TREASURY_ADDRESS: bad }));
+    expect(() => validateConfig(config)).toThrow(/valid testnet/);
+  });
+
+  it("rejects a checksum-corrupted Base58 mainnet address", () => {
+    const bad = "1BoatSLRHtKNngkdXEeobR76b53LETtpyU"; // last char corrupted
+    const config = loadConfig(env({
+      CRC_NETWORK: "mainnet",
+      CRC_DEPLOY_MAINNET_ENABLED: "true",
+      CRC_PROTOCOL_VERIFIED: "true",
+      PLATFORM_TREASURY_ADDRESS: bad,
+    }));
+    expect(() => validateConfig(config)).toThrow(/valid mainnet/);
+  });
+
+  it("accepts a valid Base58 mainnet address", () => {
+    const config = loadConfig(env({
+      CRC_NETWORK: "mainnet",
+      CRC_DEPLOY_MAINNET_ENABLED: "true",
+      CRC_PROTOCOL_VERIFIED: "true",
+      PLATFORM_TREASURY_ADDRESS: "1BoatSLRHtKNngkdXEeobR76b53LETtpyT",
+    }));
+    expect(() => validateConfig(config)).not.toThrow();
+  });
+
+  it("refuses to boot when a Cove mainnet flag is set", () => {
+    const config = loadConfig(env({ COVE_MAINNET_ENABLED: "true" }));
+    expect(() => validateConfig(config)).toThrow(/Cove mainnet is not activated/);
+    const config2 = loadConfig(env({ COVE_DEPLOY_MAINNET_ENABLED: "true" }));
+    expect(() => validateConfig(config2)).toThrow(/Cove mainnet is not activated/);
   });
 });

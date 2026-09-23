@@ -30,7 +30,8 @@
     "cove:status": "pnpm --filter @crclaunch/cove-indexer status",
     "clean": "turbo run clean && rm -rf node_modules",
     "test:integration": "pnpm --filter @crclaunch/worker test:integration",
-    "cove:worker": "pnpm --filter @crclaunch/cove-indexer worker"
+    "cove:worker": "pnpm --filter @crclaunch/cove-indexer worker",
+    "cove:signet-proof": "pnpm --filter @crclaunch/cove-indexer signet-proof"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

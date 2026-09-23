@@ -16,6 +16,7 @@ export {
 export {
   CoreRpcProvider,
   btcPerKvbToSatPerVb,
+  testMempoolAcceptParams,
   type BitcoinChainProvider,
   type BitcoinBlock,
   type ChainUtxo,

@@ -76,7 +76,11 @@ export function isCoveMagic(data: Uint8Array): boolean {
   );
 }
 
+const U64_MAX = (1n << 64n) - 1n; // 18446744073709551615
+
 function writeU64BE(out: Uint8Array, offset: number, value: bigint): void {
+  if (value < 0n) throw new RangeError("uint64 value must be >= 0");
+  if (value > U64_MAX) throw new RangeError("uint64 value must be <= 2^64-1");
   for (let i = 7; i >= 0; i--) {
     out[offset + 7 - i] = Number((value >> BigInt(i * 8)) & 0xffn);
   }

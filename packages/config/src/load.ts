@@ -1,3 +1,4 @@
+import * as bitcoin from "bitcoinjs-lib";
 import type { Network, RuntimeConfig } from "./types.js";
 
 type Env = Record<string, string | undefined>;
@@ -85,6 +86,12 @@ export function loadConfig(env: Env): RuntimeConfig {
       marketMainnet: bool(env, "CRC_MARKET_MAINNET_ENABLED", false),
       graduationMainnet: bool(env, "CRC_GRADUATION_MAINNET_ENABLED", false),
     },
+    coveFlags: {
+      mainnetEnabled: bool(env, "COVE_MAINNET_ENABLED", false),
+      deployMainnet: bool(env, "COVE_DEPLOY_MAINNET_ENABLED", false),
+      mintMainnet: bool(env, "COVE_MINT_MAINNET_ENABLED", false),
+      transferMainnet: bool(env, "COVE_TRANSFER_MAINNET_ENABLED", false),
+    },
     bitcoinRpc: str(env, "BITCOIN_RPC_URL")
       ? {
           url: str(env, "BITCOIN_RPC_URL"),
@@ -131,6 +138,15 @@ export function validateConfig(config: RuntimeConfig): void {
     );
   }
 
+  // Cove mainnet is NOT activated (genesis is null). Any Cove mainnet flag must
+  // fail closed — this is an enforced code gate, not just .env text.
+  const coveMainnetWrites = Object.values(config.coveFlags).some(Boolean);
+  if (coveMainnetWrites) {
+    throw new ConfigError(
+      "A Cove mainnet flag is enabled but Cove mainnet is not activated. Refusing to boot.",
+    );
+  }
+
   const writesEnabled = Object.values(config.flags).some(Boolean);
   if (isMainnetNetwork(config.network) && writesEnabled) {
     if (!config.protocolVerified) {
@@ -148,25 +164,31 @@ export function validateConfig(config: RuntimeConfig): void {
   }
 
   if (config.treasuryAddress && config.network !== "mock") {
-    // Address-network sanity check, for EVERY non-mock network (not just mainnet).
-    // bech32/bech32m: bc1…/tb1… (2-char hrp + '1' + 25..62 alphanumerics);
-    // base58check: 1/3 (mainnet) or m/n/2 (testnet) + 25..34 base58 chars.
-    const a = config.treasuryAddress;
-    const base58 = (prefix: string) => /^[a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(a.slice(prefix.length));
-    const isMainnetAddr = /^bc1[a-z0-9]{25,62}$/.test(a) || (/^[13]/.test(a) && base58(""));
-    const isTestnetAddr = /^tb1[a-z0-9]{25,62}$/.test(a) || (/^[mn2]/.test(a) && base58(""));
+    // Real Bitcoin address decoding + checksum + network validation (not regex).
+    const isMainnetAddr = isDecodableAddress(config.treasuryAddress, "mainnet");
+    const isTestnetAddr = isDecodableAddress(config.treasuryAddress, "testnet");
     if (isMainnetNetwork(config.network)) {
       if (!isMainnetAddr) {
         throw new ConfigError(
-          "PLATFORM_TREASURY_ADDRESS must be a mainnet address (bc1/1/3) for a mainnet network.",
+          "PLATFORM_TREASURY_ADDRESS is not a valid mainnet Bitcoin address.",
         );
       }
     } else {
       if (!isTestnetAddr) {
         throw new ConfigError(
-          "PLATFORM_TREASURY_ADDRESS must be a testnet address (tb1/m/n/2) for the configured network.",
+          "PLATFORM_TREASURY_ADDRESS is not a valid testnet Bitcoin address.",
         );
       }
     }
+  }
+}
+
+/** Decode an address with bitcoinjs-lib (checksum + network enforced). */
+function isDecodableAddress(address: string, network: "mainnet" | "testnet"): boolean {
+  try {
+    const net = network === "mainnet" ? bitcoin.networks.bitcoin : bitcoin.networks.testnet;
+    return bitcoin.address.toOutputScript(address, net).length > 0;
+  } catch {
+    return false;
   }
 }

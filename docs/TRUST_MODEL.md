@@ -10,8 +10,11 @@ The invariant:
 
 This is the single most important assumption in this document.
 
-- **Bitcoin validates exactly two things**: the signature on input 0, and that
-  the outputs exist with those values. That is the complete list.
+- **Bitcoin validates Bitcoin consensus rules only**: UTXO spends, script and
+  signature execution, and value conservation (no inflation). It does **not**
+  validate any Cove-specific rule — ticker uniqueness, supply, balances, the
+  pricing curve, fees, or transfer semantics. All of those are Cove-indexer
+  rules.
 - **Bitcoin does NOT reject**: a DEPLOY of a taken ticker, a MINT of
   900,000,000 tokens, a MINT paying 1 sat, or a TRANSFER of tokens never owned.
   All of these confirm on-chain and are then **ignored by the indexer**.

@@ -51,6 +51,14 @@ describe("Cove V1 binary envelope", () => {
     expect(decodeCoveEnvelope(data).envelope).toEqual({ op: "transfer", tick: "ZZZZ", amt: big });
   });
 
+  it("rejects uint64 out-of-range amounts at encode time", () => {
+    expect(() => encodeCoveTransfer("FROG", -1n)).toThrow(RangeError);
+    expect(() => encodeCoveTransfer("FROG", 1n << 64n)).toThrow(RangeError);
+    // Boundary values encode fine.
+    expect(() => encodeCoveTransfer("FROG", 0n)).not.toThrow();
+    expect(() => encodeCoveTransfer("FROG", (1n << 64n) - 1n)).not.toThrow();
+  });
+
   it("rejects non-Cove magic", () => {
     const data = new TextEncoder().encode('{"p":"cove"}');
     expect(isCoveMagic(data)).toBe(false);

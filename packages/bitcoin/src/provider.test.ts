@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { btcPerKvbToSatPerVb } from "./provider.js";
+import { btcPerKvbToSatPerVb, testMempoolAcceptParams } from "./provider.js";
 
 describe("btcPerKvbToSatPerVb (estimatesmartfee conversion)", () => {
   it("converts 0.00001000 BTC/kvB → 1 sat/vB", () => {
@@ -19,5 +19,15 @@ describe("btcPerKvbToSatPerVb (estimatesmartfee conversion)", () => {
     expect(btcPerKvbToSatPerVb(-1)).toBe(2n);
     expect(btcPerKvbToSatPerVb(Number.NaN)).toBe(2n);
     expect(btcPerKvbToSatPerVb(Number.POSITIVE_INFINITY)).toBe(2n);
+  });
+});
+
+describe("testMempoolAcceptParams (RPC arg shape)", () => {
+  it("without maxfeerate → [[hex]]", () => {
+    expect(testMempoolAcceptParams("00ff")).toEqual([["00ff"]]);
+  });
+
+  it("with maxfeerate → [[hex], maxfeerate] (NOT [[hex, maxfeerate]])", () => {
+    expect(testMempoolAcceptParams("00ff", 0.0005)).toEqual([["00ff"], 0.0005]);
   });
 });

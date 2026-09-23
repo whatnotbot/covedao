@@ -76,5 +76,8 @@ jobs:
           bitcoin-cli -regtest -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
             -rpcport=18443 getblockchaininfo
 
+      - name: Migrate database (cove tables)
+        run: pnpm --filter @crclaunch/db db:migrate
+
       - name: Run DEPLOY/MINT/TRANSFER + restart + reorg recovery
         run: pnpm --filter @crclaunch/cove-indexer regtest-reorg

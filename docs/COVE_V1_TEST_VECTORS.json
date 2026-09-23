@@ -2,92 +2,76 @@
   "protocol": "cove",
   "version": 1,
   "network": "signet",
-  "units": "whole tokens (canonical curve unit; no floats, BigInt)",
-  "opreturn": "vout 0, single UTF-8 JSON push, <= 80 bytes",
+  "units": "atoms (8 decimals; 1 display token = 100,000,000 atoms)",
+  "opreturn": "vout 0, single canonical OP_RETURN push, binary envelope 10-26 bytes",
+  "activation_height": 323323,
   "envelope_golden": [
     {
       "name": "deploy",
-      "payload": "{\"p\":\"cove\",\"v\":1,\"op\":\"deploy\",\"tick\":\"FROG\"}",
-      "bytes": 46,
-      "ok": true,
-      "envelope": { "p": "cove", "v": 1, "protocol": "cove", "op": "deploy", "tick": "FROG" }
+      "hex": "434f5645010146524f47",
+      "bytes": 10,
+      "decode": { "op": "deploy", "tick": "FROG" }
     },
     {
-      "name": "mint",
-      "payload": "{\"p\":\"cove\",\"v\":1,\"op\":\"mint\",\"tick\":\"FROG\",\"amt\":\"1000000\",\"s\":\"0\"}",
-      "bytes": 64,
-      "ok": true,
-      "envelope": { "p": "cove", "v": 1, "protocol": "cove", "op": "mint", "tick": "FROG", "amt": 1000000, "s": 0 }
+      "name": "mint-2M-tokens",
+      "hex": "434f5645010246524f470000b5e620f480000000000000000000",
+      "bytes": 26,
+      "decode": { "op": "mint", "tick": "FROG", "amt": 200000000000000, "s": 0 }
     },
     {
-      "name": "transfer",
-      "payload": "{\"p\":\"cove\",\"v\":1,\"op\":\"transfer\",\"tick\":\"FROG\",\"amt\":\"100000\"}",
-      "bytes": 60,
-      "ok": true,
-      "envelope": { "p": "cove", "v": 1, "protocol": "cove", "op": "transfer", "tick": "FROG", "amt": 100000 }
-    },
-    {
-      "name": "mint-max-supply-fits-80-bytes",
-      "payload": "{\"p\":\"cove\",\"v\":1,\"op\":\"mint\",\"tick\":\"FROG\",\"amt\":\"840000000\",\"s\":\"840000000\"}",
-      "bytes": 78,
-      "ok": true
+      "name": "transfer-500k-tokens",
+      "hex": "434f5645010346524f4700002d79883d2000",
+      "bytes": 18,
+      "decode": { "op": "transfer", "tick": "FROG", "amt": 50000000000000 }
     }
   ],
   "envelope_malicious": [
-    { "name": "wrong-protocol", "payload": "{\"p\":\"crc-20\",\"v\":1,\"op\":\"deploy\",\"tick\":\"FROG\"}", "reason": "WRONG_PROTOCOL" },
-    { "name": "wrong-version", "payload": "{\"p\":\"cove\",\"v\":2,\"op\":\"deploy\",\"tick\":\"FROG\"}", "reason": "UNSUPPORTED_VERSION" },
-    { "name": "unknown-op", "payload": "{\"p\":\"cove\",\"v\":1,\"op\":\"list\",\"tick\":\"FROG\"}", "reason": "UNSUPPORTED_OPERATION" },
-    { "name": "duplicate-keys", "payload": "{\"p\":\"cove\",\"p\":\"cove\",\"v\":1,\"op\":\"deploy\",\"tick\":\"FROG\"}", "reason": "DUPLICATE_KEYS" },
-    { "name": "oversized", "payload": "{\"p\":\"cove\",\"v\":1,\"op\":\"deploy\",\"tick\":\"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\"}", "reason": "OVERSIZED_PAYLOAD" },
-    { "name": "bad-utf8", "payload_hex": "fffe08fd", "reason": "MALFORMED_UTF8" },
-    { "name": "bad-json", "payload": "not json", "reason": "MALFORMED_JSON" },
-    { "name": "non-object", "payload": "[1,2,3]", "reason": "NOT_OBJECT" },
-    { "name": "lowercase-ticker", "payload": "{\"p\":\"cove\",\"v\":1,\"op\":\"deploy\",\"tick\":\"frog\"}", "reason": "INVALID_TICKER" },
-    { "name": "five-char-ticker", "payload": "{\"p\":\"cove\",\"v\":1,\"op\":\"deploy\",\"tick\":\"FROGS\"}", "reason": "INVALID_TICKER" },
-    { "name": "zero-amount", "payload": "{\"p\":\"cove\",\"v\":1,\"op\":\"transfer\",\"tick\":\"FROG\",\"amt\":\"0\"}", "reason": "INVALID_AMOUNT" },
-    { "name": "negative-amount", "payload": "{\"p\":\"cove\",\"v\":1,\"op\":\"transfer\",\"tick\":\"FROG\",\"amt\":\"-1\"}", "reason": "INVALID_AMOUNT" },
-    { "name": "fractional-amount", "payload": "{\"p\":\"cove\",\"v\":1,\"op\":\"transfer\",\"tick\":\"FROG\",\"amt\":\"1.5\"}", "reason": "INVALID_AMOUNT" },
-    { "name": "leading-zero-amount", "payload": "{\"p\":\"cove\",\"v\":1,\"op\":\"transfer\",\"tick\":\"FROG\",\"amt\":\"007\"}", "reason": "INVALID_AMOUNT" },
-    { "name": "bad-supply", "payload": "{\"p\":\"cove\",\"v\":1,\"op\":\"mint\",\"tick\":\"FROG\",\"amt\":\"1\",\"s\":\"x\"}", "reason": "INVALID_SUPPLY" }
+    { "name": "non-cove-magic", "hex": "7b2270223a22636f7665227d", "reason": "NOT_COVE" },
+    { "name": "wrong-version", "hex": "434f5645020146524f47", "reason": "UNSUPPORTED_VERSION" },
+    { "name": "unknown-opcode", "hex": "434f5645017f46524f47", "reason": "UNSUPPORTED_OPERATION" },
+    { "name": "bad-length", "hex": "434f5645010146524f4700", "reason": "BAD_LENGTH" },
+    { "name": "bad-ticker", "hex": "434f5645010166724f47", "reason": "INVALID_TICKER" }
   ],
   "validator_rejections": [
     "TICKER_TAKEN",
     "STALE_SUPPLY",
     "OVERMINT",
-    "UNKNOWN_DEPLOYMENT",
+    "BELOW_MIN_CONTRIBUTION",
+    "SUBTOKEN_MINT_UNSUPPORTED",
     "UNDERPAYMENT",
     "OVERPAYMENT",
     "WRONG_TREASURY",
-    "WRONG_RESERVE",
+    "WRONG_SETTLEMENT_SCRIPT",
+    "WRONG_RECIPIENT",
+    "WRONG_CONTINUATION",
+    "MISSING_CONTINUATION",
     "INVALID_OUTPUT_LAYOUT",
     "UNSUPPORTED_ACTOR_SCRIPT",
     "INVALID_RECIPIENT",
     "SELF_TRANSFER",
     "INSUFFICIENT_AVAILABLE_TOKENS",
-    "ZERO_AMOUNT"
+    "ZERO_AMOUNT",
+    "RECIPIENT_ANCHOR_DUST",
+    "CONTINUATION_DUST",
+    "MULTIPLE_COVE_OPERATIONS"
   ],
-  "decoder_golden_signet": [
-    {
-      "name": "opreturn-p2wpkh",
-      "txid": "ba7003626c5805e2bea173660e4bcd8dcd14d273fb255531f1f662125871b630",
-      "block_height": 323322,
-      "description": "Real signet tx: OP_RETURN 'coinbin.org' + 2 P2WPKH outputs.",
-      "raw_hex": "02000000000101b01b0e775b4836bb06446ecd429706ac913e716507e695612e88a69b07d25de30000000000fdffffff0300000000000000000d6a0b636f696e62696e2e6f7267084c0100000000001600142fd904b4bb0fdf73a42931bf00a718bb4260add045bdd52701000000160014ab60470856ed5dcd3ccc46abc1d25e0714001fcd02473044022046f2aeb283aefbebf0307d0a025998910b60b3d9c2104c95d2ebca1735994ae302204a57174f769a2c53c76c4960c3553402c65299a1ddedaf9d35064dc2dea50a8b012102d450fa41f2f7c2b0afcdf6a648d66d0d74d8fdab718c2573beb0f0447b9c732e00000000"
-    },
-    {
-      "name": "key-path-p2tr",
-      "txid": "4880a1660588a2612d0271a15028f4894c6120acd32442b094118161d532338f",
-      "block_height": 323322,
-      "description": "Real signet tx: single key-path P2TR output (taproot address derivation).",
-      "raw_hex": "02000000000101cd296311c90c9adaa8fe09e85651c6ee74753663cb3e1d85ccc62abfaa52e87b03000000002e0000000193b8be000000000022512065f85d0c6d7a63611fb4ffaed9ac699159bda6cf5c049af46655b92868423a9a09408982118ed5fdab84a594b6b7832c0bcee696570f2c9d239b461eb7c5615eb3c361ce8a1a9de5f7593e4966d6e9272d184411867c933e5e65a8023fe81ce344c72079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798030000000b0000004000001e9d7c4ffb1b614a16cc28f0e6f136a380647d8d2c7a9fbf55f3dc85fcfb27ac9401140122a660947600a2697601409f697601407c94b2750200006b760120a2636c04000000007e6b012094687660a2636c0200007e6b6094687658a2636c01007e6b5894687c825188766b517e020001947c7600876302000167765187630280006776528763014067765387630120677654876360677655876358677656876354675268686868686868779f696c6c7e7e6b708201208875820140887c827c7e7e7c827c7e7c7eaa6c88ac21c14a981eda2acd9bf5d789fa1a9b7f95677776d99fd13ec0f658f0e4dbc5b5c87800000000"
-    }
-  ],
+  "mint_settlement_stage1": {
+    "amount_display_tokens": 2000000,
+    "curve_sats": 1000,
+    "platform_fee_sats": 10,
+    "combined_settlement_sats": 1010,
+    "settlement_script": "001468a5c1ce1047fa51ba0a2170329c3f9396c2a0b8",
+    "dust_note": "combined settlement (1010) is above P2WPKH dust (294); no separate 5-sat treasury output exists"
+  },
+  "dust_thresholds": {
+    "P2WPKH": 294,
+    "P2TR": 330,
+    "P2PKH": 546
+  },
   "indexer_signet_scan": {
-    "blocks": "323320..323322",
-    "transactions": 197,
-    "cove_txs": 0,
-    "rejected_opreturn": 10,
-    "state_root": "d61fea73f32d478e66c1c06fe9f915fae60cfb6f9b34d5be93caee73ad795db7",
-    "note": "No Cove deployments exist on signet yet (protocol is new). All 10 OP_RETURN txs were non-Cove data and were correctly rejected."
+    "blocks": "323323..323324",
+    "transactions": 138,
+    "cove_candidates": 0,
+    "note": "No Cove deployments exist on signet yet (protocol activated at 323323). Random OP_RETURNs (coinbin.org etc.) are classified NON_COVE, not invalid."
   }
 }

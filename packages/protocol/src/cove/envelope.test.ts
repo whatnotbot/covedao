@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import vectors from "../../../../docs/COVE_V1_TEST_VECTORS.json";
 import {
   COVE_DEPLOY_LEN,
   COVE_MINT_LEN,
@@ -79,5 +80,23 @@ describe("Cove V1 binary envelope", () => {
     const data = encodeCoveDeploy("FROG");
     data[6] = 0x61; // lowercase 'a'
     expect(decodeCoveEnvelope(data)).toEqual({ ok: false, reason: "INVALID_TICKER" });
+  });
+
+  it("matches the committed golden + malicious hex vectors", () => {
+    for (const v of vectors.envelope_golden as { hex: string; decode: Record<string, unknown> }[]) {
+      const data = Uint8Array.from(Buffer.from(v.hex, "hex"));
+      const r = decodeCoveEnvelope(data);
+      expect(r.ok).toBe(true);
+      // JSON numbers are finite; the encoder returns bigint atom amounts.
+      const expected = { ...v.decode };
+      for (const k of ["amt", "s"] as const) {
+        if (typeof expected[k] === "number") expected[k] = BigInt(expected[k] as number);
+      }
+      expect(r.envelope).toEqual(expected);
+    }
+    for (const v of vectors.envelope_malicious as { hex: string; reason: string }[]) {
+      const data = Uint8Array.from(Buffer.from(v.hex, "hex"));
+      expect(decodeCoveEnvelope(data).reason).toBe(v.reason);
+    }
   });
 });

@@ -118,23 +118,27 @@ export async function updateTokenState(
   return row;
 }
 
-export async function upsertTokenMetadata(db: DB, tokenId: string, patch: Record<string, unknown>) {
+export async function upsertTokenMetadata(db: DB, deploymentTxid: string, patch: Record<string, unknown>) {
   const [row] = await db
     .insert(tokenMetadata)
-    .values({ tokenId, ...patch })
-    .onConflictDoUpdate({ target: tokenMetadata.tokenId, set: { ...patch, updatedAt: new Date() } })
+    .values({ deploymentTxid, ...patch })
+    .onConflictDoUpdate({ target: tokenMetadata.deploymentTxid, set: { ...patch, updatedAt: new Date() } })
     .returning();
   return row;
 }
 
-export async function getTokenMetadataForToken(db: DB, tokenId: string) {
-  const [row] = await db.select().from(tokenMetadata).where(eq(tokenMetadata.tokenId, tokenId)).limit(1);
+export async function getTokenMetadataForDeployment(db: DB, deploymentTxid: string) {
+  const [row] = await db
+    .select()
+    .from(tokenMetadata)
+    .where(eq(tokenMetadata.deploymentTxid, deploymentTxid))
+    .limit(1);
   return row ?? null;
 }
 
-export async function listMetadataByTokenIds(db: DB, tokenIds: string[]) {
-  if (tokenIds.length === 0) return [];
-  return db.select().from(tokenMetadata).where(inArray(tokenMetadata.tokenId, tokenIds));
+export async function listMetadataByDeploymentTxids(db: DB, deploymentTxids: string[]) {
+  if (deploymentTxids.length === 0) return [];
+  return db.select().from(tokenMetadata).where(inArray(tokenMetadata.deploymentTxid, deploymentTxids));
 }
 
 export async function listHolders(db: DB, network: string, deploymentId: string, limit = 25, offset = 0) {
@@ -508,12 +512,13 @@ export async function insertFeeLedgerRow(db: DB, f: {
     .onConflictDoNothing({ target: [feeLedger.network, feeLedger.txid, feeLedger.eventIndex] });
 }
 
+/**
+ * Protocol-derived projection tables (truncated + rebuilt on reorg/reindex).
+ * These are a cache of canonical chain state, NOT application/user data.
+ */
 const PROJECTION_TABLES = [
   "fee_ledger",
-  "reports",
-  "admin_audit_logs",
   "protocol_snapshots",
-  "terms_acceptances",
   "quotes",
   "mints",
   "trades",
@@ -522,16 +527,36 @@ const PROJECTION_TABLES = [
   "chain_events",
   "chain_transactions",
   "blocks",
-  "reorg_events",
   "indexer_cursors",
   "deployments",
-  "token_metadata",
   "tokens",
 ];
 
-/** Truncate all projection tables (demo reset / reindex). Chain state is the source of truth. */
+/**
+ * Application/user data that must SURVIVE a projection rebuild (not truncated).
+ * `token_metadata` is keyed by immutable deploymentTxid, so it survives tokens
+ * being rebuilt; `reorg_events` is forensic history.
+ * reports / terms_acceptances / admin_audit_logs / media are user/admin data.
+ */
+const PRESERVED_TABLES = [
+  "token_metadata",
+  "reorg_events",
+  "reports",
+  "terms_acceptances",
+  "admin_audit_logs",
+  "media",
+];
+
+/** Truncate protocol projection tables only (demo reset / reorg rebuild). Chain state is source of truth. */
 export async function resetProjections(db: Database): Promise<void> {
   await db.execute(sql.raw(`TRUNCATE TABLE ${PROJECTION_TABLES.join(", ")} CASCADE`));
+}
+
+/** Truncate EVERYTHING including preserved app data (full demo reset). */
+export async function resetAllTables(db: Database): Promise<void> {
+  await db.execute(
+    sql.raw(`TRUNCATE TABLE ${[...PROJECTION_TABLES, ...PRESERVED_TABLES].join(", ")} CASCADE`),
+  );
 }
 
 /** Mark chain events non-canonical whose txid is no longer in the canonical chain. */

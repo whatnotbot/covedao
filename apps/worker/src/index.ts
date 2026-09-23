@@ -7,7 +7,7 @@ import { Redis } from "ioredis";
 import { loadConfig, validateConfig } from "@crclaunch/config";
 import { createDb } from "@crclaunch/db";
 import { MockChainNode, MockCRCAdapter, RedisMockStorage, seedMockChain } from "@crclaunch/protocol";
-import { detectReorg, maybeGraduate, syncMockToDb } from "./sync.js";
+import { detectReorg, maybeGraduate, rebuildProjections, syncMockToDb } from "./sync.js";
 
 const QUEUE_NAME = "indexer";
 const BLOCK_INTERVAL_MS = Number(process.env.MOCK_BLOCK_INTERVAL_MS ?? 1000);
@@ -31,8 +31,14 @@ async function main() {
   const worker = new Worker(
     QUEUE_NAME,
     async () => {
-      await detectReorg(db, node, network);
-      await syncMockToDb(db, node, network);
+      // On a detected reorg, rebuild the projection from the canonical chain
+      // (incremental-after-reorg === clean-reindex). Otherwise incremental sync.
+      const reorg = await detectReorg(db, node, network);
+      if (reorg) {
+        await rebuildProjections(db, node, network);
+      } else {
+        await syncMockToDb(db, node, network);
+      }
       if (network === "mock") {
         await maybeGraduate(db, node, adapter, config, network);
       }

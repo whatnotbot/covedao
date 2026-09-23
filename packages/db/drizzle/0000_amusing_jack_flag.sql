@@ -196,7 +196,7 @@ CREATE TABLE IF NOT EXISTS "terms_acceptances" (
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "token_metadata" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"token_id" uuid NOT NULL,
+	"deployment_txid" text NOT NULL,
 	"description" text DEFAULT '' NOT NULL,
 	"website_url" text,
 	"x_url" text,
@@ -271,12 +271,6 @@ EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
 --> statement-breakpoint
-DO $$ BEGIN
- ALTER TABLE "token_metadata" ADD CONSTRAINT "token_metadata_token_id_tokens_id_fk" FOREIGN KEY ("token_id") REFERENCES "public"."tokens"("id") ON DELETE cascade ON UPDATE no action;
-EXCEPTION
- WHEN duplicate_object THEN null;
-END $$;
---> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "blocks_network_height_uq" ON "blocks" USING btree ("network","height");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "chain_events_network_txid_idx_uq" ON "chain_events" USING btree ("network","txid","event_index");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "chain_events_block_idx" ON "chain_events" USING btree ("network","block_height");--> statement-breakpoint
@@ -295,7 +289,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "mints_txid_uq" ON "mints" USING btree ("netwo
 CREATE INDEX IF NOT EXISTS "mints_deployment_idx" ON "mints" USING btree ("deployment_id","created_at");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "quotes_deployment_idx" ON "quotes" USING btree ("deployment_id","created_at");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "terms_wallet_version_uq" ON "terms_acceptances" USING btree ("wallet_address","terms_version");--> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "token_metadata_token_uq" ON "token_metadata" USING btree ("token_id");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "token_metadata_deployment_uq" ON "token_metadata" USING btree ("deployment_txid");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "tokens_deployment_network_uq" ON "tokens" USING btree ("network","deployment_txid");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "tokens_ticker_idx" ON "tokens" USING btree ("network","ticker_normalized");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "tokens_status_created_idx" ON "tokens" USING btree ("status","created_at");--> statement-breakpoint

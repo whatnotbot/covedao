@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getServices } from "@/lib/server";
-import { getTokenByDeployment, getTokenMetadataForToken, listHolders } from "@crclaunch/db";
+import { getTokenByDeployment, getTokenMetadataForDeployment, listHolders } from "@crclaunch/db";
 import { tokenView } from "@/lib/token-view";
 import { fmtBtc, fmtPricePerMillion, fmtProgressBps, fmtTokens } from "@/lib/format";
 import { MintButton } from "@/components/MintButton";
@@ -15,7 +15,7 @@ export default async function TokenPage({ params }: { params: Promise<{ deployme
   const { deploymentId } = await params;
   const token = await getTokenByDeployment(db, config.network, deploymentId);
   if (!token) notFound();
-  const meta = await getTokenMetadataForToken(db, token.id);
+  const meta = await getTokenMetadataForDeployment(db, token.deploymentTxid);
   const view = tokenView(token, meta);
   const holders = await listHolders(db, config.network, deploymentId, 25, 0);
 

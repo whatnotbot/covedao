@@ -1,6 +1,6 @@
 import { ok, fail } from "@/lib/api";
 import { getServices, initServices } from "@/lib/server";
-import { resetProjections } from "@crclaunch/db";
+import { resetAllTables } from "@crclaunch/db";
 import { seedMockChain, createInitialState } from "@crclaunch/protocol";
 
 /**
@@ -29,6 +29,6 @@ export async function POST() {
     state.height = 0n;
   });
   await seedMockChain(node!);
-  await resetProjections(db);
+  await resetAllTables(db);
   return ok({ reset: true });
 }

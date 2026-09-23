@@ -25,7 +25,8 @@
     "reindex": "pnpm --filter @crclaunch/worker reindex",
     "demo:reset": "pnpm --filter @crclaunch/worker demo:reset",
     "mock-crc": "pnpm --filter @crclaunch/mock-crc-service dev",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "test:integration": "pnpm --filter @crclaunch/worker test:integration"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

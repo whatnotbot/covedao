@@ -236,9 +236,9 @@ export class MockCRCAdapter {
     }
 
     const fee = mockMinerFee(1, 1);
-    const outputs: TransactionOutput[] = [
-      { index: 0, address: input.sellerAddress, amountSats: 0n, kind: "token", tokenAmountAtoms: input.tokenAmountAtoms },
-    ];
+    // V1: a listing creation has no protocol BTC outputs — the token lock is
+    // protocol state (validated by the state machine), not a transaction output.
+    const outputs: TransactionOutput[] = [];
     const envelope = buildEnvelope({
       op: "DEX_ASK",
       network: token.network,

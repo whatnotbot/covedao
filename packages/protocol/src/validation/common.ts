@@ -33,6 +33,37 @@ export function countOutputsByKind(outputs: readonly TransactionOutput[], kind: 
   return outputs.filter((o) => o.kind === kind).length;
 }
 
+export interface ExpectedOutput {
+  index: number;
+  address: string;
+  amountSats: Sats;
+  kind: string;
+}
+
+/**
+ * Validate the EXACT protocol output layout: output count, index/order,
+ * address, amount (exact equality — no overpay/underpay), and kind.
+ * Returns a deterministic reason string, or null when valid.
+ */
+export function validateExactOutputs(
+  outputs: readonly TransactionOutput[],
+  expected: readonly ExpectedOutput[],
+): string | null {
+  if (outputs.length !== expected.length) {
+    return "INVALID_OUTPUT_LAYOUT";
+  }
+  for (let i = 0; i < expected.length; i++) {
+    const exp = expected[i]!;
+    const out = outputs[i]!;
+    if (out.index !== exp.index) return "INVALID_OUTPUT_LAYOUT";
+    if (out.address !== exp.address) return "WRONG_OUTPUT_ADDRESS";
+    if (out.kind !== exp.kind) return "WRONG_OUTPUT_KIND";
+    if (out.amountSats < exp.amountSats) return "UNDERPAYMENT";
+    if (out.amountSats > exp.amountSats) return "OVERPAYMENT";
+  }
+  return null;
+}
+
 export interface OpValidationResult<T = unknown> {
   valid: boolean;
   reason: string | null;

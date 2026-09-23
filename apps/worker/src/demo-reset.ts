@@ -4,7 +4,7 @@ loadEnv({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
 
 import { Redis } from "ioredis";
 import { loadConfig } from "@crclaunch/config";
-import { createDb, resetProjections } from "@crclaunch/db";
+import { createDb, resetAllTables } from "@crclaunch/db";
 import {
   MockChainNode,
   RedisMockStorage,
@@ -41,7 +41,7 @@ async function main() {
   await seedMockChain(node);
 
   // 3. Reset the DB projection.
-  await resetProjections(db);
+  await resetAllTables(db);
 
   // 4. Re-sync the seeded chain into the DB so /demo works immediately.
   await node.mineBlock();

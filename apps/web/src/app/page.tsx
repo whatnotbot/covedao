@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getServices } from "@/lib/server";
-import { listTokens, listMetadataByTokenIds } from "@crclaunch/db";
+import { listTokens, listMetadataByDeploymentTxids } from "@crclaunch/db";
 import { tokenView } from "@/lib/token-view";
 import { TokenCard } from "@/components/TokenCard";
 
@@ -9,9 +9,9 @@ export const dynamic = "force-dynamic";
 export default async function HomePage() {
   const { db, config } = getServices();
   const all = await listTokens(db, { network: config.network, limit: 100 });
-  const metas = await listMetadataByTokenIds(db, all.map((t) => t.id));
-  const metaMap = new Map(metas.map((m) => [m.tokenId, m]));
-  const views = all.map((t) => tokenView(t, metaMap.get(t.id)));
+  const metas = await listMetadataByDeploymentTxids(db, all.map((t) => t.deploymentTxid));
+  const metaMap = new Map(metas.map((m) => [m.deploymentTxid, m]));
+  const views = all.map((t) => tokenView(t, metaMap.get(t.deploymentTxid)));
 
   const live = views.filter((t) => ["LIVE", "SOLD_OUT", "GRADUATING"].includes(t.status));
   const graduated = views.filter((t) => t.status === "GRADUATED");

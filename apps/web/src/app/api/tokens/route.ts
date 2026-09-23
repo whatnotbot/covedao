@@ -1,6 +1,6 @@
 import { ok } from "@/lib/api";
 import { getServices } from "@/lib/server";
-import { listTokens, listMetadataByTokenIds } from "@crclaunch/db";
+import { listTokens, listMetadataByDeploymentTxids } from "@crclaunch/db";
 import { tokenView } from "@/lib/token-view";
 
 export async function GET(req: Request) {
@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   const limit = Math.min(Number(url.searchParams.get("limit") ?? 25), 100);
 
   const rows = await listTokens(db, { network: config.network, status, limit });
-  const metas = await listMetadataByTokenIds(db, rows.map((r) => r.id));
-  const metaMap = new Map(metas.map((m) => [m.tokenId, m]));
-  return ok(rows.map((r) => tokenView(r, metaMap.get(r.id))));
+  const metas = await listMetadataByDeploymentTxids(db, rows.map((r) => r.deploymentTxid));
+  const metaMap = new Map(metas.map((m) => [m.deploymentTxid, m]));
+  return ok(rows.map((r) => tokenView(r, metaMap.get(r.deploymentTxid))));
 }

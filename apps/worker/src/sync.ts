@@ -24,28 +24,55 @@ import type { MockChainNode, MockCRCAdapter } from "@crclaunch/protocol";
 import type { RuntimeConfig } from "@crclaunch/config";
 import { PUBLIC_SUPPLY_ATOMS, TOTAL_SUPPLY_ATOMS, GRADUATION_RESERVE_ATOMS } from "@crclaunch/curve";
 import type { TokenStatus } from "@crclaunch/db";
+import {
+  getBlock,
+  resetProjections,
+} from "@crclaunch/db";
 
 const CURSOR_ID = "mock-indexer";
 
-export async function detectReorg(db: Database, node: MockChainNode, network: string): Promise<void> {
+/**
+ * Detect a reorg by comparing the stored canonical block hash at the cursor
+ * height against the node's current hash, walking back through STORED block
+ * history to find the common ancestor (P0.1 #23). Returns true when a reorg
+ * occurred, and records a reorg event for forensics.
+ */
+export async function detectReorg(db: Database, node: MockChainNode, network: string): Promise<boolean> {
   const cursor = await getCursor(db, CURSOR_ID);
-  if (!cursor || cursor.lastHeight <= 0n) return;
-  const tipHash = await node.getBlockHash(cursor.lastHeight);
-  if (tipHash === cursor.lastBlockHash) return;
+  if (!cursor || cursor.lastHeight <= 0n) return false;
+
+  const storedTip = await getBlock(db, network, cursor.lastHeight);
+  if (!storedTip) return false; // no canonical block history stored yet
+
+  const currentHash = await node.getBlockHash(cursor.lastHeight);
+  if (currentHash === storedTip.hash) return false;
 
   let h = cursor.lastHeight;
   while (h > 0n) {
-    const hash = await node.getBlockHash(h);
-    if (hash === cursor.lastBlockHash) break;
+    const stored = await getBlock(db, network, h);
+    const current = await node.getBlockHash(h);
+    if (stored && stored.hash === current) break;
     h -= 1n;
   }
+
   await insertReorgEvent(db, {
     network,
     fromHeight: h + 1n,
     toHeight: cursor.lastHeight,
-    orphanedBlockHash: cursor.lastBlockHash,
-    details: { detectedTip: tipHash },
+    orphanedBlockHash: storedTip.hash,
+    details: { detectedTip: currentHash },
   });
+  return true;
+}
+
+/**
+ * Rebuild the materialized projection from the canonical mock chain. The chain
+ * is the source of truth; the DB is a projection/cache, so a deterministic
+ * rebuild is the simplest correct reconciliation (P0.1 #15).
+ */
+export async function rebuildProjections(db: Database, node: MockChainNode, network: string): Promise<void> {
+  await resetProjections(db);
+  await syncMockToDb(db, node, network);
 }
 
 export async function syncMockToDb(db: Database, node: MockChainNode, network: string): Promise<void> {

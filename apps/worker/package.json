@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "reindex": "tsx src/reindex.ts",
-    "demo:reset": "tsx src/demo-reset.ts"
+    "demo:reset": "tsx src/demo-reset.ts",
+    "test:integration": "tsx src/reorg.integration.ts"
   },
   "dependencies": {
     "@crclaunch/config": "workspace:*",

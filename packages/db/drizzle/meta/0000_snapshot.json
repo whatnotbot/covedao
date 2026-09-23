@@ -1,5 +1,5 @@
 {
-  "id": "5aae9939-4733-4de4-a025-9aed94742c80",
+  "id": "7a69908e-ba99-484b-9e5e-5ccee02efacd",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -1569,9 +1569,9 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "token_id": {
-          "name": "token_id",
-          "type": "uuid",
+        "deployment_txid": {
+          "name": "deployment_txid",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -1660,11 +1660,11 @@
         }
       },
       "indexes": {
-        "token_metadata_token_uq": {
-          "name": "token_metadata_token_uq",
+        "token_metadata_deployment_uq": {
+          "name": "token_metadata_deployment_uq",
           "columns": [
             {
-              "expression": "token_id",
+              "expression": "deployment_txid",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1676,21 +1676,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "token_metadata_token_id_tokens_id_fk": {
-          "name": "token_metadata_token_id_tokens_id_fk",
-          "tableFrom": "token_metadata",
-          "tableTo": "tokens",
-          "columnsFrom": [
-            "token_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

@@ -12,7 +12,10 @@ import type { Network } from "@crclaunch/config";
 import type { ProtocolEventType } from "../types.js";
 import type { ProtocolConfig } from "../validation/config.js";
 import { DEFAULT_MOCK_PROTOCOL_CONFIG } from "../validation/config.js";
-import { outputsToAddress, countOutputsToAddress, type OpValidationResult } from "../validation/common.js";
+import {
+  validateExactOutputs,
+  type OpValidationResult,
+} from "../validation/common.js";
 import type {
   MockBlock,
   MockChainState,
@@ -154,8 +157,10 @@ function validateTx(
         return { valid: false, reason: "SIGNER_MISMATCH", normalized: null };
       }
       const launchFee = state.config.launchFeeSats;
-      const actualLaunchFee = outputsToAddress(tx.outputs, state.config.treasuryAddress);
-      if (actualLaunchFee < launchFee) return { valid: false, reason: "LAUNCH_FEE_UNDERPAYMENT", normalized: null };
+      const layoutError = validateExactOutputs(tx.outputs, [
+        { index: 0, address: state.config.treasuryAddress, amountSats: launchFee, kind: "launch-fee" },
+      ]);
+      if (layoutError) return { valid: false, reason: layoutError, normalized: null };
       const walletBtc = state.balances[signer]?.btcSats ?? MOCK_FAUCET_SATS;
       if (walletBtc < launchFee + tx.feeSats) {
         return { valid: false, reason: "INSUFFICIENT_BTC", normalized: null };
@@ -200,18 +205,12 @@ function validateTx(
       const requiredCurve = quote.curveContributionSats;
       const requiredPlatform = computePlatformFee(requiredCurve, state.config.primaryMintFeeBps);
 
-      // Derive actual payments from OUTPUTS, not payload. Exact layout: exactly
-      // one reserve output and exactly one platform-fee output.
-      const actualCurve = outputsToAddress(tx.outputs, state.config.reserveAddress);
-      const actualPlatform = outputsToAddress(tx.outputs, state.config.treasuryAddress);
-      if (countOutputsToAddress(tx.outputs, state.config.reserveAddress) !== 1) {
-        return { valid: false, reason: "INVALID_OUTPUT_LAYOUT", normalized: null };
-      }
-      if (countOutputsToAddress(tx.outputs, state.config.treasuryAddress) !== 1) {
-        return { valid: false, reason: "INVALID_OUTPUT_LAYOUT", normalized: null };
-      }
-      if (actualCurve < requiredCurve) return { valid: false, reason: "UNDERPAYMENT", normalized: null };
-      if (actualPlatform < requiredPlatform) return { valid: false, reason: "FEE_UNDERPAYMENT", normalized: null };
+      // Exact V1 protocol outputs: exactly two outputs, exact amounts/addresses/kinds.
+      const layoutError = validateExactOutputs(tx.outputs, [
+        { index: 0, address: state.config.reserveAddress, amountSats: requiredCurve, kind: "curve-reserve" },
+        { index: 1, address: state.config.treasuryAddress, amountSats: requiredPlatform, kind: "platform-fee" },
+      ]);
+      if (layoutError) return { valid: false, reason: layoutError, normalized: null };
       const walletBtc = state.balances[signer]?.btcSats ?? MOCK_FAUCET_SATS;
       const total = requiredCurve + requiredPlatform + tx.feeSats;
       if (walletBtc < total) return { valid: false, reason: "INSUFFICIENT_BTC", normalized: null };
@@ -242,8 +241,11 @@ function validateTx(
       const to = p.buyerAddress ?? p.sellerAddress ?? "";
       if (!to || to === signer) return { valid: false, reason: "INVALID_RECIPIENT", normalized: null };
       const fromWallet = state.balances[signer];
-      if (!fromWallet || (fromWallet.tokens[token.deploymentId] ?? 0n) < amount) {
-        return { valid: false, reason: "INSUFFICIENT_TOKENS", normalized: null };
+      const total = fromWallet?.tokens[token.deploymentId] ?? 0n;
+      const locked = fromWallet?.lockedTokens[token.deploymentId] ?? 0n;
+      const available = total - locked;
+      if (available < amount) {
+        return { valid: false, reason: "INSUFFICIENT_AVAILABLE_TOKENS", normalized: null };
       }
       return {
         valid: true,
@@ -269,6 +271,8 @@ function validateTx(
       const wallet = state.balances[signer];
       const available = wallet ? (wallet.tokens[token.deploymentId] ?? 0n) - (wallet.lockedTokens[token.deploymentId] ?? 0n) : 0n;
       if (available < amount) return { valid: false, reason: "INSUFFICIENT_TOKENS", normalized: null };
+      // V1: a listing creation has no protocol BTC outputs (token lock is protocol state).
+      if (tx.outputs.length !== 0) return { valid: false, reason: "INVALID_OUTPUT_LAYOUT", normalized: null };
       return {
         valid: true,
         reason: null,
@@ -299,16 +303,20 @@ function validateTx(
       const requiredProtocolFee = computePlatformFee(price, state.config.marketplaceFeeBps);
       const requiredPlatformFee = 0n; // V1: no additional marketplace platform fee.
 
-      const actualSellerPayment = outputsToAddress(tx.outputs, listing.sellerAddress);
-      if (actualSellerPayment < price) return { valid: false, reason: "SELLER_UNDERPAYMENT", normalized: null };
+      // Exact V1 protocol outputs: exactly the seller payment (fees are zero in
+      // the current config; if non-zero they must appear at deterministic indexes).
+      const expectedOutputs: { index: number; address: string; amountSats: bigint; kind: string }[] = [
+        { index: 0, address: listing.sellerAddress, amountSats: price, kind: "seller" },
+      ];
       if (requiredProtocolFee > 0n) {
-        const actualProtocolFee = outputsToAddress(tx.outputs, state.config.protocolFeeAddress);
-        if (actualProtocolFee < requiredProtocolFee) return { valid: false, reason: "FEE_UNDERPAYMENT", normalized: null };
+        expectedOutputs.push({ index: 1, address: state.config.protocolFeeAddress, amountSats: requiredProtocolFee, kind: "protocol-fee" });
       }
       if (requiredPlatformFee > 0n) {
-        const actualPlatformFee = outputsToAddress(tx.outputs, state.config.treasuryAddress);
-        if (actualPlatformFee < requiredPlatformFee) return { valid: false, reason: "FEE_UNDERPAYMENT", normalized: null };
+        expectedOutputs.push({ index: expectedOutputs.length, address: state.config.treasuryAddress, amountSats: requiredPlatformFee, kind: "platform-fee" });
       }
+      const layoutError = validateExactOutputs(tx.outputs, expectedOutputs);
+      if (layoutError) return { valid: false, reason: layoutError, normalized: null };
+
       const walletBtc = state.balances[signer]?.btcSats ?? MOCK_FAUCET_SATS;
       const total = price + requiredProtocolFee + requiredPlatformFee + tx.feeSats;
       if (walletBtc < total) return { valid: false, reason: "INSUFFICIENT_BTC", normalized: null };
@@ -335,6 +343,8 @@ function validateTx(
       if (!listing) return { valid: false, reason: "LISTING_NOT_FOUND", normalized: null };
       if (listing.status !== "OPEN") return { valid: false, reason: "LISTING_NOT_CANCELLABLE", normalized: null };
       if (!signer || signer !== listing.sellerAddress) return { valid: false, reason: "NOT_LISTING_OWNER", normalized: null };
+      // V1: cancellation has no protocol BTC outputs.
+      if (tx.outputs.length !== 0) return { valid: false, reason: "INVALID_OUTPUT_LAYOUT", normalized: null };
       return {
         valid: true,
         reason: null,
@@ -626,14 +636,24 @@ export function assertProtocolInvariants(state: MockChainState): string[] {
       if (amt > (b.tokens[dep] ?? 0n)) problems.push(`${address}: locked exceeds balance for ${dep}`);
     }
   }
+  // Aggregate OPEN listing locks: for each (seller, deployment), the seller's
+  // locked balance must be >= the sum of their OPEN listing amounts. This catches
+  // double-accounting bugs that per-listing checks miss.
+  const openLocks: Record<string, bigint> = {};
   for (const l of Object.values(state.listings)) {
     if (l.status === "OPEN") {
-      const seller = state.balances[l.sellerAddress];
-      const locked = seller?.lockedTokens[l.deploymentId] ?? 0n;
-      if (locked < l.tokenAmountAtoms) problems.push(`listing ${l.id}: OPEN but seller lacks locked tokens`);
+      const key = `${l.sellerAddress}:${l.deploymentId}`;
+      openLocks[key] = (openLocks[key] ?? 0n) + l.tokenAmountAtoms;
     }
     if (l.status !== "OPEN" && l.status !== "TAKEN" && l.status !== "CANCELLED" && l.status !== "EXPIRED") {
       problems.push(`listing ${l.id}: bad status ${l.status}`);
+    }
+  }
+  for (const [key, required] of Object.entries(openLocks)) {
+    const [address, dep] = key.split(":");
+    const locked = state.balances[address!]?.lockedTokens[dep!] ?? 0n;
+    if (locked < required) {
+      problems.push(`${address}: locked ${locked} < open listings sum ${required} for ${dep}`);
     }
   }
   for (const [ticker, dep] of Object.entries(state.tickerIndex)) {

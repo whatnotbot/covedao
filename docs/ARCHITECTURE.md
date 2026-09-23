@@ -86,3 +86,18 @@ The validator derives actual payments from transaction **outputs** (address +
 amount) against the canonical protocol config (`packages/protocol/src/validation/config.ts`),
 not from payload fields. See `packages/protocol/src/mock/adversarial.test.ts` for
 the tampered-transaction attack matrix.
+
+## Exact output semantics + reorg rebuild (P0.1)
+
+- **Exact V1 protocol outputs**: the validator requires exact output count,
+  order, address, amount (exact equality — overpay/underpay both rejected), and
+  kind for MINT (2 outputs), DEPLOY (1), DEX_BID (seller payment), and zero
+  outputs for DEX_ASK/CANCEL. `validateExactOutputs` in
+  `packages/protocol/src/validation/common.ts` is the single helper.
+- **TRANSFER respects locked listings**: `available = balance - locked`.
+- **Reorg reconciliation**: on chain-history mismatch the worker finds the common
+  ancestor from stored canonical blocks, then `rebuildProjections` truncates the
+  protocol projection tables and re-syncs from the canonical mock chain. App data
+  (`token_metadata` keyed by immutable deploymentTxid, `reports`,
+  `terms_acceptances`, `admin_audit_logs`, `media`, `reorg_events`) survives.
+  This guarantees incremental-after-reorg === clean-reindex.

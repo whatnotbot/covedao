@@ -90,7 +90,7 @@ export async function POST(req: Request) {
       publicSupplyAtoms: PUBLIC_SUPPLY_ATOMS,
       reserveSupplyAtoms: GRADUATION_RESERVE_ATOMS,
     });
-    await upsertTokenMetadata(db, token.id, {
+    await upsertTokenMetadata(db, token.deploymentTxid, {
       description,
       websiteUrl: websiteUrl || null,
       xUrl: xUrl || null,

@@ -83,6 +83,7 @@ pnpm lint
 pnpm typecheck
 pnpm test            # unit tests (curve 100% coverage, protocol, db)
 pnpm test:e2e        # Playwright (starts web + worker; needs DB + Redis up)
+pnpm test:integration # DB reorg integration (clean-reindex equality; needs Postgres)
 pnpm build           # production build
 ```
 

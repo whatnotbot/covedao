@@ -51,9 +51,8 @@ export const tokenMetadata = pgTable(
   "token_metadata",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    tokenId: uuid("token_id")
-      .notNull()
-      .references(() => tokens.id, { onDelete: "cascade" }),
+    /** Immutable deployment txid — survives projection rebuilds (tokens get new UUIDs). */
+    deploymentTxid: text("deployment_txid").notNull(),
     description: text("description").notNull().default(""),
     websiteUrl: text("website_url"),
     xUrl: text("x_url"),
@@ -68,7 +67,7 @@ export const tokenMetadata = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("token_metadata_token_uq").on(t.tokenId)],
+  (t) => [uniqueIndex("token_metadata_deployment_uq").on(t.deploymentTxid)],
 );
 
 export const deployments = pgTable(

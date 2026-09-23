@@ -162,6 +162,10 @@ describe("CoveIndexer (binary envelope, classification, tx index)", () => {
     expect(() => idx.processBlock(CFG.genesisHeight + 2, [])).toThrow(/non-contiguous/);
   });
 
+  it("rejects a negative genesisHeight at construction (no scan-from-before-genesis path)", () => {
+    expect(() => new CoveIndexer({ ...CFG, genesisHeight: -1 })).toThrow(/genesisHeight must be >= 0/);
+  });
+
   it("records an invalid mint without mutating state", () => {
     const idx = new CoveIndexer(CFG);
     idx.processBlock(CFG.genesisHeight, [

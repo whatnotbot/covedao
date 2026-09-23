@@ -66,6 +66,10 @@ export class CoveIndexer {
   private lastHeight: number | undefined;
 
   constructor(private readonly config: CoveConfig) {
+    if (config.genesisHeight < 0) {
+      throw new Error(`CoveConfig genesisHeight must be >= 0, got ${config.genesisHeight}. ` +
+        "A negative activation height is forbidden (no 'scan from before genesis' path).");
+    }
     this.state = createCoveState();
   }
 

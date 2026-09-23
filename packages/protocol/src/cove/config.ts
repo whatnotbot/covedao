@@ -22,6 +22,14 @@ export interface CoveConfig {
   maxMinerFeeSats: Sats;
 }
 
+const MAINNET_FEE_CAPS = {
+  launchFeeSats: 10_000n,
+  primaryMintFeeBps: 100n,
+  minContributionSats: 1_000n,
+  maxFeeRateSatVb: 50n,
+  maxMinerFeeSats: 50_000n,
+} as const;
+
 /**
  * Cove V1 signet activation height. Chosen as the signet tip at activation
  * (no Cove txs existed before this height). Immutable; canonical replay always
@@ -29,7 +37,11 @@ export interface CoveConfig {
  */
 export const COVE_V1_SIGNET_GENESIS_HEIGHT = 323323;
 
-/** Mainnet is NOT activated. */
+/**
+ * Mainnet is NOT activated. This stays null until the owner (1) supplies the
+ * custody addresses and (2) chooses a FUTURE Bitcoin block height H that is
+ * committed BEFORE the first mainnet Cove transaction.
+ */
 export const COVE_V1_MAINNET_GENESIS_HEIGHT: number | null = null;
 
 /**
@@ -71,16 +83,15 @@ export const COVE_MUTINYNET_CONFIG: CoveConfig = {
 };
 
 /**
- * Cove V1 MAINNET config — INCOMPLETE and fail-closed. It must not be used for
- * broadcasting until the owner supplies treasuryScript, settlementScript and an
- * activation height. `genesisHeight: -1` is a sentinel; `isCoveMainnetActivated`
- * returns false until a real activation height + both scripts are present.
+ * Regtest config for the real Bitcoin Core CI lifecycle. Arbitrary P2WPKH
+ * destination scripts (nobody controls them; regtest is ephemeral). Activation
+ * height 1 so canonical replay covers the full ephemeral chain.
  */
-export const COVE_V1_MAINNET_CONFIG: CoveConfig = {
-  network: "mainnet",
-  genesisHeight: -1, // NOT ACTIVATED
-  settlementScript: "", // owner must supply
-  treasuryScript: "", // owner must supply
+export const COVE_V1_REGTEST_CONFIG: CoveConfig = {
+  network: "regtest",
+  genesisHeight: 1,
+  settlementScript: "0014" + "11".repeat(20),
+  treasuryScript: "0014" + "22".repeat(20),
   launchFeeSats: 10_000n,
   primaryMintFeeBps: 100n,
   minContributionSats: 1_000n,
@@ -88,9 +99,43 @@ export const COVE_V1_MAINNET_CONFIG: CoveConfig = {
   maxMinerFeeSats: 50_000n,
 };
 
-/** True only when a real mainnet activation height and both scripts are set. */
-export function isCoveMainnetActivated(cfg: CoveConfig): boolean {
-  return cfg.network === "mainnet" && cfg.genesisHeight > 0 && cfg.settlementScript.length > 0 && cfg.treasuryScript.length > 0;
+export interface CoveMainnetConfigParams {
+  /** FUTURE Bitcoin block height H, committed BEFORE the first mainnet Cove tx. */
+  genesisHeight: number;
+  /** Owner-supplied settlement/reserve scriptPubKey (P2WPKH/P2TR hex). */
+  settlementScript: string;
+  /** Owner-supplied treasury scriptPubKey (P2WPKH/P2TR hex). */
+  treasuryScript: string;
+}
+
+/**
+ * Build the ONLY valid Cove V1 mainnet config. There is no default/empty
+ * mainnet config and no -1 sentinel: a mainnet config can only exist once the
+ * owner has committed a future activation height H and both custody scripts.
+ * Any invalid combination throws — there is no code path where a missing
+ * activation value silently means "scan from before genesis".
+ */
+export function makeCoveMainnetConfig(p: CoveMainnetConfigParams): CoveConfig {
+  if (!Number.isInteger(p.genesisHeight) || p.genesisHeight < 1) {
+    throw new Error(`mainnet genesisHeight must be a future block height >= 1, got ${p.genesisHeight}`);
+  }
+  if (!/^[0-9a-f]+$/.test(p.settlementScript) || p.settlementScript.length === 0) {
+    throw new Error("mainnet settlementScript must be a non-empty hex script");
+  }
+  if (!/^[0-9a-f]+$/.test(p.treasuryScript) || p.treasuryScript.length === 0) {
+    throw new Error("mainnet treasuryScript must be a non-empty hex script");
+  }
+  return {
+    network: "mainnet",
+    genesisHeight: p.genesisHeight,
+    settlementScript: p.settlementScript.toLowerCase(),
+    treasuryScript: p.treasuryScript.toLowerCase(),
+    launchFeeSats: MAINNET_FEE_CAPS.launchFeeSats,
+    primaryMintFeeBps: MAINNET_FEE_CAPS.primaryMintFeeBps,
+    minContributionSats: MAINNET_FEE_CAPS.minContributionSats,
+    maxFeeRateSatVb: MAINNET_FEE_CAPS.maxFeeRateSatVb,
+    maxMinerFeeSats: MAINNET_FEE_CAPS.maxMinerFeeSats,
+  };
 }
 
 /**

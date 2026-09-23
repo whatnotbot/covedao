@@ -31,6 +31,17 @@ export interface CoveFeatureFlags {
   transferMainnet: boolean;
 }
 
+/** Proof of the FULL owner canary (DEPLOY→MINT→TRANSFER + clean replay). */
+export interface CoveMainnetCanaryProof {
+  deployTxid: string | null;
+  mintTxid: string | null;
+  transferTxid: string | null;
+  /** Final canary state root (after TRANSFER). */
+  stateRoot: string | null;
+  /** Clean-replay state root (independent reconstruction). */
+  replayRoot: string | null;
+}
+
 export interface BitcoinRpcConfig {
   url: string;
   user: string | null;
@@ -55,10 +66,10 @@ export interface RuntimeConfig {
   protocolVerified: boolean;
   flags: FeatureFlags;
   coveFlags: CoveFeatureFlags;
-  /** COVE_V1_MAINNET_GENESIS_HEIGHT — null until the owner canary is recorded. */
+  /** COVE_V1_MAINNET_GENESIS_HEIGHT — null until the owner commits a future H. */
   coveMainnetGenesisHeight: bigint | null;
-  /** COVE_V1_MAINNET_CANARY_TXID — the confirmed canary DEPLOY txid, if recorded. */
-  coveMainnetCanaryTxid: string | null;
+  /** Full owner canary proof (DEPLOY/MINT/TRANSFER + replay roots). */
+  coveMainnetCanary: CoveMainnetCanaryProof;
   bitcoinRpc: BitcoinRpcConfig | null;
   explorerUrl: string;
   treasuryAddress: string | null;

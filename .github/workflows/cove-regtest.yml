@@ -1,0 +1,78 @@
+name: Cove V1 real Bitcoin Core regtest reorg
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  regtest-reorg:
+    name: DEPLOY/MINT/TRANSFER + reorg recovery on real bitcoind
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: crclaunch
+          POSTGRES_PASSWORD: crclaunch
+          POSTGRES_DB: crclaunch
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U crclaunch"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://crclaunch:crclaunch@localhost:5432/crclaunch
+      COVE_REGTEST_RPC_URL: http://127.0.0.1:18443
+      COVE_REGTEST_RPC_USER: user
+      COVE_REGTEST_RPC_PASSWORD: pass
+      BITCOIN_VERSION: "28.1"
+      BITCOIN_SHA256: 07f77afd326639145b9ba9562912b2ad2ccec47b8a305bd075b4f4cb127b7ed7
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download + checksum-verify pinned Bitcoin Core
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o bitcoin.tar.gz \
+            "https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_VERSION}/bitcoin-${BITCOIN_VERSION}-x86_64-linux-gnu.tar.gz"
+          echo "${BITCOIN_SHA256}  bitcoin.tar.gz" | sha256sum -c -
+          tar xzf bitcoin.tar.gz
+          sudo install -m 0755 "bitcoin-${BITCOIN_VERSION}/bin/bitcoind" /usr/local/bin/
+          sudo install -m 0755 "bitcoin-${BITCOIN_VERSION}/bin/bitcoin-cli" /usr/local/bin/
+          bitcoind --version
+
+      - name: Start bitcoind -regtest
+        run: |
+          bitcoind -regtest -daemonwait \
+            -server=1 -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
+            -rpcport=18443 -fallbackfee=0.0002 -datadir=/tmp/btc-regtest
+          for i in $(seq 1 60); do
+            bitcoin-cli -regtest -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
+              -rpcport=18443 getblockchaininfo >/dev/null 2>&1 && break
+            sleep 1
+          done
+          bitcoin-cli -regtest -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
+            -rpcport=18443 getblockchaininfo
+
+      - name: Run DEPLOY/MINT/TRANSFER + restart + reorg recovery
+        run: pnpm --filter @crclaunch/cove-indexer regtest-reorg

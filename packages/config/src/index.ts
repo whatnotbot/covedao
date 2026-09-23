@@ -3,11 +3,19 @@ export type {
   ProtocolHealth,
   ProtocolHealthState,
   FeatureFlags,
+  CoveFeatureFlags,
+  CoveMainnetCanaryProof,
   BitcoinRpcConfig,
   S3Config,
   RuntimeConfig,
 } from "./types.js";
-export { loadConfig, validateConfig, ConfigError, isMainnetNetwork } from "./load.js";
+export {
+  loadConfig,
+  validateConfig,
+  ConfigError,
+  isMainnetNetwork,
+  isCoveMainnetCanaryComplete,
+} from "./load.js";
 export {
   canWriteMainnet,
   isReadOnly,

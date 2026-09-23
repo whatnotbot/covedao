@@ -93,7 +93,13 @@ export function loadConfig(env: Env): RuntimeConfig {
       transferMainnet: bool(env, "COVE_TRANSFER_MAINNET_ENABLED", false),
     },
     coveMainnetGenesisHeight: bigintOrNull(env, "COVE_V1_MAINNET_GENESIS_HEIGHT"),
-    coveMainnetCanaryTxid: str(env, "COVE_V1_MAINNET_CANARY_TXID") || null,
+    coveMainnetCanary: {
+      deployTxid: str(env, "COVE_V1_MAINNET_CANARY_DEPLOY_TXID") || null,
+      mintTxid: str(env, "COVE_V1_MAINNET_CANARY_MINT_TXID") || null,
+      transferTxid: str(env, "COVE_V1_MAINNET_CANARY_TRANSFER_TXID") || null,
+      stateRoot: str(env, "COVE_V1_MAINNET_CANARY_STATE_ROOT") || null,
+      replayRoot: str(env, "COVE_V1_MAINNET_CANARY_REPLAY_ROOT") || null,
+    },
     bitcoinRpc: str(env, "BITCOIN_RPC_URL")
       ? {
           url: str(env, "BITCOIN_RPC_URL"),
@@ -123,9 +129,33 @@ export function loadConfig(env: Env): RuntimeConfig {
   return config;
 }
 
-/** True when the configured network implies a Bitcoin mainnet context. */
+/** True when the network implies a Bitcoin mainnet context. */
 export function isMainnetNetwork(network: Network): boolean {
   return network === "mainnet" || network === "mainnet-read-only";
+}
+
+const TXID_RE = /^[0-9a-f]{64}$/;
+
+/**
+ * A complete owner canary proof requires: a committed future activation height,
+ * all three confirmed lifecycle txids, and matching final/replay state roots.
+ */
+export function isCoveMainnetCanaryComplete(config: RuntimeConfig): boolean {
+  return (
+    config.coveMainnetGenesisHeight !== null &&
+    config.coveMainnetGenesisHeight > 0n &&
+    config.coveMainnetCanary.deployTxid !== null &&
+    TXID_RE.test(config.coveMainnetCanary.deployTxid) &&
+    config.coveMainnetCanary.mintTxid !== null &&
+    TXID_RE.test(config.coveMainnetCanary.mintTxid) &&
+    config.coveMainnetCanary.transferTxid !== null &&
+    TXID_RE.test(config.coveMainnetCanary.transferTxid) &&
+    config.coveMainnetCanary.stateRoot !== null &&
+    TXID_RE.test(config.coveMainnetCanary.stateRoot) &&
+    config.coveMainnetCanary.replayRoot !== null &&
+    TXID_RE.test(config.coveMainnetCanary.replayRoot) &&
+    config.coveMainnetCanary.stateRoot === config.coveMainnetCanary.replayRoot
+  );
 }
 
 /**
@@ -141,22 +171,16 @@ export function validateConfig(config: RuntimeConfig): void {
   }
 
   // Cove mainnet two-stage activation gate (fail-closed, enforced in code).
-  // Stage 1 (owner canary) requires a RECORDED canary: genesis height + canary
-  // txid. Public write flags (stage 2) cannot enable until that canary exists.
+  // The owner canary proof must be COMPLETE (future activation height + all
+  // three txids + matching final/replay roots) before ANY Cove mainnet flag —
+  // including public writes — may enable.
   const coveMainnetWrites = Object.values(config.coveFlags).some(Boolean);
-  if (coveMainnetWrites) {
-    const recorded =
-      config.coveMainnetGenesisHeight !== null &&
-      config.coveMainnetGenesisHeight > 0n &&
-      config.coveMainnetCanaryTxid !== null &&
-      /^[0-9a-f]{64}$/.test(config.coveMainnetCanaryTxid);
-    if (!recorded) {
-      throw new ConfigError(
-        "A Cove mainnet flag is enabled but the owner canary is not recorded. " +
-          "Set COVE_V1_MAINNET_GENESIS_HEIGHT and COVE_V1_MAINNET_CANARY_TXID from a " +
-          "confirmed canary DEPLOY before enabling any Cove mainnet flag. Refusing to boot.",
-      );
-    }
+  if (coveMainnetWrites && !isCoveMainnetCanaryComplete(config)) {
+    throw new ConfigError(
+      "A Cove mainnet flag is enabled but the full owner canary proof is not recorded. " +
+        "Requires COVE_V1_MAINNET_GENESIS_HEIGHT (future H), the confirmed DEPLOY/MINT/TRANSFER " +
+        "txids, and matching COVE_V1_MAINNET_CANARY_STATE_ROOT / REPLAY_ROOT. Refusing to boot.",
+    );
   }
 
   const writesEnabled = Object.values(config.flags).some(Boolean);

@@ -63,6 +63,9 @@ const RPC_URL = process.env.COVE_MAINNET_RPC_URL || "";
 const MANIFEST_PATH = fileURLToPath(new URL("../../../.cove-mainnet-canary.json", import.meta.url));
 const MINT_AMOUNT_ATOMS = 2_000_000n * 100_000_000n;
 const TRANSFER_AMOUNT_ATOMS = 500_000n * 100_000_000n;
+// A-8: the canary is expected to run shortly after H. A far-past H would make
+// finalize replay hundreds of thousands of blocks; refuse instead.
+const MAX_ACTIVATION_REPLAY_BLOCKS = 10_000;
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
@@ -433,6 +436,10 @@ async function main(): Promise<void> {
   const provider = new EsploraChainProvider(esploraUrl(), "mainnet");
   const tip = await provider.getBestHeight();
   assert(tip >= H, `chain tip ${tip} is below activation height ${H}. Wait for H before running the canary.`);
+  assert(
+    tip - H <= MAX_ACTIVATION_REPLAY_BLOCKS,
+    `activation height ${H} is too far in the past (tip ${tip}); refusing to replay ${tip - H} blocks. Re-check the committed H.`,
+  );
 
   // Canonical replay from H → tip (this IS the "restart" reconstruction).
   const indexer = new CoveIndexer(cfg);

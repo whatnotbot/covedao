@@ -22,6 +22,21 @@ export function isMainnetGenesis(hash: string): boolean {
 }
 
 /**
+ * A-8: the activation height H must be a FUTURE block height at the moment it
+ * is committed. The owner runs this (with the live mainnet tip) BEFORE
+ * committing H into COVE_V1_MAINNET_CONFIG; a past height is rejected so a
+ * wrong H can never trigger a multi-hundred-thousand-block replay.
+ */
+export function assertFutureActivationHeight(H: number, currentTip: number): void {
+  if (!Number.isInteger(H) || H < 1) {
+    throw new Error(`activation height must be a positive integer, got ${H}`);
+  }
+  if (H <= currentTip) {
+    throw new Error(`activation height ${H} must be in the future (current tip ${currentTip})`);
+  }
+}
+
+/**
  * Refuse to index/broadcast unless the provider's genesis block is signet.
  * Prevents a misconfigured URL from silently pointing the proof at mainnet or
  * testnet (the dangerous case). Complements, not replaces, `chain === "signet"`.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAINNET_GENESIS_HASH, SIGNET_GENESIS_HASH, isMainnetGenesis, isSignetGenesis } from "./chain-assert.js";
+import { MAINNET_GENESIS_HASH, SIGNET_GENESIS_HASH, assertFutureActivationHeight, isMainnetGenesis, isSignetGenesis } from "./chain-assert.js";
 
 describe("isSignetGenesis", () => {
   it("accepts the signet genesis hash", () => {
@@ -26,5 +26,23 @@ describe("isMainnetGenesis", () => {
 
   it("rejects the signet genesis hash", () => {
     expect(isMainnetGenesis(SIGNET_GENESIS_HASH)).toBe(false);
+  });
+});
+
+describe("assertFutureActivationHeight", () => {
+  it("accepts a height strictly in the future", () => {
+    expect(() => assertFutureActivationHeight(900_000, 850_000)).not.toThrow();
+  });
+
+  it("rejects a past height", () => {
+    expect(() => assertFutureActivationHeight(800_000, 850_000)).toThrow(/must be in the future/);
+  });
+
+  it("rejects an equal height (H must be strictly future)", () => {
+    expect(() => assertFutureActivationHeight(850_000, 850_000)).toThrow(/must be in the future/);
+  });
+
+  it("rejects a non-positive height", () => {
+    expect(() => assertFutureActivationHeight(0, 850_000)).toThrow(/positive integer/);
   });
 });

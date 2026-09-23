@@ -1,11 +1,12 @@
 import {
+  COVE_STATE_VERSION,
   applyMint,
   deserializeState,
   serializeState,
   stateHash,
   type CoveState,
 } from "@crclaunch/cove-covenant";
-import { ATOMS_PER_TOKEN, PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
+import { ATOMS_PER_TOKEN, PUBLIC_SUPPLY_ATOMS, getStageForSupply } from "@crclaunch/curve";
 import type { Atoms, Sats } from "@crclaunch/curve";
 
 /**
@@ -45,12 +46,62 @@ export interface GuardianDecision {
   reason?: string;
 }
 
-const MAX_FEE_SATS = 50_000n;
+export const MAX_FEE_SATS = 50_000n;
 
-/** A recipient commitment is a well-formed P2TR (34 bytes) or P2WPKH (22 bytes). */
-function isWellFormedRecipient(script: Buffer): boolean {
+/** A commitment is a well-formed P2TR (34 bytes) or P2WPKH (22 bytes). */
+export function isWellFormedCommitment(script: Buffer): boolean {
   const hex = script.toString("hex");
   return /^5120[0-9a-f]{64}$/.test(hex) || /^0014[0-9a-f]{40}$/.test(hex);
+}
+
+/**
+ * State invariants that hold for ANY valid Cove state, independent of the
+ * transition that produced it. `operation === "MINT"` additionally requires the
+ * PUBLIC_MINT phase (a MINT is only legal before graduation).
+ */
+export function validateStateInvariants(state: CoveState, operation?: "MINT"): GuardianDecision {
+  // Version + token identity.
+  if (state.version !== COVE_STATE_VERSION) {
+    return { ok: false, reason: "INVALID_STATE_VERSION" };
+  }
+  if (!/^[0-9a-f]{64}$/.test(state.tokenId)) {
+    return { ok: false, reason: "INVALID_TOKEN_ID" };
+  }
+  if (/^0{64}$/.test(state.tokenId)) {
+    return { ok: false, reason: "INVALID_TOKEN_ID" };
+  }
+
+  // Supply: non-negative, within the public cap, and atomically canonical
+  // (a whole number of display tokens — no sub-token supply).
+  if (state.publicSupplyAtoms < 0n || state.publicSupplyAtoms > PUBLIC_SUPPLY_ATOMS) {
+    return { ok: false, reason: "SUPPLY_OUT_OF_RANGE" };
+  }
+  if (state.publicSupplyAtoms % ATOMS_PER_TOKEN !== 0n) {
+    return { ok: false, reason: "SUPPLY_NOT_ATOMIC" };
+  }
+
+  // curveStage is EXACTLY the stage implied by the committed supply.
+  let impliedStage: number;
+  try {
+    impliedStage = getStageForSupply(state.publicSupplyAtoms / ATOMS_PER_TOKEN);
+  } catch {
+    return { ok: false, reason: "SUPPLY_OUT_OF_RANGE" };
+  }
+  if (state.curveStage !== impliedStage) {
+    return { ok: false, reason: "CURVE_STAGE_MISMATCH" };
+  }
+
+  // Reserve consistency: the state's reserve is non-negative. (The binding to
+  // the physically-locked UTXO value is enforced at the transaction layer.)
+  if (state.reserveSats < 0n) {
+    return { ok: false, reason: "RESERVE_NEGATIVE" };
+  }
+
+  if (operation === "MINT" && state.phase !== "PUBLIC_MINT") {
+    return { ok: false, reason: "PHASE_NOT_PUBLIC_MINT" };
+  }
+
+  return { ok: true };
 }
 
 function consistentState(s: CoveState): boolean {
@@ -125,7 +176,7 @@ export function validateMint(ctx: MintContext): GuardianDecision {
   }
 
   // Recipient commitment.
-  if (!isWellFormedRecipient(recipientCommitment)) {
+  if (!isWellFormedCommitment(recipientCommitment)) {
     return { ok: false, reason: "RECIPIENT_MALFORMED" };
   }
 

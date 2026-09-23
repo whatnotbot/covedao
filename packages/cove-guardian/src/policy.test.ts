@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyMint, type CoveState } from "@crclaunch/cove-covenant";
-import { validateMint } from "./policy.js";
-import { TaprootGuardianSigner, transitionDigest } from "./signer.js";
+import { validateMint, validateStateInvariants } from "./policy.js";
 
 const S0: CoveState = {
   version: 1,
@@ -51,10 +50,8 @@ describe("Guardian policy (validateMint)", () => {
     expect(validateMint(c)).toMatchObject({ ok: false, reason: "PAYMENT_MISMATCH" });
   });
 
-  it("rejects a manipulated recipient commitment", () => {
+  it("rejects a malformed recipient commitment", () => {
     const c = validContext();
-    c.recipientCommitment = Buffer.from("0014" + "00".repeat(20), "hex"); // valid P2WPKH but wrong? still well-formed
-    // A malformed (non-P2TR/P2WPKH) commitment must be rejected.
     c.recipientCommitment = Buffer.from("deadbeef", "hex");
     expect(validateMint(c)).toMatchObject({ ok: false, reason: "RECIPIENT_MALFORMED" });
   });
@@ -90,35 +87,48 @@ describe("Guardian policy (validateMint)", () => {
   });
 });
 
-describe("Guardian signer (authorizeMint)", () => {
-  const WIF = "cPoVxi18CnxHUQjYNpjRM3RYUVFA61wuTNQez7BtRKkfp9Fw6RTW";
-
-  it("signs a valid transition and the signature verifies", () => {
-    const signer = new TaprootGuardianSigner(WIF, "regtest");
-    const auth = signer.authorizeMint(validContext());
-    expect(auth.signature.length).toBe(64);
-    expect(auth.digest.equals(transitionDigest(validContext()))).toBe(true);
-    expect(signer.verifyAuthorization(auth)).toBe(true);
+describe("validateStateInvariants", () => {
+  it("accepts a canonical S0", () => {
+    expect(validateStateInvariants(S0, "MINT")).toEqual({ ok: true });
   });
 
-  it("refuses to sign a manipulated successor state", () => {
-    const signer = new TaprootGuardianSigner(WIF, "regtest");
-    const c = validContext();
-    c.nextState = { ...c.nextState, publicSupplyAtoms: c.nextState.publicSupplyAtoms + 1n };
-    expect(() => signer.authorizeMint(c)).toThrow();
+  it("rejects a non-PUBLIC_MINT phase for MINT", () => {
+    expect(validateStateInvariants({ ...S0, phase: "GRADUATED" }, "MINT")).toMatchObject({
+      ok: false,
+      reason: "PHASE_NOT_PUBLIC_MINT",
+    });
   });
 
-  it("refuses to sign a manipulated payment", () => {
-    const signer = new TaprootGuardianSigner(WIF, "regtest");
-    const c = validContext();
-    c.curveContributionSats = c.curveContributionSats + 1n;
-    expect(() => signer.authorizeMint(c)).toThrow();
+  it("rejects an over-cap supply", () => {
+    expect(
+      validateStateInvariants({ ...S0, publicSupplyAtoms: 840_000_001n * 100_000_000n }),
+    ).toMatchObject({ ok: false, reason: "SUPPLY_OUT_OF_RANGE" });
   });
 
-  it("refuses to sign a manipulated recipient", () => {
-    const signer = new TaprootGuardianSigner(WIF, "regtest");
-    const c = validContext();
-    c.recipientCommitment = Buffer.from("deadbeef", "hex");
-    expect(() => signer.authorizeMint(c)).toThrow();
+  it("rejects a sub-token (non-atomic) supply", () => {
+    expect(validateStateInvariants({ ...S0, publicSupplyAtoms: 1n })).toMatchObject({
+      ok: false,
+      reason: "SUPPLY_NOT_ATOMIC",
+    });
+  });
+
+  it("rejects a curveStage inconsistent with supply", () => {
+    expect(
+      validateStateInvariants({ ...S0, publicSupplyAtoms: MINT_42M, curveStage: 1 }),
+    ).toMatchObject({ ok: false, reason: "CURVE_STAGE_MISMATCH" });
+  });
+
+  it("rejects an invalid tokenId", () => {
+    expect(validateStateInvariants({ ...S0, tokenId: "00".repeat(32) })).toMatchObject({
+      ok: false,
+      reason: "INVALID_TOKEN_ID",
+    });
+  });
+
+  it("rejects a negative reserve", () => {
+    expect(validateStateInvariants({ ...S0, reserveSats: -1n })).toMatchObject({
+      ok: false,
+      reason: "RESERVE_NEGATIVE",
+    });
   });
 });

@@ -161,35 +161,36 @@ against the proposed `nextState`. A manipulated successor is rejected
 ## 7. Guardian trust model
 
 **The Guardian is a trusted third-party signer**, not a trustless contract. This
-is stated plainly because it is the honest security posture of Phase 1.
+is stated plainly because it is the honest security posture of Phases 1/1.5.
 
 - The Guardian holds the private key `d` for the **internal key** `P`. For a
   key-path spend of a state-committed UTXO it must sign with the **output key**
   `Q = P + t·G`, so it derives the tweaked private key `d + t (mod n)` using
   `t = H_TapTweak(P || stateCommitment(state))` (see `stateTweak`, §5).
-- **Sign only after validation**: `authorizeMint(ctx)` runs `validateMint(ctx)`
-  first; on failure it throws and produces **no signature**. The transition
-  digest signs everything that matters:
+- **Sign only after validating the real transaction** (Phase 1.5): the sole
+  Bitcoin-signing entry point is `TaprootGuardianSigner.signMintTx(psbt, intent)`,
+  which:
+  1. decodes the proposed PSBT itself;
+  2. recomputes `Q(prevState)` and verifies the actual state input matches it;
+  3. recomputes the canonical transition (`applyMint`) and `validateStateInvariants`;
+  4. verifies every actual input/output script and amount, the reserve delta,
+     the recipient, the platform-fee output, the buyer change, the miner fee,
+     the canonical output order, the prevout, and the network;
+  5. **only then** derives the tweaked key internally and signs the exact BIP341
+     key-path sighash of the transaction.
+- **No raw signing path**: there is deliberately no public method that accepts
+  the WIF or a tweaked key and signs a Cove state input without the above
+  validation. The audit digest below is *separate* and does **not** secure the UTXO.
+- **Audit digest (optional, NOT the UTXO authorization)**: `auditDigest` =
+  `SHA-256("Cove/GuardianAudit/v1" ‖ 0x00 ‖ stateHash(prev) ‖ stateHash(next) ‖
+  u64(amount) ‖ u64(curve) ‖ u64(platformFee) ‖ u64(minerFee) ‖ recipient ‖ txid
+  ‖ networkByte)`, signed by the internal key `P` purely for off-chain logging.
 
-  ```
-  transitionDigest = SHA-256(
-      "Cove/GuardianAuth/v1" || 0x00 ||
-      stateHash(prev)  || stateHash(next) ||
-      u64(amountAtoms) || u64(curveContributionSats) || u64(feeSats) ||
-      recipientCommitment || networkByte )
-  ```
-
-- **Independent context reconstruction**: the digest commits to the full context
-  (prev state, next state, payment, fee, recipient, network), so a Guardian
-  cannot sign one transition while another party later claims a different one.
-- **Fee and recipient discipline**: `MAX_FEE_SATS = 50_000`, and the recipient
-  must be a well-formed P2TR (`5120‖32B`) or P2WPKH (`0014‖20B`) commitment.
-
-Threat posture (Phase 1): a single hardened Guardian is a single point of
-failure and a single point of trust. If the Guardian key is compromised, the
-attacker can sign *any* transition. Bitcoin would still accept those spends —
-the covenant does not constrain them on-chain. That is the exact motivation for
-Phase 2 (multi-party signing) and Phase 3 (on-chain policy commitment) in §10.
+Threat posture (Phase 1.5): a single hardened Guardian is still a single point
+of failure and trust. If the Guardian key is compromised, the attacker can sign
+*any* transition — Bitcoin would still accept those spends. That is the exact
+motivation for Phase 2 (multi-party signing) and Phase 3 (on-chain policy
+commitment) in §12.
 
 ---
 
@@ -241,23 +242,65 @@ Phase 1, not a consensus property.
 
 ---
 
-## 10. Adversarial rejection coverage (proof)
+## 10. Reserve model, canonical layout, and adversarial coverage
 
-`regtest-proof.ts` demonstrates, deterministically and offline:
+### 10.1 Reserve model (Phase 1.5)
 
-1. S0/S1 hashes and distinct P2TR outputs;
-2. Guardian `validateMint` PASS for the honest mint;
-3. Schnorr authorization verifies against the Guardian key;
-4. three manipulations each rejected **and** unsigned:
-   - manipulated successor state → `RESERVE_MOVEMENT`, signerRefused = YES;
-   - manipulated payment → `PAYMENT_MISMATCH`, signerRefused = YES;
-   - manipulated recipient → `RECIPIENT_MALFORMED`, signerRefused = YES;
-5. a real `bitcoin.Psbt` key-path spend of the S0 UTXO to the S1 UTXO, finalized
-   and extracted, whose successor output commits to S1 and whose key-path
-   Schnorr signature is **independently re-verified** against `Q(S0)` (the same
-   check a Bitcoin node performs).
+The covenant state UTXO **physically carries the curve reserve** plus a fixed
+non-reserve anchor so the anchor cancels across a transition:
 
-Run: `pnpm cove:regtest-proof`.
+```
+stateUtxo.value = state.reserveSats + RESERVE_ANCHOR_SATS   (RESERVE_ANCHOR_SATS = 10,000)
+successor.value = previous.value + canonicalCurveContributionSats
+```
+
+`state.reserveSats` therefore corresponds to the **actual locked reserve BTC**,
+not an accounting number. The Guardian verifies the previous state UTXO value
+equals `reserveSats + anchor` and the successor value equals
+`previousValue + curveContributionSats` (rejecting `STATE_INPUT_WRONG_VALUE` /
+`RESERVE_CONTRIBUTION_MISMATCH`).
+
+### 10.2 Canonical MINT transaction layout
+
+Inputs: `[0]` the previous Cove state UTXO `Q(prevState)`, `[1..n]` buyer
+funding UTXOs. Outputs, in canonical order:
+
+| # | Output | Script | Value |
+| --- | --- | --- | --- |
+| 0 | successor state UTXO | `Q(nextState)` | `prevReserve + anchor + curveContribution` |
+| 1 | recipient/token commitment | P2TR/P2WPKH | `TOKEN_COMMITMENT_SATS` (1,000) |
+| 2 | platform fee (if > 0) | P2TR/P2WPKH | `computePlatformFee(curve, 100 bps)` |
+| 3 | buyer change (if > 0) | buyer's own | remainder |
+
+Conservation: `prev + buyerIn = successor + recipient + platformFee + change + minerFee`,
+and the buyer's net spend equals `curveContribution + recipient + platformFee + minerFee`.
+The Guardian rejects `SUCCESSOR_SCRIPT_MISMATCH`, `RESERVE_CONTRIBUTION_MISMATCH`,
+`RECIPIENT_OUTPUT_MISMATCH`, `PLATFORM_FEE_MISMATCH`, `CURVE_PAYMENT_MISMATCH`,
+`EXTRA_UNAUTHORIZED_OUTPUT`, `FEE_OUT_OF_RANGE`, `STATE_INPUT_NOT_FOUND` /
+`STATE_INPUT_WRONG_VALUE`, `WRONG_NETWORK`, and `PHASE_NOT_PUBLIC_MINT`.
+`validateStateInvariants(state, "MINT")` additionally enforces version/tokenId
+validity, supply ≤ public cap, atomic (whole-token) supply, `curveStage` exactly
+matching the committed supply, and a non-negative reserve.
+
+### 10.3 Adversarial coverage (proof)
+
+`regtest-proof.ts` runs two parts. **Part A (offline, always):** builds the
+canonical MINT PSBT, has the Guardian validate + sign the exact BIP341 sighash,
+re-verifies the key-path signature against `Q(S0)`, and then mutates the ACTUAL
+PSBT (not a caller summary) — wrong successor script/amount, missing reserve
+contribution, wrong recipient, wrong fee, extra output, wrong prevout — asserting
+every mutation is refused with the correct reason code and produces **no
+signature**.
+
+**Part B (real Bitcoin Core regtest, when bitcoind is reachable):** mines S0,
+builds + broadcasts a real MINT spending S0 + buyer BTC, asserts
+`testmempoolaccept == allowed`, mines it, fetches the transaction, and asserts
+the successor output is `Q(S1)` with value `reserve + anchor` and the recipient
+output matches the intended commitment. The same PSBT mutations are repeated
+against the real transaction.
+
+Run: `pnpm cove:regtest-proof` (offline always; on-chain when Core is up). CI
+runs the on-chain proof in `.github/workflows/cove-covenant-regtest.yml`.
 
 ---
 
@@ -284,7 +327,8 @@ balance authority.
 
 | Phase | Work | Honest status |
 | --- | --- | --- |
-| 1 (this) | state encoding, state-committed P2TR, S0→S1, Guardian validate+sign, golden vectors, regtest proof | ✅ delivered |
+| 1 | state encoding, state-committed P2TR, S0→S1, golden vectors | ✅ delivered |
+| 1.5 (this) | bind the Guardian policy to the ACTUAL PSBT (validate every input/output/amount/fee, sign the BIP341 sighash, no raw signing path); state UTXO physically carries the reserve; real Bitcoin Core regtest proof | ✅ delivered |
 | 2 | replace single Guardian with **2-of-2 / n-of-m MuSig2** (user co-sign + Guardian); key custody / HSM | planned — removes single-point-of-failure, still Guardian-enforced |
 | 3 | commit the **Simplicity** policy on-chain via script-path tapleaf (or fold SWHASH into tweak); evaluate tradeoffs: script-path vs key-path, MuSig2 vs 2-of-2, upgrade path for policy changes | planned — requires Simplicity-capable execution environment (soft fork / sidechain / CHAIR) |
 | 4 | liquidity, graduation, redeem transitions on the same state-committed UTXO model | planned |
@@ -311,6 +355,9 @@ commitment.
 | `packages/cove-covenant/src/taproot.ts` | `stateCommitment`, `stateTweak`, `deriveStateOutput`, `stateOutputScript` |
 | `packages/cove-covenant/src/transition.ts` | `applyMint`, `isCorrectMintSuccessor`, `CovenantError` |
 | `packages/cove-covenant/src/*.test.ts` | 21 tests incl. golden vectors |
-| `packages/cove-guardian/src/policy.ts` | `validateMint` (13 reason codes) |
-| `packages/cove-guardian/src/signer.ts` | `TaprootGuardianSigner` (validate-then-sign) |
-| `packages/cove-guardian/src/regtest-proof.ts` | deterministic regtest proof (steps 1–6) |
+| `packages/cove-guardian/src/policy.ts` | `validateMint`, `validateStateInvariants`, `isWellFormedCommitment`, `MAX_FEE_SATS` |
+| `packages/cove-guardian/src/tx.ts` | `validateMintTx`, `buildMintPsbt`, `analyzeMintTx`, reserve/layout constants |
+| `packages/cove-guardian/src/signer.ts` | `TaprootGuardianSigner.signMintTx` (validate-then-sign), `auditDigest` |
+| `packages/cove-guardian/src/regtest-proof.ts` | offline proof + real Bitcoin Core regtest proof |
+| `packages/cove-guardian/src/*.test.ts` | policy + tx/signer tests (26 tests) |
+| `.github/workflows/cove-covenant-regtest.yml` | CI: real bitcoind S0→S1 MINT proof |

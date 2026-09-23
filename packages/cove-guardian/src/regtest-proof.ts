@@ -1,36 +1,39 @@
 /**
- * Cove covenant Phase 1 regtest proof (deterministic, OFFLINE — no bitcoind
- * required). Demonstrates:
- *   1. fixed-width state encoding + domain-separated hash
- *   2. state-committed P2TR derivation (S0 != S1 ⇒ different output)
- *   3. S0 → S1 MINT transition
- *   4. Guardian validates + Schnorr-authorizes (signs only AFTER validation)
- *   5. adversarial rejections (successor / payment / recipient manipulation)
- *   6. a real Bitcoin taproot key-path PSBT spending the S0 state UTXO → S1
+ * Cove covenant Phase 1.5 proof. Two parts:
  *
- * Bitcoin enforces the Taproot key-path signature. The Guardian enforces the
- * transition policy; Bitcoin consensus does NOT evaluate it under mainnet rules.
+ *   A. OFFLINE deterministic proof (always runs): state hash, state-committed
+ *      P2TR, canonical MINT transaction layout, Guardian validates the ACTUAL
+ *      PSBT then signs the exact BIP341 sighash, and adversarial ACTUAL-PSBT
+ *      mutations are all refused.
+ *
+ *   B. REAL Bitcoin Core regtest proof (runs when bitcoind is reachable):
+ *      mine S0, build + broadcast a real MINT spending S0 + buyer BTC,
+ *      testmempoolaccept == allowed, mine, fetch, and assert Q(S1) + reserve +
+ *      recipient on-chain.
  */
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { ECPairFactory } from "ecpair";
 import {
-  applyMint,
   deriveStateOutput,
-  stateCommitment,
   stateHash,
   stateOutputScript,
-  stateTweak,
   type CoveState,
 } from "@crclaunch/cove-covenant";
-import { TaprootGuardianSigner, validateMint } from "@crclaunch/cove-guardian";
+import { CoreRpcProvider } from "@crclaunch/bitcoin";
+import { TaprootGuardianSigner } from "./signer.js";
+import { RESERVE_ANCHOR_SATS, buildMintPsbt, type MintIntent } from "./tx.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 const ECPair = ECPairFactory(ecc);
 
 const WIF = "cPoVxi18CnxHUQjYNpjRM3RYUVFA61wuTNQez7BtRKkfp9Fw6RTW";
-const RECIPIENT = Buffer.from("5120" + "cc".repeat(32), "hex");
+const internalKey = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x42), true)!.subarray(1));
 const MINT_42M = 42_000_000n * 100_000_000n;
+// Real on-chain proof mints 2 full stages (84M) so the 1% platform-fee output
+// clears Bitcoin Core's P2WPKH dust threshold (294 sats) for broadcast.
+const MINT_84M = 84_000_000n * 100_000_000n;
+
 const S0: CoveState = {
   version: 1,
   tokenId: "ab".repeat(32),
@@ -40,132 +43,449 @@ const S0: CoveState = {
   curveStage: 1,
 };
 
-function main(): void {
-  const line = "─".repeat(70);
+const RECIPIENT = Buffer.from("5120" + "cc".repeat(32), "hex");
+const PLATFORM_FEE = Buffer.from("0014" + "dd".repeat(20), "hex");
+const BUYER_CHANGE = Buffer.from("0014" + "ee".repeat(20), "hex");
+const MINER_FEE = 1_000n;
+const BUYER_FUND = 1_000_000n; // offline: 1,000,000 sats buyer funding
+
+const RPC_URL = process.env.COVE_REGTEST_RPC_URL ?? "http://127.0.0.1:18443";
+const RPC_USER = process.env.COVE_REGTEST_RPC_USER ?? "user";
+const RPC_PASSWORD = process.env.COVE_REGTEST_RPC_PASSWORD ?? "pass";
+
+function assert(cond: boolean, msg: string): void {
+  if (!cond) throw new Error(`ASSERT FAILED: ${msg}`);
+}
+
+function intent(prev: CoveState = S0, amountAtoms = MINT_42M): MintIntent {
+  return {
+    prevState: prev,
+    amountAtoms,
+    recipientCommitment: RECIPIENT,
+    platformFeeScript: PLATFORM_FEE,
+  };
+}
+
+function mutateOutput(
+  psbt: bitcoin.Psbt,
+  index: number,
+  patch: { script?: Buffer; value?: number },
+): void {
+  const tx = (psbt as unknown as { __CACHE: { __TX: bitcoin.Transaction } }).__CACHE.__TX;
+  if (patch.script) tx.outs[index]!.script = patch.script;
+  if (patch.value !== undefined) tx.outs[index]!.value = patch.value;
+}
+
+function addOutput(psbt: bitcoin.Psbt, script: Buffer, value: number): void {
+  const tx = (psbt as unknown as { __CACHE: { __TX: bitcoin.Transaction } }).__CACHE.__TX;
+  tx.outs.push({ script, value });
+}
+
+// ─────────────────────────────── Part A: offline ───────────────────────────────
+
+function offlineProof(): void {
+  const line = "─".repeat(72);
   console.log(line);
-  console.log("COVE COVENANT PHASE 1 — STATE-COMMITTED TAPROOT PROOF (regtest params)");
+  console.log("COVE COVENANT PHASE 1.5 — POLICY BOUND TO THE ACTUAL BITCOIN SPEND");
   console.log(line);
 
   const signer = new TaprootGuardianSigner(WIF, "regtest");
   console.log(`\nGuardian internal key P: ${signer.internalKey.toString("hex")}`);
 
-  // 1. State encoding + hash
-  console.log("\n[1] State encoding + domain-separated hash");
+  console.log("\n[1] State encoding + hash");
   console.log(`    S0 hash: ${stateHash(S0)}`);
 
-  // 2. State-committed P2TR
   console.log("\n[2] State-committed P2TR (S0 vs S1 differ)");
-  const o0 = deriveStateOutput(signer.internalKey, S0, bitcoin.networks.regtest);
+  const o0 = deriveStateOutput(internalKey, S0, bitcoin.networks.regtest);
   console.log(`    S0 output: ${o0.scriptPubKeyHex}`);
   console.log(`    S0 address: ${o0.address}`);
 
-  // 3. Transition
-  console.log("\n[3] MINT transition S0 → S1 (42M tokens)");
-  const mint = applyMint(S0, MINT_42M);
-  const S1 = mint.nextState;
-  const o1 = deriveStateOutput(signer.internalKey, S1, bitcoin.networks.regtest);
-  console.log(`    curve contribution: ${mint.curveContributionSats} sats`);
-  console.log(
-    `    S1 supply: ${S1.publicSupplyAtoms} atoms, reserve: ${S1.reserveSats} sats, stage: ${S1.curveStage}`,
-  );
-  console.log(`    S1 hash: ${stateHash(S1)}`);
-  console.log(`    S1 output: ${o1.scriptPubKeyHex}`);
-
-  // 4. Guardian validation + authorization
-  console.log("\n[4] Guardian validation + authorization");
-  const ctx = {
-    prevState: S0,
-    nextState: S1,
-    amountAtoms: MINT_42M,
-    curveContributionSats: mint.curveContributionSats,
-    feeSats: 1_000n,
-    recipientCommitment: RECIPIENT,
-    network: "regtest" as const,
-  };
-  const decision = validateMint(ctx);
-  console.log(`    validateMint: ${decision.ok ? "PASS" : "REJECT: " + decision.reason}`);
-  const auth = signer.authorizeMint(ctx);
-  console.log(`    transition digest: ${auth.digest.toString("hex")}`);
-  console.log(`    Schnorr signature: ${auth.signature.toString("hex").slice(0, 32)}… (64 bytes)`);
-  console.log(`    signature verifies: ${signer.verifyAuthorization(auth) ? "YES" : "NO"}`);
-
-  // 5. Adversarial rejections
-  console.log("\n[5] Adversarial rejections (Guardian must refuse to sign)");
-  const cases: [string, Partial<typeof ctx>][] = [
-    ["manipulated successor state", { nextState: { ...S1, reserveSats: S1.reserveSats + 1n } }],
-    ["manipulated payment", { curveContributionSats: mint.curveContributionSats + 1n }],
-    ["manipulated recipient", { recipientCommitment: Buffer.from("deadbeef", "hex") }],
-  ];
-  for (const [label, patch] of cases) {
-    const bad = { ...ctx, ...patch };
-    const d = validateMint(bad);
-    let signed = true;
-    try {
-      signer.authorizeMint(bad);
-    } catch {
-      signed = false;
-    }
-    console.log(
-      `    ${label}: validate=${d.ok ? "PASS" : "REJECT:" + d.reason}  signerRefused=${!signed ? "YES" : "NO"}`,
-    );
-  }
-
-  // 6. Real taproot key-path PSBT: S0 UTXO → S1 UTXO
-  console.log("\n[6] Real Bitcoin taproot key-path spend (S0 → S1)");
-  const funding = { txid: "d".repeat(64), vout: 0, valueSats: 1_000_000n, feeSats: 300n };
-  const psbt = new bitcoin.Psbt({ network: bitcoin.networks.regtest });
-  psbt.addInput({
-    hash: funding.txid,
-    index: funding.vout,
-    witnessUtxo: {
-      script: stateOutputScript(S0, signer.internalKey),
-      value: Number(funding.valueSats),
+  console.log("\n[3] Canonical MINT transaction layout (buildMintPsbt)");
+  const built = buildMintPsbt({
+    internalKey,
+    intent: intent(),
+    stateInput: {
+      txid: "a".repeat(64),
+      vout: 0,
+      script: stateOutputScript(S0, internalKey),
+      valueSats: S0.reserveSats + RESERVE_ANCHOR_SATS,
     },
-    tapInternalKey: signer.internalKey,
-    tapMerkleRoot: stateCommitment(S0),
+    buyerInputs: [{ txid: "b".repeat(64), vout: 0, script: BUYER_CHANGE, valueSats: BUYER_FUND }],
+    buyerChangeScript: BUYER_CHANGE,
+    minerFeeSats: MINER_FEE,
+    network: "regtest",
   });
-  psbt.addOutput({
-    script: stateOutputScript(S1, signer.internalKey),
-    value: Number(funding.valueSats - funding.feeSats),
-  });
-  // Key-path signing signs with the OUTPUT key Q0 = P + t·G, not the untweaked
-  // internal key P. Build the tweaked key pair: private key = d + t (mod n),
-  // where t = H_TapTweak(P || stateCommitment(S0)).
-  const tweak = stateTweak(signer.internalKey, S0);
-  const tweakedKey = ECPair.fromWIF(WIF, bitcoin.networks.regtest).tweak(tweak);
-  psbt.signTaprootInput(0, tweakedKey);
-  psbt.finalizeInput(0);
-  const txHex = psbt.extractTransaction().toHex();
-  const decoded = bitcoin.Transaction.fromHex(txHex);
-  const successorOut = decoded.outs[0]!.script.toString("hex");
-  console.log(`    txid: ${decoded.getId()}`);
-  console.log(`    successor output: ${successorOut}`);
+  const a = built.analysis;
+  console.log(`    curve contribution : ${a.curveContributionSats} sats`);
+  console.log(`    platform fee       : ${a.platformFeeSats} sats`);
+  console.log(`    miner fee          : ${a.minerFeeSats} sats`);
+  console.log(`    buyer change       : ${a.buyerChangeSats} sats`);
+  console.log(`    S1 supply          : ${a.nextState.publicSupplyAtoms} atoms`);
+  console.log(`    S1 reserve (locked): ${a.nextState.reserveSats} sats`);
   console.log(
-    `    successor commits to S1: ${successorOut === stateOutputScript(S1, signer.internalKey).toString("hex") ? "YES" : "NO"}`,
+    `    S1 output          : ${stateOutputScript(a.nextState, internalKey).toString("hex")}`,
   );
 
-  // 6b. Independently verify the key-path Schnorr signature (this is exactly
-  //     what a Bitcoin node's Taproot validation does on this input).
-  const witnessSig = decoded.ins[0]!.witness[0]!;
-  const q0 = deriveStateOutput(signer.internalKey, S0, bitcoin.networks.regtest).outputKey;
-  const sighash = decoded.hashForWitnessV1(
-    0,
-    [stateOutputScript(S0, signer.internalKey)],
-    [Number(funding.valueSats)],
-    bitcoin.Transaction.SIGHASH_DEFAULT,
+  console.log("\n[4] Guardian validates the ACTUAL PSBT, then signs the BIP341 sighash");
+  const signed = signer.signMintTx(built.psbt, intent());
+  const q0 = stateOutputScript(S0, internalKey).subarray(2);
+  const sigOk = ecc.verifySchnorr(signed.sighash, q0, signed.tapKeySig.subarray(0, 64));
+  console.log(`    sighash            : ${signed.sighash.toString("hex")}`);
+  console.log(`    tapKeySig (64B)    : ${signed.tapKeySig.toString("hex").slice(0, 32)}…`);
+  console.log(`    key-path sig verifies against Q(S0): ${sigOk ? "YES" : "NO"}`);
+  console.log(
+    `    audit digest (P)   : ${signed.auditDigest.toString("hex").slice(0, 32)}… (NOT the UTXO auth)`,
   );
-  const sigValid = ecc.verifySchnorr(sighash, q0, Buffer.from(witnessSig.subarray(0, 64)));
-  console.log(`    key-path Schnorr signature verifies against Q(S0): ${sigValid ? "YES" : "NO"}`);
+  console.log(
+    `    audit sig verifies under P          : ${signer.verifyAuditSignature(signed.auditDigest, signed.auditSignature) ? "YES" : "NO"}`,
+  );
+
+  console.log("\n[5] Adversarial ACTUAL-PSBT mutations (Guardian must refuse)");
+  const cases: [string, (p: bitcoin.Psbt) => void, string][] = [
+    [
+      "wrong successor script",
+      (p) => mutateOutput(p, 0, { script: Buffer.from("5120" + "ff".repeat(32), "hex") }),
+      "SUCCESSOR_SCRIPT_MISMATCH",
+    ],
+    [
+      "wrong successor BTC value",
+      (p) => mutateOutput(p, 0, { value: 31_001 }),
+      "RESERVE_CONTRIBUTION_MISMATCH",
+    ],
+    [
+      "missing reserve contribution",
+      (p) => mutateOutput(p, 0, { value: 30_000 }),
+      "RESERVE_CONTRIBUTION_MISMATCH",
+    ],
+    [
+      "wrong recipient",
+      (p) => mutateOutput(p, 1, { script: Buffer.from("0014" + "11".repeat(20), "hex") }),
+      "RECIPIENT_OUTPUT_MISMATCH",
+    ],
+    ["wrong fee", (p) => mutateOutput(p, 3, { value: 1 }), "FEE_OUT_OF_RANGE"],
+    [
+      "extra unauthorized output",
+      (p) => addOutput(p, Buffer.from("0014" + "22".repeat(20), "hex"), 5_000),
+      "EXTRA_UNAUTHORIZED_OUTPUT",
+    ],
+    [
+      "wrong prevout",
+      (p) => {
+        p.data.inputs[0]!.witnessUtxo!.script = Buffer.from("5120" + "ff".repeat(32), "hex");
+      },
+      "STATE_INPUT_NOT_FOUND",
+    ],
+  ];
+  for (const [label, mutate, reason] of cases) {
+    const fresh = buildMintPsbt({
+      internalKey,
+      intent: intent(),
+      stateInput: {
+        txid: "a".repeat(64),
+        vout: 0,
+        script: stateOutputScript(S0, internalKey),
+        valueSats: S0.reserveSats + RESERVE_ANCHOR_SATS,
+      },
+      buyerInputs: [{ txid: "b".repeat(64), vout: 0, script: BUYER_CHANGE, valueSats: BUYER_FUND }],
+      buyerChangeScript: BUYER_CHANGE,
+      minerFeeSats: MINER_FEE,
+      network: "regtest",
+    });
+    mutate(fresh.psbt);
+    let refused = "NO";
+    let got = "";
+    try {
+      signer.signMintTx(fresh.psbt, intent());
+    } catch (e) {
+      refused = "YES";
+      got = (e as Error).message;
+    }
+    const ok = refused === "YES" && got === reason;
+    console.log(
+      `    ${label.padEnd(28)} refused=${refused} reason=${got} ${ok ? "✓" : "✗ EXPECTED " + reason}`,
+    );
+    assert(ok, `${label} should reject with ${reason}, got ${got}`);
+  }
 
   console.log("\n" + line);
   console.log(
-    "PROOF COMPLETE. Bitcoin enforces the Taproot key-path signature; the Guardian enforces the transition policy.",
+    "OFFLINE PROOF PASSED: policy is bound to the actual transaction; no WIF/tweaked-key path signs without validation.",
   );
+}
+
+// ─────────────────────────────── Part B: real Core ───────────────────────────────
+
+class RegtestRpc {
+  private id = 0;
+  constructor(
+    private readonly url: string,
+    private readonly user: string,
+    private readonly password: string,
+  ) {}
+
+  async call<T>(method: string, params: unknown[] = []): Promise<T> {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    headers.authorization = `Basic ${Buffer.from(`${this.user}:${this.password}`).toString("base64")}`;
+    const res = await fetch(this.url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ jsonrpc: "1.0", id: `${++this.id}`, method, params }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const text = await res.text();
+    let json: { result?: T; error?: { message?: string } | null } = {};
+    try {
+      json = JSON.parse(text) as typeof json;
+    } catch {
+      /* non-JSON body */
+    }
+    if (!res.ok || json.error) {
+      throw new Error(
+        `RPC ${method}: ${json.error?.message ?? text.slice(0, 200) ?? `HTTP ${res.status}`}`,
+      );
+    }
+    return json.result as T;
+  }
+
+  async createWallet(name: string): Promise<void> {
+    try {
+      await this.call("createwallet", [name, false, false, "", false, false, false]);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/already exists/i.test(msg)) throw e;
+    }
+  }
+
+  async getNewAddress(): Promise<string> {
+    return this.call<string>("getnewaddress");
+  }
+
+  async sendToAddress(address: string, amountBtc: number): Promise<string> {
+    return this.call<string>("sendtoaddress", [address, amountBtc]);
+  }
+
+  async generateToAddress(n: number, address: string): Promise<string[]> {
+    return this.call<string[]>("generatetoaddress", [n, address]);
+  }
+
+  async getBlockchainInfo(): Promise<{ chain: string; blocks: number }> {
+    return this.call("getblockchaininfo");
+  }
+}
+
+/** Find the output index of a freshly-sent-to script in a mined funding tx. */
+function findOutputIndex(tx: bitcoin.Transaction, script: Buffer): number {
+  return tx.outs.findIndex((o) => o.script.equals(script));
+}
+
+async function realCoreProof(): Promise<void> {
+  const line = "─".repeat(72);
+  console.log("\n" + line);
+  console.log("REAL BITCOIN CORE REGTEST PROOF (unmodified bitcoind)");
+  console.log(line);
+
+  const rpc = new RegtestRpc(RPC_URL, RPC_USER, RPC_PASSWORD);
+  const info = await rpc.getBlockchainInfo();
+  assert(info.chain === "regtest", `chain is ${info.chain}, expected regtest`);
+  const provider = new CoreRpcProvider({ url: RPC_URL, user: RPC_USER, password: RPC_PASSWORD });
+  const mintIntent = intent(S0, MINT_84M);
+
+  // 1. Wallet + spendable BTC.
+  await rpc.createWallet("cove15");
+  const walletAddress = await rpc.getNewAddress();
+  await rpc.generateToAddress(101, walletAddress);
+
+  // 2. Buyer funding key + address (P2WPKH), funded from the wallet.
+  const buyerKey = ECPair.makeRandom({ network: bitcoin.networks.regtest });
+  const buyerP2wpkh = bitcoin.payments.p2wpkh({
+    pubkey: buyerKey.publicKey,
+    network: bitcoin.networks.regtest,
+  });
+  const buyerAddress = buyerP2wpkh.address!;
+  const buyerScript = buyerP2wpkh.output!;
+  const buyerFundingTxid = await rpc.sendToAddress(buyerAddress, 1.0);
+  await rpc.generateToAddress(1, walletAddress);
+  const buyerRaw = await provider.getRawTransaction(buyerFundingTxid);
+  const buyerTx = bitcoin.Transaction.fromHex(buyerRaw);
+  const buyerVout = findOutputIndex(buyerTx, buyerScript);
+  assert(buyerVout >= 0, "buyer output not found in funding tx");
+  const buyerValue = BigInt(buyerTx.outs[buyerVout]!.value);
+  console.log(`✓ buyer UTXO ${buyerFundingTxid}:${buyerVout} value=${buyerValue}`);
+
+  // 3. S0 state-committed P2TR UTXO, funded with exactly RESERVE_ANCHOR_SATS.
+  const s0Script = stateOutputScript(S0, internalKey);
+  const s0Address = bitcoin.address.fromOutputScript(s0Script, bitcoin.networks.regtest);
+  const s0FundingTxid = await rpc.sendToAddress(s0Address, Number(RESERVE_ANCHOR_SATS) / 1e8);
+  await rpc.generateToAddress(1, walletAddress);
+  const s0Raw = await provider.getRawTransaction(s0FundingTxid);
+  const s0Tx = bitcoin.Transaction.fromHex(s0Raw);
+  const s0Vout = findOutputIndex(s0Tx, s0Script);
+  assert(s0Vout >= 0, "S0 output not found in funding tx");
+  const s0Value = BigInt(s0Tx.outs[s0Vout]!.value);
+  assert(s0Value === RESERVE_ANCHOR_SATS, `S0 value ${s0Value} != anchor ${RESERVE_ANCHOR_SATS}`);
+  console.log(
+    `✓ S0 UTXO ${s0FundingTxid}:${s0Vout} value=${s0Value} script=${s0Script.toString("hex")}`,
+  );
+
+  // 4. Build the real MINT PSBT.
+  const built = buildMintPsbt({
+    internalKey,
+    intent: mintIntent,
+    stateInput: { txid: s0FundingTxid, vout: s0Vout, script: s0Script, valueSats: s0Value },
+    buyerInputs: [
+      { txid: buyerFundingTxid, vout: buyerVout, script: buyerScript, valueSats: buyerValue },
+    ],
+    buyerChangeScript: buyerScript,
+    minerFeeSats: MINER_FEE,
+    network: "regtest",
+  });
+  const a = built.analysis;
+  console.log(
+    `✓ MINT PSBT: curve=${a.curveContributionSats} platform=${a.platformFeeSats} fee=${a.minerFeeSats} change=${a.buyerChangeSats}`,
+  );
+
+  // 5. Guardian parses the ACTUAL PSBT and validates it.
+  const signer = new TaprootGuardianSigner(WIF, "regtest");
+  const signed = signer.signMintTx(built.psbt, mintIntent);
+  const q0 = stateOutputScript(S0, internalKey).subarray(2);
+  assert(
+    ecc.verifySchnorr(signed.sighash, q0, signed.tapKeySig.subarray(0, 64)),
+    "Guardian key-path sig must verify",
+  );
+  console.log(`✓ Guardian validated the real PSBT and signed the BIP341 sighash`);
+
+  // 6. Buyer signs its P2WPKH funding input; finalize + extract.
+  const buyerInputIndex = built.psbt.data.inputs.findIndex((_, i) => i !== a.stateInputIndex);
+  built.psbt.signInput(buyerInputIndex, buyerKey);
+  built.psbt.finalizeAllInputs();
+  const hex = built.psbt.extractTransaction().toHex();
+
+  // 7. testmempoolaccept must be allowed.
+  const accept = await provider.testMempoolAccept(hex);
+  console.log(
+    `✓ testmempoolaccept: allowed=${accept.allowed}${accept.rejectReason ? " reject=" + accept.rejectReason : ""}`,
+  );
+  assert(accept.allowed === true, `testmempoolaccept rejected: ${accept.rejectReason}`);
+
+  // 8. Broadcast + mine.
+  const mintTxid = await provider.broadcastTransaction(hex);
+  await rpc.generateToAddress(1, walletAddress);
+  console.log(`✓ MINT ${mintTxid} mined`);
+
+  // 9. Fetch from Core and assert on-chain layout.
+  const raw = await provider.getRawTransaction(mintTxid);
+  const tx = bitcoin.Transaction.fromHex(raw);
+  const s1 = a.nextState;
+  const expectedS1 = stateOutputScript(s1, internalKey).toString("hex");
+  const successorOut = tx.outs[0]!.script.toString("hex");
+  const successorValue = BigInt(tx.outs[0]!.value);
+  const recipientOut = tx.outs[1]!.script.toString("hex");
+  console.log(`    successor output : ${successorOut}`);
+  console.log(
+    `    successor value  : ${successorValue} sats (expected ${s1.reserveSats + RESERVE_ANCHOR_SATS})`,
+  );
+  console.log(`    recipient output : ${recipientOut}`);
+  assert(successorOut === expectedS1, `successor ${successorOut} != Q(S1) ${expectedS1}`);
+  assert(
+    successorValue === s1.reserveSats + RESERVE_ANCHOR_SATS,
+    "successor value != reserve + anchor",
+  );
+  assert(
+    recipientOut === RECIPIENT.toString("hex"),
+    `recipient ${recipientOut} != intended ${RECIPIENT.toString("hex")}`,
+  );
+
+  // 10. Reserve before/after (state-level + on-chain UTXO).
+  console.log(`    reserve before   : ${S0.reserveSats} sats (UTXO ${s0Value})`);
+  console.log(
+    `    reserve after    : ${s1.reserveSats} sats (UTXO ${successorValue}, anchor ${RESERVE_ANCHOR_SATS})`,
+  );
+  assert(
+    s1.reserveSats === S0.reserveSats + a.curveContributionSats,
+    "reserve did not increase by curve contribution",
+  );
+
+  // 11. Adversarial mutations of the REAL PSBT (rebuilt each time).
+  console.log("\n    Adversarial mutations of the real PSBT:");
+  const adversarial: [string, (p: bitcoin.Psbt) => void, string][] = [
+    [
+      "successor script",
+      (p) => mutateOutput(p, 0, { script: Buffer.from("5120" + "ff".repeat(32), "hex") }),
+      "SUCCESSOR_SCRIPT_MISMATCH",
+    ],
+    [
+      "successor amount",
+      (p) => mutateOutput(p, 0, { value: Number(s1.reserveSats + RESERVE_ANCHOR_SATS) + 1 }),
+      "RESERVE_CONTRIBUTION_MISMATCH",
+    ],
+    [
+      "recipient",
+      (p) => mutateOutput(p, 1, { script: Buffer.from("0014" + "11".repeat(20), "hex") }),
+      "RECIPIENT_OUTPUT_MISMATCH",
+    ],
+    ["fee", (p) => mutateOutput(p, 3, { value: 1 }), "FEE_OUT_OF_RANGE"],
+    [
+      "extra output",
+      (p) => addOutput(p, Buffer.from("0014" + "22".repeat(20), "hex"), 5_000),
+      "EXTRA_UNAUTHORIZED_OUTPUT",
+    ],
+  ];
+  for (const [label, mutate, reason] of adversarial) {
+    const fresh = buildMintPsbt({
+      internalKey,
+      intent: mintIntent,
+      stateInput: { txid: s0FundingTxid, vout: s0Vout, script: s0Script, valueSats: s0Value },
+      buyerInputs: [
+        { txid: buyerFundingTxid, vout: buyerVout, script: buyerScript, valueSats: buyerValue },
+      ],
+      buyerChangeScript: buyerScript,
+      minerFeeSats: MINER_FEE,
+      network: "regtest",
+    });
+    mutate(fresh.psbt);
+    let refused = false;
+    let got = "";
+    try {
+      signer.signMintTx(fresh.psbt, mintIntent);
+    } catch (e) {
+      refused = true;
+      got = (e as Error).message;
+    }
+    assert(refused && got === reason, `${label}: expected ${reason}, got ${got || "SIGNED"}`);
+    console.log(`      ${label.padEnd(20)} refused=YES reason=${got}`);
+  }
+
+  console.log("\nREAL CORE REGTEST PROOF PASSED");
+  console.log(`    S0 txid       : ${s0FundingTxid}`);
+  console.log(`    MINT txid     : ${mintTxid}`);
+  console.log(`    mempoolaccept : allowed=true`);
+}
+
+// ─────────────────────────────── entrypoint ───────────────────────────────
+
+async function main(): Promise<void> {
+  offlineProof();
+  try {
+    const probe = new RegtestRpc(RPC_URL, RPC_USER, RPC_PASSWORD);
+    await probe.getBlockchainInfo();
+    await realCoreProof();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/fetch failed|ECONNREFUSED|ENOTFOUND|ECONNRESET/.test(msg)) {
+      console.log(`\nSKIPPED real Core proof (bitcoind not reachable at ${RPC_URL})`);
+      return;
+    }
+    console.error("regtest-proof failed:", msg);
+    process.exit(1);
+  }
 }
 
 import { pathToFileURL } from "node:url";
 const isMain =
   process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
-  main();
+  main().catch((e) => {
+    console.error("regtest-proof failed:", e instanceof Error ? e.message : String(e));
+    process.exit(1);
+  });
 }

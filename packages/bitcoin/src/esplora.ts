@@ -47,14 +47,8 @@ export class EsploraUtxoProvider {
   }
 }
 
-interface EsploraTxVin {
-  txid: string;
-  vout: number;
-  prevout?: { value: number; scriptpubkey: string };
-}
 interface EsploraTxJson {
   txid: string;
-  vin: EsploraTxVin[];
   vout: { value: number; scriptpubkey: string }[];
   status?: { confirmed: boolean; block_height?: number; block_hash?: string };
 }

@@ -28,7 +28,7 @@ import { computeFee, feeRateExceedsCap, validatePure } from "./signet-proof.js";
 import { decideNextAction, validateTicker, type ProofManifest } from "./proof-manifest.js";
 
 const CFG = COVE_MUTINYNET_CONFIG;
-const ESPLORA = "https://mutinynet.com/api";
+const ESPLORA = process.env.COVE_MUTINYNET_ESPLORA_URL || "https://mutinynet.com/api";
 const SIGNER_A = "tb1q3gn3xgduwymejw9vw2xayr4u2ldvc2zf05r3kx";
 // Separate key file from signet: a WIF is never shared across networks.
 const B_BACKUP_PATH = fileURLToPath(new URL("../../../.cove-mutinynet-signer-b.wif", import.meta.url));

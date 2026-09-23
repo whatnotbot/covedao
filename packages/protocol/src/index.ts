@@ -139,6 +139,7 @@ export {
   COVE_V1_SIGNET_GENESIS_HEIGHT,
   COVE_V1_MAINNET_GENESIS_HEIGHT,
   COVE_V1_SIGNET_CONFIG,
+  configDomain,
   type CoveConfig,
 } from "./cove/config.js";
 export {
@@ -159,6 +160,7 @@ export {
 } from "./cove/validator.js";
 export { toCoveTransaction, type CoveMapResult } from "./cove/mapper.js";
 export { computeStateRoot } from "./cove/state-root.js";
+export { assertCoveInvariants } from "./cove/invariants.js";
 export {
   buildCoveDeployPsbt,
   buildCoveMintPsbt,

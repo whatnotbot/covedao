@@ -26,8 +26,6 @@ export interface CoveTransaction {
   actor: ProtocolOwnerId;
   /** Recipient derived from vout 1 (mint/transfer). */
   recipient?: ProtocolOwnerId;
-  /** Actor continuation output derived from vout 2 (transfer). */
-  continuation?: ProtocolOwnerId;
   ticker?: string;
   amountAtoms?: Atoms;
   supplyBeforeAtoms?: Atoms;
@@ -43,9 +41,13 @@ export interface CoveToken {
   currentStage: number;
 }
 
+/**
+ * A holder's total token balance. `availableAtoms` is the TOTAL owned (V1 has
+ * no locked/reserved subset — that is a future V2 listing concern, not present
+ * in the consensus state).
+ */
 export interface CoveBalance {
   availableAtoms: Atoms;
-  lockedAtoms: Atoms;
 }
 
 export interface CoveState {

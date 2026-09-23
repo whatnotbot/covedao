@@ -136,7 +136,7 @@ function validateTransfer(state: CoveState, tx: CoveTransaction, _cfg: CoveConfi
   if (tx.recipient === tx.actor) return { valid: false, reason: "SELF_TRANSFER" };
 
   const senderBal = state.balances.get(tx.actor)?.get(token.deploymentId);
-  const available = senderBal ? senderBal.availableAtoms - senderBal.lockedAtoms : 0n;
+  const available = senderBal ? senderBal.availableAtoms : 0n;
   if (available < amount) return { valid: false, reason: "INSUFFICIENT_AVAILABLE_TOKENS" };
 
   // vout 1 = recipient anchor, vout 2 = actor continuation (authorization UTXO).
@@ -196,28 +196,33 @@ export function applyCoveOperation(state: CoveState, tx: CoveTransaction, cfg: C
         bal = new Map();
         state.balances.set(tx.recipient!, bal);
       }
-      const cur = bal.get(token.deploymentId) ?? { availableAtoms: 0n, lockedAtoms: 0n };
+      const cur = bal.get(token.deploymentId) ?? { availableAtoms: 0n };
       bal.set(token.deploymentId, {
         availableAtoms: cur.availableAtoms + amount,
-        lockedAtoms: cur.lockedAtoms,
       });
       return;
     }
     case "TRANSFER": {
       const token = resolveToken(state, tx.ticker)!;
       const amount = tx.amountAtoms!;
-      const sender = state.balances.get(tx.actor)!.get(token.deploymentId)!;
+      const senderMap = state.balances.get(tx.actor)!;
+      const sender = senderMap.get(token.deploymentId)!;
       sender.availableAtoms -= amount;
+      // Prune zero balances so the state root is history-independent: two
+      // indexers reaching the same logical state by different paths agree.
+      if (sender.availableAtoms === 0n) {
+        senderMap.delete(token.deploymentId);
+        if (senderMap.size === 0) state.balances.delete(tx.actor);
+      }
 
       let recv = state.balances.get(tx.recipient!);
       if (!recv) {
         recv = new Map();
         state.balances.set(tx.recipient!, recv);
       }
-      const cur = recv.get(token.deploymentId) ?? { availableAtoms: 0n, lockedAtoms: 0n };
+      const cur = recv.get(token.deploymentId) ?? { availableAtoms: 0n };
       recv.set(token.deploymentId, {
         availableAtoms: cur.availableAtoms + amount,
-        lockedAtoms: cur.lockedAtoms,
       });
       return;
     }

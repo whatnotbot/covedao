@@ -2,7 +2,9 @@ import type { BitcoinProtocolTx } from "@crclaunch/bitcoin";
 import { parseCanonicalOpReturn } from "@crclaunch/bitcoin";
 import {
   applyCoveOperation,
+  assertCoveInvariants,
   computeStateRoot,
+  configDomain,
   createCoveState,
   decodeCoveEnvelope,
   isCoveMagic,
@@ -55,21 +57,31 @@ export interface CoveIndexStats {
 export class CoveIndexer {
   private state: CoveState;
   private events: CoveIndexEvent[] = [];
+  private seenTxids = new Set<string>();
   private processedBlocks = 0;
   private processedTxs = 0;
   private coveCandidateTxs = 0;
   private validOps = 0;
   private invalidOps = 0;
+  private lastHeight: number | undefined;
 
   constructor(private readonly config: CoveConfig) {
     this.state = createCoveState();
   }
 
   processBlock(height: number, txs: BitcoinProtocolTx[]): void {
+    if (height < this.config.genesisHeight) {
+      throw new Error(`block ${height} is below genesis ${this.config.genesisHeight}`);
+    }
+    if (this.lastHeight !== undefined && height !== this.lastHeight + 1) {
+      throw new Error(`non-contiguous block height ${height} (last ${this.lastHeight})`);
+    }
+    this.lastHeight = height;
     this.processedBlocks += 1;
     for (let i = 0; i < txs.length; i++) {
       this.processTx(height, i, txs[i]!);
     }
+    assertCoveInvariants(this.state);
   }
 
   processTx(height: number, txIndex: number, btcTx: BitcoinProtocolTx): ProcessTxResult {
@@ -88,6 +100,14 @@ export class CoveIndexer {
 
     if (coveOutputs.length === 0) return { classification: "NON_COVE" };
     this.coveCandidateTxs += 1;
+
+    // Replay protection: a Cove txid may be applied at most once.
+    if (this.seenTxids.has(btcTx.txid)) {
+      this.invalidOps += 1;
+      this.record(height, txIndex, btcTx.txid, null, "INVALID", false, "REPLAY");
+      return { classification: "INVALID", valid: false, reason: "REPLAY" };
+    }
+    this.seenTxids.add(btcTx.txid);
 
     if (coveOutputs.length > 1) {
       this.invalidOps += 1;
@@ -149,7 +169,7 @@ export class CoveIndexer {
   }
 
   getStateRoot(): string {
-    return computeStateRoot(this.state);
+    return computeStateRoot(this.state, configDomain(this.config));
   }
 
   getEvents(): readonly CoveIndexEvent[] {

@@ -44,6 +44,7 @@ export interface BuildTransferParams {
   inputs: ChainUtxo[];
   changeAddress: string;
   feeRateSatVb: bigint;
+  config: CoveConfig;
 }
 
 /**
@@ -61,6 +62,8 @@ export function buildCoveDeployPsbt(p: BuildDeployParams): CovePsbt {
     ],
     changeAddress: p.changeAddress,
     feeRateSatVb: p.feeRateSatVb,
+    maxFeeRateSatVb: p.config.maxFeeRateSatVb,
+    maxMinerFeeSats: p.config.maxMinerFeeSats,
   });
 }
 
@@ -97,6 +100,8 @@ export function buildCoveMintPsbt(p: BuildMintParams): CovePsbt {
     ],
     changeAddress: p.changeAddress,
     feeRateSatVb: p.feeRateSatVb,
+    maxFeeRateSatVb: p.config.maxFeeRateSatVb,
+    maxMinerFeeSats: p.config.maxMinerFeeSats,
   });
 }
 
@@ -117,5 +122,7 @@ export function buildCoveTransferPsbt(p: BuildTransferParams): CovePsbt {
     ],
     changeAddress: p.changeAddress,
     feeRateSatVb: p.feeRateSatVb,
+    maxFeeRateSatVb: p.config.maxFeeRateSatVb,
+    maxMinerFeeSats: p.config.maxMinerFeeSats,
   });
 }

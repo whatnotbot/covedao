@@ -53,7 +53,9 @@ export function dustThreshold(
   script: Uint8Array,
   dustRelayFeeSatPerKvB: bigint = DUST_RELAY_FEE_SAT_PER_KVB,
 ): bigint {
-  if (script.length === 0 || script[0] === 0x6a) return 0n;
+  // Only OP_RETURN is unspendable. An empty script is anyone-can-spend and
+  // Core treats it as spendable (dust = 471 at the default rate).
+  if (script[0] === 0x6a) return 0n;
 
   // serializeSize(CTxOut) = 8 (nValue) + 1 (compact-size script len, len<253) + len.
   let nSize = 8 + 1 + script.length;

@@ -70,6 +70,11 @@ describe("Cove V1 binary envelope", () => {
     expect(decodeCoveEnvelope(deploy.subarray(0, 9))).toEqual({ ok: false, reason: "BAD_LENGTH" });
   });
 
+  it("rejects a 5-byte payload (magic + version, no opcode) as TRUNCATED", () => {
+    const data = Uint8Array.from([0x43, 0x4f, 0x56, 0x45, 0x01]); // "COVE\x01"
+    expect(decodeCoveEnvelope(data)).toEqual({ ok: false, reason: "TRUNCATED" });
+  });
+
   it("rejects unknown opcode", () => {
     const data = encodeCoveDeploy("FROG");
     data[5] = 0x7f;

@@ -109,16 +109,21 @@ export function opReturnPayload(script: Buffer): Uint8Array | undefined {
   if (len === undefined) return undefined;
   offset += 1;
   if (len === 0x4c) {
+    if (script.length < offset + 1) return undefined;
     len = script[offset];
-    if (len === undefined) return undefined;
     offset += 1;
   } else if (len === 0x4d) {
+    if (script.length < offset + 2) return undefined;
     len = script.readUInt16LE(offset);
     offset += 2;
   } else if (len === 0x4e) {
+    if (script.length < offset + 4) return undefined;
     len = script.readUInt32LE(offset);
     offset += 4;
   }
+  if (len === undefined) return undefined;
+  // Validate that the declared push length is actually present (no truncation).
+  if (offset + len > script.length) return undefined;
   return script.subarray(offset, offset + len);
 }
 

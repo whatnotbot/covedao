@@ -81,11 +81,11 @@ export class CoveStore {
               ownerScript: owner,
               deploymentId,
               availableAtoms: b.availableAtoms,
-              lockedAtoms: b.lockedAtoms,
+              lockedAtoms: 0n,
             })
             .onConflictDoUpdate({
               target: [schema.coveBalances.network, schema.coveBalances.ownerScript, schema.coveBalances.deploymentId],
-              set: { availableAtoms: b.availableAtoms, lockedAtoms: b.lockedAtoms },
+              set: { availableAtoms: b.availableAtoms, lockedAtoms: 0n },
             });
         }
       }

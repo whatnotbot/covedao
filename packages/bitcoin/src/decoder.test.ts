@@ -80,6 +80,14 @@ describe("opReturnPayload", () => {
     expect(opReturnPayload(Buffer.from("6a", "hex"))).toBeUndefined();
     expect(opReturnPayload(Buffer.from("0014" + "00".repeat(20), "hex"))).toBeUndefined();
   });
+
+  it("never throws on truncated/hostile OP_RETURN pushes (bounds-checked)", () => {
+    expect(opReturnPayload(Buffer.from("6a4d", "hex"))).toBeUndefined(); // PUSHDATA2 truncated
+    expect(opReturnPayload(Buffer.from("6a4e01", "hex"))).toBeUndefined(); // PUSHDATA4 truncated
+    expect(opReturnPayload(Buffer.from("6a4c", "hex"))).toBeUndefined(); // PUSHDATA1 truncated
+    expect(opReturnPayload(Buffer.from("6a4effffffffdeadbeef", "hex"))).toBeUndefined(); // declares 4GB, has 4
+    expect(opReturnPayload(Buffer.from("6a0b636f", "hex"))).toBeUndefined(); // declares 11, has 2
+  });
 });
 
 describe("outputAddress / btcNetwork", () => {

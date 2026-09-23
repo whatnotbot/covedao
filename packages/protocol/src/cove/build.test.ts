@@ -90,6 +90,7 @@ describe("Cove PSBT builders", () => {
       inputs: [input],
       changeAddress: CHANGE_ADDR,
       feeRateSatVb: 2n,
+      config: CFG,
     });
     const tx = decodeRawTransaction(psbt.unsignedHex, "signet");
     const [o0, o1, o2] = tx.outputs;

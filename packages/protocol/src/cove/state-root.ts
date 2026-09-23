@@ -3,14 +3,11 @@ import type { CoveState } from "./types.js";
 
 /**
  * Deterministic Cove state root. Includes all consensus state, canonically
- * sorted. No timestamps, DB IDs, insertion order, API metadata, or display
- * addresses.
- *
- * Included: protocol id/version, deployments (id, ticker, creator, confirmed
- * supply atoms, stage), ticker→deployment mapping, all balances
- * (available + locked atoms), reserve sats, platform treasury sats.
+ * sorted, plus the `domain` string (a canonical serialization of the rules the
+ * state was validated under — network, genesis, scripts, fees). No timestamps,
+ * DB IDs, insertion order, API metadata, or display addresses.
  */
-export function computeStateRoot(state: CoveState): string {
+export function computeStateRoot(state: CoveState, domain: string): string {
   const tokens = [...state.tokens.entries()]
     .map(([id, t]) => `${id}:${t.ticker}:${t.creator}:${t.confirmedSupplyAtoms}:${t.currentStage}`)
     .sort()
@@ -21,12 +18,12 @@ export function computeStateRoot(state: CoveState): string {
     .join("\n");
   const balances = [...state.balances.entries()]
     .flatMap(([owner, m]) =>
-      [...m.entries()].map(([dep, b]) => `${owner}:${dep}:${b.availableAtoms}:${b.lockedAtoms}`),
+      [...m.entries()].map(([dep, b]) => `${owner}:${dep}:${b.availableAtoms}`),
     )
     .sort()
     .join("\n");
   const payload = [
-    "cove:1:signet",
+    domain,
     tokens,
     tickerIndex,
     balances,

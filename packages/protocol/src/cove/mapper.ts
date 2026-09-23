@@ -69,7 +69,6 @@ export function toCoveTransaction(
       txIndex,
       actor,
       recipient: recipient?.scriptPubKeyHex,
-      continuation: continuation?.scriptPubKeyHex,
       ticker: envelope.tick,
       amountAtoms: envelope.amt,
       protocolOutputs: [

@@ -71,8 +71,8 @@ describe("toCoveTransaction", () => {
     if (!r.ok) return;
     expect(r.tx.operation).toBe("TRANSFER");
     expect(r.tx.recipient).toBe(RECIPIENT);
-    expect(r.tx.continuation).toBe(ACTOR);
     expect(r.tx.protocolOutputs.map((o) => o.role)).toEqual(["recipient", "continuation"]);
+    expect(r.tx.protocolOutputs[1]!.scriptPubKeyHex).toBe(ACTOR); // continuation = actor
   });
 
   it("rejects missing input0 prevout", () => {

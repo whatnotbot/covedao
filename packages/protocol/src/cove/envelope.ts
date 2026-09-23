@@ -143,7 +143,8 @@ export function encodeCoveTransfer(tick: string, amountAtoms: bigint): Uint8Arra
  */
 export function decodeCoveEnvelope(data: Uint8Array): CoveDecodeResult {
   if (data.length < 4 || !isCoveMagic(data)) return { ok: false, reason: "NOT_COVE" };
-  if (data.length < 5) return { ok: false, reason: "TRUNCATED" };
+  // Need at least magic(4) + version(1) + opcode(1) = 6 bytes before reading opcode.
+  if (data.length < 6) return { ok: false, reason: "TRUNCATED" };
   if (data[4] !== COVE_VERSION) return { ok: false, reason: "UNSUPPORTED_VERSION" };
 
   const opcode = data[5];

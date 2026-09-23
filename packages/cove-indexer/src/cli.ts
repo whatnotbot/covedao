@@ -65,11 +65,16 @@ async function scanRange(
     const block = await provider.getBlock(hash);
     const txs: BitcoinProtocolTx[] = [];
     for (const raw of block.rawTxs) {
-      const tx = decodeRawTransaction(raw, "signet");
-      if (isCoveCandidate(tx)) {
-        await resolveActor(provider, tx);
+      try {
+        const tx = decodeRawTransaction(raw, "signet");
+        if (isCoveCandidate(tx)) {
+          await resolveActor(provider, tx);
+        }
+        txs.push(tx);
+      } catch (err) {
+        // One malformed tx must never halt a block scan.
+        process.stderr.write(`  skipped undecodable tx in block ${h}: ${err instanceof Error ? err.message : String(err)}\n`);
       }
-      txs.push(tx);
     }
     indexer.processBlock(h, txs);
     process.stderr.write(`  indexed block ${h} (${block.rawTxs.length} txs)\n`);
@@ -177,9 +182,13 @@ async function scanAndPersist(
     const block = await provider.getBlock(hash);
     const txs: BitcoinProtocolTx[] = [];
     for (const raw of block.rawTxs) {
-      const tx = decodeRawTransaction(raw, "signet");
-      if (isCoveCandidate(tx)) await resolveActor(provider, tx);
-      txs.push(tx);
+      try {
+        const tx = decodeRawTransaction(raw, "signet");
+        if (isCoveCandidate(tx)) await resolveActor(provider, tx);
+        txs.push(tx);
+      } catch (err) {
+        process.stderr.write(`  skipped undecodable tx in block ${h}: ${err instanceof Error ? err.message : String(err)}\n`);
+      }
     }
     await store.saveBlock(network, h, hash, block.previousBlockHash);
     indexer.processBlock(h, txs);

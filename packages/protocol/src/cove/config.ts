@@ -16,6 +16,10 @@ export interface CoveConfig {
   launchFeeSats: Sats;
   primaryMintFeeBps: bigint;
   minContributionSats: Sats;
+  /** Safety ceiling on the fee rate (sat/vB) applied by the PSBT builder. */
+  maxFeeRateSatVb: bigint;
+  /** Safety ceiling on the total miner fee (sats) applied by the PSBT builder. */
+  maxMinerFeeSats: Sats;
 }
 
 /**
@@ -44,4 +48,23 @@ export const COVE_V1_SIGNET_CONFIG: CoveConfig = {
   launchFeeSats: 10_000n,
   primaryMintFeeBps: 100n,
   minContributionSats: 1_000n,
+  maxFeeRateSatVb: 50n,
+  maxMinerFeeSats: 50_000n,
 };
+
+/**
+ * Canonical serialization of a CoveConfig. Committed into the state root so two
+ * indexers running different rules can never agree on the same root.
+ */
+export function configDomain(cfg: CoveConfig): string {
+  return [
+    "cove:1",
+    cfg.network,
+    cfg.genesisHeight.toString(),
+    cfg.settlementScript,
+    cfg.treasuryScript,
+    cfg.launchFeeSats.toString(),
+    cfg.primaryMintFeeBps.toString(),
+    cfg.minContributionSats.toString(),
+  ].join(":");
+}

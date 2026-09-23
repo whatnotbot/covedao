@@ -60,7 +60,6 @@ function transferTx(
     txIndex: 0,
     actor: RECIPIENT, // holds the minted tokens
     recipient: RECIPIENT2,
-    continuation: RECIPIENT,
     ticker: "FROG",
     amountAtoms: amount,
     protocolOutputs: [
@@ -236,7 +235,6 @@ describe("Cove TRANSFER (continuation model)", () => {
       validateCoveOperation(
         s,
         transferTx(atoms(500_000), {
-          continuation: undefined,
           protocolOutputs: [{ index: 1, scriptPubKeyHex: RECIPIENT2, amountSats: 294n, role: "recipient" }],
         }),
         CFG,

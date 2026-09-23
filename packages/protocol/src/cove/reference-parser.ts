@@ -50,7 +50,7 @@ function magicOk(data: Uint8Array): boolean {
 
 export function decodeCoveEnvelopeReference(data: Uint8Array): RefResult {
   if (!magicOk(data)) return { ok: false, reason: "NOT_COVE" };
-  if (data.length < 5) return { ok: false, reason: "TRUNCATED" };
+  if (data.length < 6) return { ok: false, reason: "TRUNCATED" };
   if (data[4] !== 1) return { ok: false, reason: "UNSUPPORTED_VERSION" };
 
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);

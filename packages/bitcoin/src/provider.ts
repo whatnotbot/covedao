@@ -43,6 +43,8 @@ interface RpcConfig {
   url: string;
   user?: string;
   password?: string;
+  /** Optional fee-rate ceiling (sat/vB) applied to estimation and broadcast. */
+  maxFeeRateSatVb?: bigint;
 }
 
 /**
@@ -71,6 +73,7 @@ export class CoreRpcProvider implements BitcoinChainProvider {
       method: "POST",
       headers,
       body: JSON.stringify({ jsonrpc: "1.0", id: `${++this.id}`, method, params }),
+      signal: AbortSignal.timeout(20_000),
     });
     if (!res.ok) throw new Error(`RPC ${method} HTTP ${res.status}`);
     const json = (await res.json()) as { result?: T; error?: { message?: string } | null };
@@ -103,7 +106,14 @@ export class CoreRpcProvider implements BitcoinChainProvider {
       [hash],
     );
     const block = bitcoin.Block.fromHex(raw);
+    // Verify the parsed block is the one requested and its merkle root matches.
+    if (block.getId() !== hash) throw new Error(`Block hash mismatch: requested ${hash}, got ${block.getId()}`);
     const transactions = block.transactions ?? [];
+    const mutated = { value: false };
+    const actualMerkleRoot = bitcoin.Block.calculateMerkleRoot(transactions, false, mutated);
+    if (mutated.value || !block.merkleRoot!.equals(actualMerkleRoot)) {
+      throw new Error("Block merkle root mismatch.");
+    }
     const txids = transactions.map((tx) => tx.getId());
     const rawTxs = transactions.map((tx) => tx.toHex());
     return {
@@ -125,6 +135,7 @@ export class CoreRpcProvider implements BitcoinChainProvider {
     if (cached) return cached;
     const raw = await this.getRawTransaction(txid);
     const tx = decodeRawTransaction(raw);
+    if (this.decodedCache.size >= 10_000) this.decodedCache.clear(); // bound memory
     this.decodedCache.set(txid, tx);
     return tx;
   }
@@ -163,17 +174,26 @@ export class CoreRpcProvider implements BitcoinChainProvider {
   }
 
   async broadcastTransaction(hex: string): Promise<string> {
-    return this.call<string>("sendrawtransaction", [hex]);
+    // Pass an explicit maxfeerate (BTC/kvB) so a buggy node cannot relay a
+    // wildly over-paying tx on our behalf.
+    const maxfeerate = this.cfg.maxFeeRateSatVb ? Number(this.cfg.maxFeeRateSatVb) / 100_000 : undefined;
+    return this.call<string>("sendrawtransaction", maxfeerate === undefined ? [hex] : [hex, maxfeerate]);
   }
 
   async estimateFeeRate(): Promise<bigint> {
     // estimatesmartfee returns an OBJECT { feerate (BTC/kvB), blocks, errors? }.
     const res = await this.call<{ feerate?: number; errors?: string[] }>("estimatesmartfee", [2]);
     const btcPerKvb = res?.feerate;
+    let rate: bigint;
     if (typeof btcPerKvb !== "number" || !Number.isFinite(btcPerKvb) || btcPerKvb <= 0) {
-      return 2n; // fallback: 2 sat/vB
+      rate = 2n; // fallback: 2 sat/vB
+    } else {
+      rate = btcPerKvbToSatPerVb(btcPerKvb); // sat/vB = BTC/kvB × 100,000
     }
-    // sat/vB = BTC/kvB × 100,000 (1 BTC = 1e8 sats; 1 kvB = 1000 vB).
-    return btcPerKvbToSatPerVb(btcPerKvb);
+    // Clamp to the caller-supplied ceiling (do not trust the node).
+    if (this.cfg.maxFeeRateSatVb && rate > this.cfg.maxFeeRateSatVb) {
+      return this.cfg.maxFeeRateSatVb;
+    }
+    return rate;
   }
 }

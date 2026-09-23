@@ -142,4 +142,24 @@ describe("CoveIndexer (binary envelope, classification, tx index)", () => {
     expect(r.valid).toBe(false);
     expect(r.reason).toBe("MISSING_CONTINUATION");
   });
+
+  it("rejects a replayed Cove txid (no double-apply)", () => {
+    const idx = new CoveIndexer(CFG);
+    const deploy = tx(encodeCoveDeploy("FROG"), [{ index: 1, scriptPubKeyHex: CFG.treasuryScript, valueSats: 10_000n }], "d".repeat(64));
+    idx.processBlock(CFG.genesisHeight, [deploy]);
+    const rootBefore = idx.getStateRoot();
+    const treasuryBefore = idx.getState().platformTreasurySats;
+    // Replay the same deploy block → REPLAY, no state change.
+    const r = idx.processTx(CFG.genesisHeight, 0, deploy);
+    expect(r.reason).toBe("REPLAY");
+    expect(idx.getStateRoot()).toBe(rootBefore);
+    expect(idx.getState().platformTreasurySats).toBe(treasuryBefore);
+  });
+
+  it("rejects a block below genesis and a non-contiguous height", () => {
+    const idx = new CoveIndexer(CFG);
+    expect(() => idx.processBlock(CFG.genesisHeight - 1, [])).toThrow(/below genesis/);
+    idx.processBlock(CFG.genesisHeight, []);
+    expect(() => idx.processBlock(CFG.genesisHeight + 2, [])).toThrow(/non-contiguous/);
+  });
 });

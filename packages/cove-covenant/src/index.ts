@@ -47,3 +47,11 @@ export {
   type TxOutputView,
   type TokenTransferValidation,
 } from "./tokenUtxo.js";
+export {
+  validateStateV2,
+  s0StateV2,
+  applyMintV2,
+  applyRedeemV2,
+  type MintV2Result,
+  type RedeemV2Result,
+} from "./transitionV2.js";

@@ -169,8 +169,22 @@ function readHeaderV2(payload: Buffer): { op: number } {
   return { op: payload[3]! };
 }
 
+function assertCanonicalTokenId(tokenId: Buffer): void {
+  if (tokenId.length !== 32) throw new WireV2Error("INVALID_TOKEN_ID", "tokenId must be 32 bytes");
+  if (tokenId.equals(Buffer.alloc(32))) throw new WireV2Error("INVALID_TOKEN_ID", "zero tokenId");
+}
+
+function assertCanonicalTicker(ticker: string): void {
+  // Must already be uppercase canonical (rejects lowercase/mixed-case/non-ASCII).
+  if (ticker !== canonicalTicker(ticker)) {
+    throw new WireV2Error("NONCANONICAL_TICKER", "ticker is not canonical uppercase");
+  }
+}
+
 function readTokenId(payload: Buffer, offset: number): Buffer {
-  return Buffer.from(payload.subarray(offset, offset + 32));
+  const tokenId = Buffer.from(payload.subarray(offset, offset + 32));
+  assertCanonicalTokenId(tokenId);
+  return tokenId;
 }
 
 function readAmount(payload: Buffer, offset: number): bigint {
@@ -183,17 +197,21 @@ function readAllocations(
   count: number,
   max: number,
 ): TokenAllocation[] {
+  if (count > max) throw new WireV2Error("TOO_MANY_ALLOCATIONS", "too many allocations");
   const out: TokenAllocation[] = [];
   const seen = new Set<number>();
+  let total = 0n;
   for (let i = 0; i < count; i++) {
     const vout = payload[offset + i * 9]!;
     const amount = readAmount(payload, offset + i * 9 + 1);
     if (amount === 0n) throw new WireV2Error("ZERO_AMOUNT", "zero allocation amount");
     if (seen.has(vout)) throw new WireV2Error("DUPLICATE_VOUT", "duplicate vout");
     seen.add(vout);
+    total += amount;
+    if (total > 0xffffffffffffffffn)
+      throw new WireV2Error("AMOUNT_OVERFLOW", "allocation sum overflows u64");
     out.push({ vout, amount });
   }
-  if (count > max) throw new WireV2Error("TOO_MANY_ALLOCATIONS", "too many allocations");
   return out;
 }
 
@@ -203,10 +221,15 @@ export function decodeV2(payload: Buffer): ParsedEnvelopeV2 {
     case OP_DEPLOY: {
       if (payload.length < 6) throw new WireV2Error("TRUNCATED", "deploy too short");
       const policyVersion = payload[4]!;
+      if (policyVersion !== 3)
+        throw new WireV2Error("BAD_POLICY_VERSION", "policyVersion must be 3");
       const tickLen = payload[5]!;
+      if (tickLen === 0 || tickLen > 16)
+        throw new WireV2Error("NONCANONICAL_TICKER", "ticker length out of range");
       if (payload.length !== 6 + tickLen + 32)
         throw new WireV2Error("TRUNCATED", "deploy length mismatch");
       const ticker = payload.subarray(6, 6 + tickLen).toString("utf8");
+      assertCanonicalTicker(ticker);
       const tokenNonce = Buffer.from(payload.subarray(6 + tickLen, 6 + tickLen + 32));
       return { version: 2, op, policyVersion, ticker, tokenNonce };
     }
@@ -214,20 +237,15 @@ export function decodeV2(payload: Buffer): ParsedEnvelopeV2 {
       if (payload.length !== 4 + 32 + 8 + 1)
         throw new WireV2Error("TRUNCATED", "mint length mismatch");
       const tokenId = readTokenId(payload, 4);
-      if (tokenId.equals(Buffer.alloc(32)))
-        throw new WireV2Error("INVALID_TOKEN_ID", "zero tokenId");
-      return {
-        version: 2,
-        op,
-        tokenId,
-        amount: readAmount(payload, 36),
-        recipientVout: payload[44]!,
-      };
+      const amount = readAmount(payload, 36);
+      if (amount === 0n) throw new WireV2Error("ZERO_AMOUNT", "zero mint amount");
+      return { version: 2, op, tokenId, amount, recipientVout: payload[44]! };
     }
     case OP_TRANSFER: {
       if (payload.length < 4 + 32 + 1) throw new WireV2Error("TRUNCATED", "transfer too short");
       const tokenId = readTokenId(payload, 4);
       const count = payload[36]!;
+      if (count === 0) throw new WireV2Error("ZERO_ALLOCATIONS", "zero allocations");
       const expected = 4 + 32 + 1 + count * 9;
       if (payload.length !== expected)
         throw new WireV2Error("TRUNCATED", "transfer length mismatch");
@@ -253,4 +271,26 @@ export function decodeV2(payload: Buffer): ParsedEnvelopeV2 {
 /** True if a v2 payload fits the default datacarrier limit. */
 export function withinDatacarrier(payload: Buffer): boolean {
   return payload.length <= DATACARRIER_PAYLOAD_LIMIT;
+}
+
+/** Re-encode a decoded v2 envelope back to canonical bytes (roundtrip helper). */
+export function reencodeV2(e: ParsedEnvelopeV2): Buffer {
+  switch (e.op) {
+    case OP_DEPLOY:
+      return encodeDeployV2({
+        policyVersion: e.policyVersion,
+        ticker: e.ticker,
+        tokenNonce: e.tokenNonce,
+      });
+    case OP_MINT:
+      return encodeMintV2({ tokenId: e.tokenId, amount: e.amount, recipientVout: e.recipientVout });
+    case OP_TRANSFER:
+      return encodeTransferV2({ tokenId: e.tokenId, allocations: e.allocations });
+    case OP_REDEEM:
+      return encodeRedeemV2({
+        tokenId: e.tokenId,
+        redeemAmount: e.redeemAmount,
+        changeAllocations: e.changeAllocations,
+      });
+  }
 }

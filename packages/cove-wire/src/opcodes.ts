@@ -29,6 +29,9 @@ export const MAX_TICKER_BYTES = 16;
 /** Default Bitcoin Core datacarrier payload limit (80 bytes). */
 export const DATACARRIER_PAYLOAD_LIMIT = 80;
 
+/** Production covenant policy-set version (COVE_POLICY_V3). */
+export const COVE_POLICY_V3 = 3;
+
 export function opName(op: number): string {
   switch (op) {
     case OP_DEPLOY:

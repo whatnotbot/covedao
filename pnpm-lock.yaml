@@ -327,6 +327,9 @@ importers:
       '@crclaunch/bitcoin':
         specifier: workspace:*
         version: link:../bitcoin
+      '@crclaunch/cove-covenant':
+        specifier: workspace:*
+        version: link:../cove-covenant
       bitcoinjs-lib:
         specifier: ^6.1.7
         version: 6.1.8

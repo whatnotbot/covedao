@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  validateRedeemTokenAccounting,
-  validateTokenTransfer,
-} from "./tokenUtxo.js";
+import { validateRedeemTokenAccounting, validateTokenTransfer } from "./tokenUtxo.js";
 
 const TOKENID = Buffer.alloc(32, 0xcd);
 const ATOMS = 100_000_000n;

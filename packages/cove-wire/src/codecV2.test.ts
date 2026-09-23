@@ -6,6 +6,7 @@ import {
   encodeMintV2,
   encodeRedeemV2,
   encodeTransferV2,
+  reencodeV2,
   withinDatacarrier,
   WireV2Error,
   type TokenAllocation,
@@ -229,6 +230,118 @@ describe("wire v2 fuzz: decoder never crashes", () => {
       } catch (e) {
         expect(e).toBeInstanceOf(WireV2Error);
       }
+    }
+  });
+});
+
+describe("wire v2 decoder canonicality — raw noncanonical bytes (§1)", () => {
+  const hdr = (op: number): Buffer => {
+    const b = Buffer.alloc(4);
+    b.writeUInt16BE(0x4356, 0);
+    b[2] = 2;
+    b[3] = op;
+    return b;
+  };
+  const u64 = (n: bigint): Buffer => {
+    const b = Buffer.alloc(8);
+    b.writeBigUInt64BE(n, 0);
+    return b;
+  };
+  function expectWireError(fn: () => unknown, code: string): void {
+    try {
+      fn();
+      throw new Error(`expected ${code}`);
+    } catch (e) {
+      expect(e).toBeInstanceOf(WireV2Error);
+      expect((e as WireV2Error).code).toBe(code);
+    }
+  }
+
+  it("raw zero-amount MINT rejected", () => {
+    expectWireError(
+      () => decodeV2(Buffer.concat([hdr(3), Buffer.alloc(32, 0xcd), u64(0n), Buffer.from([1])])),
+      "ZERO_AMOUNT",
+    );
+  });
+
+  it("raw zero-tokenId MINT/TRANSFER/REDEEM rejected", () => {
+    expectWireError(
+      () => decodeV2(Buffer.concat([hdr(3), Buffer.alloc(32), u64(1n), Buffer.from([1])])),
+      "INVALID_TOKEN_ID",
+    );
+    expectWireError(
+      () => decodeV2(Buffer.concat([hdr(2), Buffer.alloc(32), Buffer.from([1, 1]), u64(1n)])),
+      "INVALID_TOKEN_ID",
+    );
+    expectWireError(
+      () => decodeV2(Buffer.concat([hdr(4), Buffer.alloc(32), u64(1n), Buffer.from([0])])),
+      "INVALID_TOKEN_ID",
+    );
+  });
+
+  it("raw zero-allocation TRANSFER rejected", () => {
+    expectWireError(
+      () => decodeV2(Buffer.concat([hdr(2), Buffer.alloc(32, 0xcd), Buffer.from([0])])),
+      "ZERO_ALLOCATIONS",
+    );
+  });
+
+  it("raw lowercase DEPLOY rejected", () => {
+    // ticker "frog" (lowercase) must be rejected (noncanonical).
+    const tick = Buffer.from("frog");
+    expectWireError(
+      () =>
+        decodeV2(Buffer.concat([hdr(1), Buffer.from([3, tick.length]), tick, Buffer.alloc(32)])),
+      "NONCANONICAL_TICKER",
+    );
+  });
+
+  it("raw policyVersion=2 DEPLOY rejected", () => {
+    const tick = Buffer.from("FROG");
+    expectWireError(
+      () =>
+        decodeV2(Buffer.concat([hdr(1), Buffer.from([2, tick.length]), tick, Buffer.alloc(32)])),
+      "BAD_POLICY_VERSION",
+    );
+  });
+
+  it("raw allocation sum overflow rejected", () => {
+    // two allocations each = u64::MAX - 1 → sum overflows.
+    const max = 0xffffffffffffffffn;
+    const payload = Buffer.concat([
+      hdr(2),
+      Buffer.alloc(32, 0xcd),
+      Buffer.from([2]),
+      Buffer.from([1]),
+      u64(max - 1n),
+      Buffer.from([2]),
+      u64(max - 1n),
+    ]);
+    expectWireError(() => decodeV2(payload), "AMOUNT_OVERFLOW");
+  });
+
+  it("raw trailing bytes rejected", () => {
+    const mint = Buffer.concat([hdr(3), Buffer.alloc(32, 0xcd), u64(1n), Buffer.from([1])]);
+    expectWireError(() => decodeV2(Buffer.concat([mint, Buffer.from([0xff])])), "TRUNCATED");
+  });
+
+  it("canonical re-encode roundtrip: reencodeV2(decodeV2(x)) == x", () => {
+    const deploy = encodeDeployV2({ policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
+    const mint = encodeMintV2({ tokenId: TOKENID, amount: 42n * ATOMS, recipientVout: 3 });
+    const transfer = encodeTransferV2({
+      tokenId: TOKENID,
+      allocations: [
+        { vout: 1, amount: 4n * ATOMS },
+        { vout: 2, amount: 6n * ATOMS },
+      ],
+    });
+    const redeem = encodeRedeemV2({
+      tokenId: TOKENID,
+      redeemAmount: 5n * ATOMS,
+      changeAllocations: [{ vout: 1, amount: 5n * ATOMS }],
+    });
+    for (const x of [deploy, mint, transfer, redeem]) {
+      expect(reencodeV2(decodeV2(x)).equals(x)).toBe(true);
     }
   });
 });

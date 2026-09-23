@@ -8,6 +8,7 @@ export {
   OP_REDEEM,
   MAX_TICKER_BYTES,
   DATACARRIER_PAYLOAD_LIMIT,
+  COVE_POLICY_V3,
   opName,
 } from "./opcodes.js";
 export {
@@ -38,6 +39,7 @@ export {
   encodeTransferV2,
   encodeRedeemV2,
   decodeV2,
+  reencodeV2,
   withinDatacarrier,
   WireV2Error,
   type TokenAllocation,

@@ -14,6 +14,7 @@ import * as ecc from "tiny-secp256k1";
 import { ECPairFactory } from "ecpair";
 import { CoreRpcProvider } from "@crclaunch/bitcoin";
 import { buildCoveVault } from "./vault.js";
+import { policyIdentityHash } from "./policyIdentity.js";
 import { RECOVERY_CSV_BLOCKS } from "./leaves.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
@@ -33,6 +34,14 @@ const S1_HASH = Buffer.from(
   "27fb483afe745a89ea8d5f55ecc9401e0a96b15abd2ecb7ea4afb6633482828a",
   "hex",
 );
+const CMR = Buffer.from("118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2", "hex");
+const POLICY_IDENTITY = policyIdentityHash({
+  version: 1,
+  operation: 3,
+  tokenId: "ab".repeat(32),
+  successorStateHash: S1_HASH,
+  cmr: CMR,
+});
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(`ASSERT FAILED: ${msg}`);
@@ -156,7 +165,7 @@ async function main(): Promise<void> {
   assert(info.chain === "regtest", `chain is ${info.chain}, expected regtest`);
   const provider = new CoreRpcProvider({ url: RPC_URL, user: RPC_USER, password: RPC_PASSWORD });
 
-  const vault = buildCoveVault({ successorStateHash: S1_HASH, guardianXOnly, ownerXOnly });
+  const vault = buildCoveVault({ policyIdentityHash: POLICY_IDENTITY, guardianXOnly, ownerXOnly });
   console.log(line);
   console.log("COVE NUMS/DUAL-LEAF VAULT — 144-BLOCK CSV RECOVERY PROOF");
   console.log(line);

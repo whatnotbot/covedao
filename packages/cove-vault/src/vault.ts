@@ -32,8 +32,8 @@ export interface CoveVault {
 }
 
 export interface BuildCoveVaultParams {
-  /** The committed successor state hash (32 bytes) curried into the execution leaf. */
-  successorStateHash: Buffer;
+  /** The policy identity hash (32 bytes) curried into the execution leaf. */
+  policyIdentityHash: Buffer;
   /** Guardian x-only pubkey (32 bytes) for the execution leaf. */
   guardianXOnly: Buffer;
   /** Owner x-only pubkey (32 bytes) for the recovery leaf. */
@@ -47,7 +47,7 @@ export interface BuildCoveVaultParams {
  */
 export function buildCoveVault(params: BuildCoveVaultParams): CoveVault {
   const numsKey = numsInternalKey();
-  const executionScript = buildExecutionLeaf(params.successorStateHash, params.guardianXOnly);
+  const executionScript = buildExecutionLeaf(params.policyIdentityHash, params.guardianXOnly);
   const recoveryScript = buildRecoveryLeaf(params.ownerXOnly);
 
   const executionTapleaf = tapleafHash(executionScript, LEAF_VERSION_TAPSCRIPT);

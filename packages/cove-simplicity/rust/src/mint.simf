@@ -1,0 +1,32 @@
+// Cove MINT policy — Simfony source (frozen).
+//
+// This is a REAL Simplicity program: it is compiled by the `simfony` crate,
+// its Commitment Merkle Root (CMR) is computed, and it is executed on the
+// Simplicity Bit Machine. It is NOT a TypeScript/Rust predicate.
+//
+// Bitcoin-introspection limitation (honest): the Bitcoin tx environment is not
+// wired in the upstream `simfony` toolchain (it targets Elements/Liquid jets),
+// so the MINT predicate receives the transaction state as WITNESS values. The
+// full curve math stays in the TypeScript reference (`validateMintTx`), which
+// is the differential oracle. The invariant overlap verified here is:
+//   supply conservation, no overmint, positive amount, reserve movement.
+
+fn main() {
+    let amount: u64 = witness::AMOUNT;
+    let prev_supply: u64 = witness::PREV_SUPPLY;
+    let next_supply: u64 = witness::NEXT_SUPPLY;
+    let prev_reserve: u64 = witness::PREV_RESERVE;
+    let next_reserve: u64 = witness::NEXT_RESERVE;
+    let contribution: u64 = witness::CONTRIBUTION;
+
+    // Supply conservation: S1 = S0 + amount.
+    let (carry, sum_supply): (bool, u64) = jet::add_64(prev_supply, amount);
+    assert!(jet::eq_64(sum_supply, next_supply));
+    // No overmint: public supply cap = 840,000,000 display tokens.
+    assert!(jet::le_64(next_supply, 840_000_000));
+    // Positive amount.
+    assert!(jet::lt_64(0, amount));
+    // Reserve movement: reserve grows by exactly the curve contribution.
+    let (carry2, sum_reserve): (bool, u64) = jet::add_64(prev_reserve, contribution);
+    assert!(jet::eq_64(sum_reserve, next_reserve));
+}

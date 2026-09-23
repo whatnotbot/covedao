@@ -1,4 +1,10 @@
 export { COVE_NUMS_X_ONLY, numsInternalKey } from "./nums.js";
+export {
+  COVE_PROTOCOL_VERSION,
+  OP_MINT,
+  policyIdentityHash,
+  type PolicyIdentity,
+} from "./policyIdentity.js";
 export { RECOVERY_CSV_BLOCKS, buildExecutionLeaf, buildRecoveryLeaf } from "./leaves.js";
 export {
   LEAF_VERSION_TAPSCRIPT,

@@ -7,13 +7,14 @@ import * as bitcoin from "bitcoinjs-lib";
  * commitment the witness must reveal, followed by the authorizing signature)
  * under current mainnet rules:
  *
- *   <successorStateHash(32)> OP_EQUALVERIFY <guardianXOnly(32)> OP_CHECKSIG
+ *   <policyIdentityHash(32)> OP_EQUALVERIFY <guardianXOnly(32)> OP_CHECKSIG
  *
- * Witness: [guardian_sig(64), revealed_successorStateHash(32)].
- * The Guardian pre-executes the full Phase 1.5 transition policy OFF-CHAIN, and
- * only then produces the script-path CHECKSIG (which binds the actual outputs
- * via SIGHASH_DEFAULT). Bitcoin consensus enforces only the CHECKSIG + the
- * hash reveal; the curve/amount policy is Guardian-enforced.
+ * The policy identity commits: protocol version, operation (MINT), tokenId,
+ * successor-state hash, and the REAL Simplicity CMR (see policyIdentity.ts).
+ * Witness: [guardian_sig(64), revealed_policyIdentityHash(32)].
+ * The Guardian pre-executes the full transition policy OFF-CHAIN (real Simplicity
+ * + TypeScript reference), and only then produces the script-path CHECKSIG
+ * (which binds the actual outputs via SIGHASH_DEFAULT).
  *
  * RECOVERY leaf — mirrors PRECOP yellowpaper §4.3 verbatim:
  *
@@ -32,16 +33,16 @@ const OP_2DROP = 0x6d;
 
 export const RECOVERY_CSV_BLOCKS = 144;
 
-/** Execution leaf: commit the successor state hash + require the Guardian CHECKSIG. */
-export function buildExecutionLeaf(successorStateHash: Buffer, guardianXOnly: Buffer): Buffer {
-  if (successorStateHash.length !== 32) {
-    throw new Error(`successorStateHash must be 32 bytes, got ${successorStateHash.length}`);
+/** Execution leaf: commit the policy identity hash + require the Guardian CHECKSIG. */
+export function buildExecutionLeaf(policyIdentityHash: Buffer, guardianXOnly: Buffer): Buffer {
+  if (policyIdentityHash.length !== 32) {
+    throw new Error(`policyIdentityHash must be 32 bytes, got ${policyIdentityHash.length}`);
   }
   if (guardianXOnly.length !== 32) {
     throw new Error(`guardianXOnly must be 32 bytes, got ${guardianXOnly.length}`);
   }
   return bitcoin.script.compile([
-    successorStateHash,
+    policyIdentityHash,
     OP_EQUALVERIFY,
     guardianXOnly,
     OP_CHECKSIG,

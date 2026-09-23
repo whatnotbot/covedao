@@ -1,0 +1,38 @@
+name: Cove Simplicity pre-execution differential
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  differential:
+    name: TS policy == real Simplicity Bit Machine
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the Simplicity harness (Rust)
+        run: pnpm --filter @crclaunch/cove-simplicity build:rust
+
+      - name: Run differential test (TS == Simplicity)
+        run: pnpm --filter @crclaunch/cove-simplicity test

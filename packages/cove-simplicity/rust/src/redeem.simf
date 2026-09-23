@@ -1,0 +1,30 @@
+// Cove REDEEM (sell-to-backing) policy — Simfony source (frozen).
+//
+// Real Simplicity: compiled by the `simfony` crate, real CMR via rust-simplicity,
+// executed on the Simplicity Bit Machine. NOT a TypeScript/Rust predicate.
+//
+// Bitcoin-introspection limitation (honest, same as mint.simf): tx state arrives
+// as WITNESS values; the TypeScript reference (`quoteRedeem`/`validateRedeem`) is
+// the differential oracle. Invariant overlap verified here:
+//   positive amount, no underflow, supply conservation (new = old - amount),
+//   backing conservation (newBacking = oldBacking - payout).
+
+fn main() {
+    let amount: u64 = witness::AMOUNT;
+    let old_supply: u64 = witness::OLD_SUPPLY;
+    let new_supply: u64 = witness::NEW_SUPPLY;
+    let old_backing: u64 = witness::OLD_BACKING;
+    let new_backing: u64 = witness::NEW_BACKING;
+    let payout: u64 = witness::PAYOUT;
+
+    // Positive amount.
+    assert!(jet::lt_64(0, amount));
+    // No underflow: amount <= old supply.
+    assert!(jet::le_64(amount, old_supply));
+    // Supply conservation: new = old - amount.
+    let (borrow, diff): (bool, u64) = jet::subtract_64(old_supply, amount);
+    assert!(jet::eq_64(diff, new_supply));
+    // Backing conservation: newBacking = oldBacking - payout.
+    let (borrow2, diff2): (bool, u64) = jet::subtract_64(old_backing, payout);
+    assert!(jet::eq_64(diff2, new_backing));
+}

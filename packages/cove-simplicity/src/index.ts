@@ -1,1 +1,9 @@
-export { MINT_CMR, executeMint, isSimplicityAvailable, type MintWitness } from "./simplicity.js";
+export {
+  MINT_CMR,
+  REDEEM_CMR,
+  executeMint,
+  executeRedeem,
+  isSimplicityAvailable,
+  type MintWitness,
+  type RedeemWitness,
+} from "./simplicity.js";

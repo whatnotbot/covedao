@@ -15,6 +15,35 @@ import { taggedHash } from "./taproot.js";
 
 export const COVE_PROTOCOL_VERSION = 1;
 export const OP_MINT = 0x03;
+export const OP_REDEEM = 0x04;
+
+/**
+ * Cove covenant policy-set versions.
+ *
+ *   COVE_POLICY_V1 = MINT only  (Phase 3; frozen CMR 118425967f…)
+ *   COVE_POLICY_V2 = MINT + REDEEM/backing-aware (this phase)
+ *
+ * Each version has a deterministic CMR set; each operation's execution leaf
+ * commits `policyIdentityHash(version, op, tokenId, successorStateHash, cmr)`.
+ */
+export const COVE_POLICY_V1 = 1;
+export const COVE_POLICY_V2 = 2;
+
+export interface PolicyCmrs {
+  mint: string;
+  redeem?: string;
+}
+
+/** Frozen Simplicity CMRs per policy version (see @crclaunch/cove-simplicity). */
+export const COVE_POLICY_CMRS: Record<number, PolicyCmrs> = {
+  [COVE_POLICY_V1]: {
+    mint: "118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2",
+  },
+  [COVE_POLICY_V2]: {
+    mint: "118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2",
+    redeem: "a15ac4cbc450ac2dd113b1a9de178450ccc893a5213d8a2f56471fcd9aa274b7",
+  },
+};
 
 export interface PolicyIdentity {
   version: number;

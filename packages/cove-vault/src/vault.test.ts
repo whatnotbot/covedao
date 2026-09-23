@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { COVE_NUMS_X_ONLY, numsInternalKey } from "./nums.js";
-import { policyIdentityHash } from "./policyIdentity.js";
+import {
+  COVE_POLICY_CMRS,
+  COVE_POLICY_V1,
+  COVE_POLICY_V2,
+  OP_REDEEM,
+  policyIdentityHash,
+} from "./policyIdentity.js";
 import { RECOVERY_CSV_BLOCKS, buildExecutionLeaf, buildRecoveryLeaf } from "./leaves.js";
 import { buildCoveVault } from "./vault.js";
 import { tapTweak, tweakKey } from "./taproot.js";
@@ -119,5 +125,35 @@ describe("Cove NUMS/dual-leaf vault — golden vectors (CMR-bound execution)", (
     });
     expect(v2.outputKey.equals(v.outputKey)).toBe(false);
     expect(v2.address).not.toBe(v.address);
+  });
+});
+
+describe("policy versioning (COVE_POLICY_V1 vs V2)", () => {
+  it("V1 has only MINT CMR; V2 adds the frozen REDEEM CMR", () => {
+    expect(COVE_POLICY_CMRS[COVE_POLICY_V1]).toEqual({
+      mint: "118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2",
+    });
+    expect(COVE_POLICY_CMRS[COVE_POLICY_V2]).toEqual({
+      mint: "118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2",
+      redeem: "a15ac4cbc450ac2dd113b1a9de178450ccc893a5213d8a2f56471fcd9aa274b7",
+    });
+  });
+
+  it("REDEEM policy identity golden (op 0x04, V2 redeem CMR)", () => {
+    const redeemCmr = Buffer.from(COVE_POLICY_CMRS[COVE_POLICY_V2]!.redeem!, "hex");
+    const pi = policyIdentityHash({
+      version: COVE_POLICY_V2,
+      operation: OP_REDEEM,
+      tokenId: "ab".repeat(32),
+      successorStateHash: S1_HASH,
+      cmr: redeemCmr,
+    });
+    expect(pi.toString("hex")).toBe(
+      "9f66b119776c5b52c4b6141f48c0efbb77d88a4188b3b33d77d2c9e52b81b66b",
+    );
+    // Different from the MINT policy identity (op 0x03).
+    expect(pi.toString("hex")).not.toBe(
+      "8728b0c360dbcb66f5df315c1f859fc5c5d4e9b28a42738fb8c775ecf104dbc1",
+    );
   });
 });

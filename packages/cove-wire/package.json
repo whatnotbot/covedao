@@ -1,5 +1,5 @@
 {
-  "name": "@crclaunch/cove-simplicity",
+  "name": "@crclaunch/cove-wire",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,18 +10,11 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
-    "build:rust": "cargo build --release --manifest-path rust/Cargo.toml",
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
-  "dependencies": {
-    "@crclaunch/cove-economics": "workspace:*",
-    "@crclaunch/cove-guardian": "workspace:*",
-    "@crclaunch/cove-covenant": "workspace:*"
-  },
   "devDependencies": {
-    "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }

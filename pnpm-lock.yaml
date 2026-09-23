@@ -299,6 +299,9 @@ importers:
       '@crclaunch/cove-covenant':
         specifier: workspace:*
         version: link:../cove-covenant
+      '@crclaunch/cove-economics':
+        specifier: workspace:*
+        version: link:../cove-economics
       '@crclaunch/cove-guardian':
         specifier: workspace:*
         version: link:../cove-guardian
@@ -331,6 +334,15 @@ importers:
       tsx:
         specifier: ^4.19.2
         version: 4.23.15
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.4)
+
+  packages/cove-wire:
+    devDependencies:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3

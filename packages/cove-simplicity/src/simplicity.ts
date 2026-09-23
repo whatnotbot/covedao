@@ -5,18 +5,17 @@ import { dirname, join } from "node:path";
 
 /**
  * Cove Simplicity pre-execution bridge (REAL Simplicity, not a TS/Rust
- * predicate). This module invokes the compiled `cove-simplicity` Rust binary,
- * which:
- *   1. compiles the frozen Cove MINT policy (Simfony) to a Simplicity program,
+ * predicate). Invokes the compiled `cove-simplicity` Rust binary, which:
+ *   1. compiles a frozen Cove policy (Simfony) to a real Simplicity program,
  *   2. computes the real Commitment Merkle Root (CMR),
  *   3. executes the program on the Simplicity Bit Machine against witness data.
  *
- * The result is compared against the TypeScript reference policy
- * (`validateMintTx`) in the differential test — TypeScript result MUST equal the
- * Simplicity result over generated/adversarial vectors.
+ * Results are compared against the TypeScript reference policy in the
+ * differential tests — TypeScript result MUST equal the Simplicity result.
  */
 
 export const MINT_CMR = "118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2";
+export const REDEEM_CMR = "a15ac4cbc450ac2dd113b1a9de178450ccc893a5213d8a2f56471fcd9aa274b7";
 
 export interface MintWitness {
   amount: bigint; // display tokens
@@ -27,6 +26,15 @@ export interface MintWitness {
   contribution: bigint; // sats
 }
 
+export interface RedeemWitness {
+  amount: bigint; // display tokens
+  oldSupply: bigint; // display tokens
+  newSupply: bigint; // display tokens
+  oldBacking: bigint; // sats
+  newBacking: bigint; // sats
+  payout: bigint; // sats
+}
+
 function binaryPath(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   const release = join(here, "..", "rust", "target", "release", "cove-simplicity");
@@ -35,24 +43,37 @@ function binaryPath(): string {
   return debug;
 }
 
-function witnessString(w: MintWitness): string {
+function mintWitnessString(w: MintWitness): string {
   return `mod witness { const AMOUNT: u64 = ${w.amount}; const PREV_SUPPLY: u64 = ${w.prevSupply}; const NEXT_SUPPLY: u64 = ${w.nextSupply}; const PREV_RESERVE: u64 = ${w.prevReserve}; const NEXT_RESERVE: u64 = ${w.nextReserve}; const CONTRIBUTION: u64 = ${w.contribution}; }`;
+}
+
+function redeemWitnessString(w: RedeemWitness): string {
+  return `mod witness { const AMOUNT: u64 = ${w.amount}; const OLD_SUPPLY: u64 = ${w.oldSupply}; const NEW_SUPPLY: u64 = ${w.newSupply}; const OLD_BACKING: u64 = ${w.oldBacking}; const NEW_BACKING: u64 = ${w.newBacking}; const PAYOUT: u64 = ${w.payout}; }`;
 }
 
 export function isSimplicityAvailable(): boolean {
   return existsSync(binaryPath());
 }
 
-/** Execute the Simplicity MINT predicate. Returns "PASS" | "FAIL". */
-export function executeMint(witness: MintWitness): "PASS" | "FAIL" {
+function execute(policy: "mint" | "redeem", witness: string, expectedCmr: string): "PASS" | "FAIL" {
   const bin = binaryPath();
-  const stdout = execFileSync(bin, ["exec", witnessString(witness)], {
+  const stdout = execFileSync(bin, ["exec", policy, witness], {
     encoding: "utf8",
     maxBuffer: 1_000_000,
   });
   const parsed = JSON.parse(stdout) as { cmr: string; result: string };
-  if (parsed.cmr !== MINT_CMR) {
-    throw new Error(`CMR drift: expected ${MINT_CMR}, got ${parsed.cmr}`);
+  if (parsed.cmr !== expectedCmr) {
+    throw new Error(`CMR drift: expected ${expectedCmr}, got ${parsed.cmr}`);
   }
   return parsed.result === "PASS" ? "PASS" : "FAIL";
+}
+
+/** Execute the Simplicity MINT predicate. Returns "PASS" | "FAIL". */
+export function executeMint(witness: MintWitness): "PASS" | "FAIL" {
+  return execute("mint", mintWitnessString(witness), MINT_CMR);
+}
+
+/** Execute the Simplicity REDEEM predicate. Returns "PASS" | "FAIL". */
+export function executeRedeem(witness: RedeemWitness): "PASS" | "FAIL" {
+  return execute("redeem", redeemWitnessString(witness), REDEEM_CMR);
 }

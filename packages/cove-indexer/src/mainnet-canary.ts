@@ -26,6 +26,12 @@ import {
   type CoveConfig,
   type CoveState,
 } from "@crclaunch/protocol";
+import {
+  isCoveMainnetCanaryComplete,
+  loadConfig,
+  validateConfig,
+  type RuntimeConfig,
+} from "@crclaunch/config";
 import { CoveIndexer } from "./indexer.js";
 import { computeFee, feeRateExceedsCap } from "./signet-proof.js";
 import { decodeMainnetCustodyAddress } from "./mainnet-custody.js";
@@ -66,6 +72,25 @@ function requireEnv(key: string): string {
 function optionalEnv(key: string): string | undefined {
   const v = process.env[key]?.trim();
   return v || undefined;
+}
+
+/**
+ * A-1: the mainnet write gates (COVE_*_MAINNET_ENABLED, validateConfig, the
+ * full canary proof) live in @crclaunch/config, which the broadcast process
+ * never loaded before. This runs them BEFORE any mainnet config is touched, so
+ * a mainnet broadcast is impossible unless the runtime flags are explicitly
+ * enabled and the full canary proof is recorded.
+ */
+export function assertMainnetRuntimeGates(env: NodeJS.ProcessEnv): RuntimeConfig {
+  const runtime = loadConfig(env);
+  validateConfig(runtime);
+  if (!runtime.coveFlags.mainnetEnabled) {
+    throw new Error("COVE_MAINNET_ENABLED must be true to run the mainnet canary.");
+  }
+  if (!isCoveMainnetCanaryComplete(runtime)) {
+    throw new Error("Cove mainnet canary proof is incomplete (needs H + DEPLOY/MINT/TRANSFER txids + matching state/replay roots).");
+  }
+  return runtime;
 }
 
 interface CanaryStep {
@@ -338,6 +363,9 @@ function broadcastTxidMatches(step: CanaryStep, txid: string): boolean {
 
 async function main(): Promise<void> {
   const confirmMainnet = process.argv.includes("--confirm-mainnet");
+
+  // Runtime write gates (A-1) run first, before any mainnet config is used.
+  assertMainnetRuntimeGates(process.env);
 
   // Committed consensus config — env never defines it.
   const cfg: CoveConfig = COVE_V1_MAINNET_CONFIG;

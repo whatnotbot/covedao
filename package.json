@@ -36,7 +36,8 @@
     "cove:mainnet-config": "pnpm --filter @crclaunch/cove-indexer mainnet-config",
     "cove:mainnet-canary": "pnpm --filter @crclaunch/cove-indexer mainnet-canary",
     "cove:regtest-reorg": "pnpm --filter @crclaunch/cove-indexer regtest-reorg",
-    "cove:liquidity-demo": "pnpm --filter @crclaunch/cove-indexer liquidity-demo"
+    "cove:liquidity-demo": "pnpm --filter @crclaunch/cove-indexer liquidity-demo",
+    "cove:regtest-proof": "pnpm --filter @crclaunch/cove-guardian regtest-proof"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

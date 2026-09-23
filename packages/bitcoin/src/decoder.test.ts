@@ -103,4 +103,8 @@ describe("outputAddress / btcNetwork", () => {
     expect(btcNetwork("signet").bech32).toBe("tb");
     expect(btcNetwork("mainnet").bech32).toBe("bc");
   });
+
+  it("throws on an unknown network instead of silently defaulting to testnet", () => {
+    expect(() => btcNetwork("bogus" as never)).toThrow(/Unknown Bitcoin network/);
+  });
 });

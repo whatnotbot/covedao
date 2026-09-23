@@ -14,8 +14,11 @@ export function btcNetwork(name: NetworkName): bitcoin.networks.Network {
     case "mutinynet":
     case "testnet4":
     case "testnet":
-    default:
       return bitcoin.networks.testnet;
+    default:
+      // `NetworkName` is compile-time only; a runtime string bypasses it. Fail
+      // loudly instead of silently resolving an unknown network to testnet.
+      throw new Error(`Unknown Bitcoin network "${String(name)}"`);
   }
 }
 

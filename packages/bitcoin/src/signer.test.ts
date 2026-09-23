@@ -94,4 +94,20 @@ describe("LocalP2WPKHSigner.signPsbt (no blind signing)", () => {
     );
     await expect(signer.signPsbt(redirected.psbtBase64, intent)).rejects.toThrow(/output/);
   });
+
+  it("rejects a SIGHASH_NONE input (explicit SIGHASH_ALL whitelist, no swallowed catch)", async () => {
+    // Build a PSBT whose input declares SIGHASH_NONE, with outputs that match the
+    // caller's intent (so it gets past output/fee validation to the sighash check).
+    const psbt = new bitcoin.Psbt({ network: bitcoin.networks.testnet });
+    psbt.addInput({
+      hash: "b".repeat(64),
+      index: 0,
+      witnessUtxo: { script: Buffer.from(ACTOR_SCRIPT, "hex"), value: 1_000_000 },
+      sighashType: bitcoin.Transaction.SIGHASH_NONE,
+    });
+    for (const o of intent.outputs) {
+      psbt.addOutput({ script: Buffer.from(o.scriptPubKeyHex, "hex"), value: Number(o.valueSats) });
+    }
+    await expect(signer.signPsbt(psbt.toBase64(), intent)).rejects.toThrow(/Sighash type is not allowed.*SIGHASH_NONE/);
+  });
 });

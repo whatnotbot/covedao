@@ -196,6 +196,9 @@ importers:
 
   packages/cove-covenant:
     dependencies:
+      '@crclaunch/cove-economics':
+        specifier: workspace:*
+        version: link:../cove-economics
       '@crclaunch/curve':
         specifier: workspace:*
         version: link:../curve

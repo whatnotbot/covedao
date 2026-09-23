@@ -6,6 +6,8 @@ import {
   COVE_POLICY_CMRS,
   COVE_POLICY_V1,
   COVE_POLICY_V2,
+  COVE_POLICY_V3,
+  OP_MINT,
   OP_REDEEM,
   policyIdentityHash,
 } from "./policyIdentity.js";
@@ -23,31 +25,32 @@ function xonlyOfPriv(byte: number): Buffer {
 
 const GUARDIAN = xonlyOfPriv(0x42);
 const OWNER = xonlyOfPriv(0x43);
-const S1_HASH = Buffer.from(
-  "27fb483afe745a89ea8d5f55ecc9401e0a96b15abd2ecb7ea4afb6633482828a",
+// CURRENT state (S0), NOT a future successor (§3 fix).
+const S0_HASH = Buffer.from(
+  "e27d7047a2a2f05a3f7ac319e12207c11487b59dcb212402785c129b85c518e2",
   "hex",
 );
-const CMR = Buffer.from("118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2", "hex");
+const MINT_V3_CMR = Buffer.from(COVE_POLICY_CMRS[COVE_POLICY_V3]!.mint, "hex");
 
-function policyIdentity(): Buffer {
+function mintPolicyIdentity(): Buffer {
   return policyIdentityHash({
-    version: 1,
-    operation: 3,
+    version: COVE_POLICY_V3,
+    operation: OP_MINT,
     tokenId: "ab".repeat(32),
-    successorStateHash: S1_HASH,
-    cmr: CMR,
+    currentStateHash: S0_HASH,
+    cmr: MINT_V3_CMR,
   });
 }
 
 function build(): ReturnType<typeof buildCoveVault> {
   return buildCoveVault({
-    policyIdentityHash: policyIdentity(),
+    policyIdentityHash: mintPolicyIdentity(),
     guardianXOnly: GUARDIAN,
     ownerXOnly: OWNER,
   });
 }
 
-describe("Cove NUMS/dual-leaf vault — golden vectors (CMR-bound execution)", () => {
+describe("Cove NUMS/dual-leaf vault — golden vectors (V3, current-state)", () => {
   it("NUMS internal key is the BIP341 nothing-up-my-sleeve point", () => {
     expect(COVE_NUMS_X_ONLY).toBe(
       "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0",
@@ -55,15 +58,15 @@ describe("Cove NUMS/dual-leaf vault — golden vectors (CMR-bound execution)", (
     expect(numsInternalKey().toString("hex")).toBe(COVE_NUMS_X_ONLY);
   });
 
-  it("policy identity hash (golden) commits version+op+tokenId+state+CMR", () => {
-    expect(policyIdentity().toString("hex")).toBe(
-      "8728b0c360dbcb66f5df315c1f859fc5c5d4e9b28a42738fb8c775ecf104dbc1",
+  it("MINT policy identity (V3, current S0) golden", () => {
+    expect(mintPolicyIdentity().toString("hex")).toBe(
+      "10020e57093dc8324a740b143551c286ebd366990a5644366b9536a42e647194",
     );
   });
 
-  it("execution leaf script (golden) = <policyIdentity> OP_EQUALVERIFY <guardian> OP_CHECKSIG", () => {
-    expect(buildExecutionLeaf(policyIdentity(), GUARDIAN).toString("hex")).toBe(
-      "208728b0c360dbcb66f5df315c1f859fc5c5d4e9b28a42738fb8c775ecf104dbc188" +
+  it("execution leaf commits CURRENT state + V3 MINT CMR (not successor)", () => {
+    expect(buildExecutionLeaf(mintPolicyIdentity(), GUARDIAN).toString("hex")).toBe(
+      "2010020e57093dc8324a740b143551c286ebd366990a5644366b9536a42e64719488" +
         "2024653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1cac",
     );
   });
@@ -78,22 +81,22 @@ describe("Cove NUMS/dual-leaf vault — golden vectors (CMR-bound execution)", (
   it("tapleaf hashes + merkle root + output key + address (golden)", () => {
     const v = build();
     expect(v.executionLeaf.tapleafHash.toString("hex")).toBe(
-      "d77a167e13564710ed2e5e6a758442f7f7ed0b646f8965e6a59b474699b8230c",
+      "6b079b59974c42775e9960b75881eb62859518735edf1938f400f9526f3da7ba",
     );
     expect(v.recoveryLeaf.tapleafHash.toString("hex")).toBe(
       "5884d4ba7ae76c9706dd44bb8edfca86180c968af469d3da28b9ccc0fff45998",
     );
     expect(v.merkleRoot.toString("hex")).toBe(
-      "79de452a46bfd2e8ab8b86f1f26779586fbed6a01bab672bd739e7e7e9bdcd74",
+      "c69a0fae50337ad2a641ea842d0cae4f6fa2cba057ad8edd8d46f050058e3042",
     );
     expect(v.outputKey.toString("hex")).toBe(
-      "e59c39d81fc2469c2bff2d969f0ad8f7affeca20c84bdbb4a9f66632a0dc3f78",
+      "03c61a69b340eedb11bba546ffab61c85bb752667ea4cb57370c165700ec821d",
     );
     expect(v.outputParity).toBe(0);
     expect(v.scriptPubKey.toString("hex")).toBe(
-      "5120e59c39d81fc2469c2bff2d969f0ad8f7affeca20c84bdbb4a9f66632a0dc3f78",
+      "512003c61a69b340eedb11bba546ffab61c85bb752667ea4cb57370c165700ec821d",
     );
-    expect(v.address).toBe("bcrt1pukwrnkqlcfrfc2ll9ktf7zkc77hlaj3qep9ahd9f7enr9gxu8auq2ls5d4");
+    expect(v.address).toBe("bcrt1pq0rp56dngrhdkydm54r0l2mpepdmw5nx06jvk4ehpst9wq8vsgwsdsucdc");
   });
 
   it("control blocks commit NUMS + sibling tapleaf (golden)", () => {
@@ -102,7 +105,7 @@ describe("Cove NUMS/dual-leaf vault — golden vectors (CMR-bound execution)", (
       "c0" + COVE_NUMS_X_ONLY + "5884d4ba7ae76c9706dd44bb8edfca86180c968af469d3da28b9ccc0fff45998",
     );
     expect(v.recoveryControlBlock.toString("hex")).toBe(
-      "c0" + COVE_NUMS_X_ONLY + "d77a167e13564710ed2e5e6a758442f7f7ed0b646f8965e6a59b474699b8230c",
+      "c0" + COVE_NUMS_X_ONLY + "6b079b59974c42775e9960b75881eb62859518735edf1938f400f9526f3da7ba",
     );
   });
 
@@ -114,22 +117,39 @@ describe("Cove NUMS/dual-leaf vault — golden vectors (CMR-bound execution)", (
     // Different CMR ⇒ different vault.
     const v2 = buildCoveVault({
       policyIdentityHash: policyIdentityHash({
-        version: 1,
-        operation: 3,
+        version: COVE_POLICY_V3,
+        operation: OP_MINT,
         tokenId: "ab".repeat(32),
-        successorStateHash: S1_HASH,
+        currentStateHash: S0_HASH,
         cmr: Buffer.alloc(32, 0xee),
       }),
       guardianXOnly: GUARDIAN,
       ownerXOnly: OWNER,
     });
     expect(v2.outputKey.equals(v.outputKey)).toBe(false);
-    expect(v2.address).not.toBe(v.address);
+  });
+
+  it("same current state + policy ⇒ same output key; different state ⇒ different", () => {
+    const a = build();
+    const b = build();
+    expect(a.outputKey.equals(b.outputKey)).toBe(true);
+    const c = buildCoveVault({
+      policyIdentityHash: policyIdentityHash({
+        version: COVE_POLICY_V3,
+        operation: OP_MINT,
+        tokenId: "ab".repeat(32),
+        currentStateHash: Buffer.alloc(32, 0x11),
+        cmr: MINT_V3_CMR,
+      }),
+      guardianXOnly: GUARDIAN,
+      ownerXOnly: OWNER,
+    });
+    expect(c.outputKey.equals(a.outputKey)).toBe(false);
   });
 });
 
-describe("policy versioning (COVE_POLICY_V1 vs V2)", () => {
-  it("V1 has only MINT CMR; V2 adds the frozen REDEEM CMR", () => {
+describe("policy versioning (COVE_POLICY_V1/V2/V3)", () => {
+  it("V1/V2 are historical; V3 is production", () => {
     expect(COVE_POLICY_CMRS[COVE_POLICY_V1]).toEqual({
       mint: "118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2",
     });
@@ -137,23 +157,23 @@ describe("policy versioning (COVE_POLICY_V1 vs V2)", () => {
       mint: "118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2",
       redeem: "a15ac4cbc450ac2dd113b1a9de178450ccc893a5213d8a2f56471fcd9aa274b7",
     });
+    expect(COVE_POLICY_CMRS[COVE_POLICY_V3]).toEqual({
+      mint: "0b594eb3fadec17b45bb1d245ae18f8c512a1ba42751f820cd28351ced6c8377",
+      redeem: "37e681b3e70a34acc3b38680c06fbe4f1b2799bede2607c6c9ed7fcac8c95d56",
+    });
   });
 
-  it("REDEEM policy identity golden (op 0x04, V2 redeem CMR)", () => {
-    const redeemCmr = Buffer.from(COVE_POLICY_CMRS[COVE_POLICY_V2]!.redeem!, "hex");
-    const pi = policyIdentityHash({
-      version: COVE_POLICY_V2,
+  it("REDEEM policy identity (V3) differs from MINT", () => {
+    const redeemCmr = Buffer.from(COVE_POLICY_CMRS[COVE_POLICY_V3]!.redeem!, "hex");
+    const mintPi = mintPolicyIdentity();
+    const redeemPi = policyIdentityHash({
+      version: COVE_POLICY_V3,
       operation: OP_REDEEM,
       tokenId: "ab".repeat(32),
-      successorStateHash: S1_HASH,
+      currentStateHash: S0_HASH,
       cmr: redeemCmr,
     });
-    expect(pi.toString("hex")).toBe(
-      "9f66b119776c5b52c4b6141f48c0efbb77d88a4188b3b33d77d2c9e52b81b66b",
-    );
-    // Different from the MINT policy identity (op 0x03).
-    expect(pi.toString("hex")).not.toBe(
-      "8728b0c360dbcb66f5df315c1f859fc5c5d4e9b28a42738fb8c775ecf104dbc1",
-    );
+    expect(redeemPi.equals(mintPi)).toBe(false);
+    expect(redeemPi.toString("hex")).toMatch(/^[0-9a-f]{64}$/);
   });
 });

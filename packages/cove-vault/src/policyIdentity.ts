@@ -5,12 +5,11 @@ import { taggedHash } from "./taproot.js";
  * pre-executed into the Taproot construction:
  *
  *   policyIdentityHash = H_CovePolicy(
- *       version || operation || tokenId || successorStateHash || simplicityCmr)
+ *       policyVersion || operation || tokenId || currentStateHash || simplicityCmr)
  *
- * where version=1, operation=MINT (0x03), tokenId is the 32-byte token identity,
- * successorStateHash is the committed successor state hash, and simplicityCmr is
- * the real Simplicity Commitment Merkle Root of the MINT policy (see
- * `@crclaunch/cove-simplicity`).
+ * The leaf commits which policy/operation/token/state/vault is authorized — it
+ * does NOT precommit one arbitrary future successor (that is bound at spend time
+ * by Guardian validation + SIGHASH semantics + the actual outputs).
  */
 
 export const COVE_PROTOCOL_VERSION = 1;
@@ -20,14 +19,16 @@ export const OP_REDEEM = 0x04;
 /**
  * Cove covenant policy-set versions.
  *
- *   COVE_POLICY_V1 = MINT only  (Phase 3; frozen CMR 118425967f…)
- *   COVE_POLICY_V2 = MINT + REDEEM/backing-aware (this phase)
+ *   COVE_POLICY_V1 = MINT only (historical, Phase 3)
+ *   COVE_POLICY_V2 = MINT + REDEEM (historical, Phase 4)
+ *   COVE_POLICY_V3 = MINT + REDEEM with enforced u64 overflow/borrow (production)
  *
- * Each version has a deterministic CMR set; each operation's execution leaf
- * commits `policyIdentityHash(version, op, tokenId, successorStateHash, cmr)`.
+ * Each operation's execution leaf commits
+ * `policyIdentityHash(version, op, tokenId, currentStateHash, cmr)`.
  */
 export const COVE_POLICY_V1 = 1;
 export const COVE_POLICY_V2 = 2;
+export const COVE_POLICY_V3 = 3;
 
 export interface PolicyCmrs {
   mint: string;
@@ -43,16 +44,22 @@ export const COVE_POLICY_CMRS: Record<number, PolicyCmrs> = {
     mint: "118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2",
     redeem: "a15ac4cbc450ac2dd113b1a9de178450ccc893a5213d8a2f56471fcd9aa274b7",
   },
+  [COVE_POLICY_V3]: {
+    mint: "0b594eb3fadec17b45bb1d245ae18f8c512a1ba42751f820cd28351ced6c8377",
+    redeem: "37e681b3e70a34acc3b38680c06fbe4f1b2799bede2607c6c9ed7fcac8c95d56",
+  },
 };
 
 export interface PolicyIdentity {
+  /** Covenant policy-set version (COVE_POLICY_Vn). */
   version: number;
+  /** Operation authorized by this leaf (OP_MINT | OP_REDEEM). */
   operation: number;
   /** 32-byte token identity (64-hex). */
   tokenId: string;
-  /** Committed successor state hash (32 bytes). */
-  successorStateHash: Buffer;
-  /** Real Simplicity CMR of the pre-executed MINT policy (32 bytes). */
+  /** Committed CURRENT state hash (32 bytes) — NOT a future successor. */
+  currentStateHash: Buffer;
+  /** Real Simplicity CMR of the pre-executed policy (32 bytes). */
   cmr: Buffer;
 }
 
@@ -60,8 +67,8 @@ export function policyIdentityHash(p: PolicyIdentity): Buffer {
   if (!/^[0-9a-f]{64}$/.test(p.tokenId)) {
     throw new Error("tokenId must be 64 hex chars");
   }
-  if (p.successorStateHash.length !== 32) {
-    throw new Error("successorStateHash must be 32 bytes");
+  if (p.currentStateHash.length !== 32) {
+    throw new Error("currentStateHash must be 32 bytes");
   }
   if (p.cmr.length !== 32) {
     throw new Error("cmr must be 32 bytes");
@@ -72,7 +79,7 @@ export function policyIdentityHash(p: PolicyIdentity): Buffer {
       Buffer.from([p.version]),
       Buffer.from([p.operation]),
       Buffer.from(p.tokenId, "hex"),
-      p.successorStateHash,
+      p.currentStateHash,
       p.cmr,
     ]),
   );

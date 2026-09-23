@@ -33,9 +33,9 @@ function expectAgree(w: RedeemWitness): void {
   expect(sim, `witness ${label}`).toBe(ts);
 }
 
-describe("REDEEM CMR is frozen", () => {
+describe("REDEEM CMR is frozen (V3)", () => {
   it("REDEEM_CMR matches the compiled program", () => {
-    expect(REDEEM_CMR).toBe("a15ac4cbc450ac2dd113b1a9de178450ccc893a5213d8a2f56471fcd9aa274b7");
+    expect(REDEEM_CMR).toBe("37e681b3e70a34acc3b38680c06fbe4f1b2799bede2607c6c9ed7fcac8c95d56");
   });
 });
 

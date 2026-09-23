@@ -1,15 +1,15 @@
-// Cove MINT policy — Simfony source (frozen).
+// Cove MINT policy — Simfony source (production V3).
 //
-// This is a REAL Simplicity program: it is compiled by the `simfony` crate,
-// its Commitment Merkle Root (CMR) is computed, and it is executed on the
-// Simplicity Bit Machine. It is NOT a TypeScript/Rust predicate.
+// Real Simplicity: compiled by the `simfony` crate, real CMR via rust-simplicity,
+// executed on the Simplicity Bit Machine. NOT a TypeScript/Rust predicate.
 //
-// Bitcoin-introspection limitation (honest): the Bitcoin tx environment is not
-// wired in the upstream `simfony` toolchain (it targets Elements/Liquid jets),
-// so the MINT predicate receives the transaction state as WITNESS values. The
-// full curve math stays in the TypeScript reference (`validateMintTx`), which
-// is the differential oracle. The invariant overlap verified here is:
-//   supply conservation, no overmint, positive amount, reserve movement.
+// V3 change vs V1/V2: u64 overflow is now enforced directly. `jet::add_64`
+// returns a carry flag; Simfony's `bool`/`u1` distinction makes a literal
+// `complement_1(carry)` awkward, so the mathematically-equivalent no-overflow
+// check `le_64(prev, wrappedSum)` is used (wrappedSum < prev ⟺ overflow). A
+// wraparound witness can no longer satisfy the equalities. Bitcoin-introspection
+// limitation (honest): tx state arrives as WITNESS values; the TS reference is
+// the differential oracle.
 
 fn main() {
     let amount: u64 = witness::AMOUNT;
@@ -19,14 +19,16 @@ fn main() {
     let next_reserve: u64 = witness::NEXT_RESERVE;
     let contribution: u64 = witness::CONTRIBUTION;
 
-    // Supply conservation: S1 = S0 + amount.
+    // Supply conservation: S1 = S0 + amount; NO u64 overflow.
     let (carry, sum_supply): (bool, u64) = jet::add_64(prev_supply, amount);
+    assert!(jet::le_64(prev_supply, sum_supply));
     assert!(jet::eq_64(sum_supply, next_supply));
     // No overmint: public supply cap = 840,000,000 display tokens.
     assert!(jet::le_64(next_supply, 840_000_000));
     // Positive amount.
     assert!(jet::lt_64(0, amount));
-    // Reserve movement: reserve grows by exactly the curve contribution.
+    // Reserve movement: reserve grows by exactly the curve contribution; NO overflow.
     let (carry2, sum_reserve): (bool, u64) = jet::add_64(prev_reserve, contribution);
+    assert!(jet::le_64(prev_reserve, sum_reserve));
     assert!(jet::eq_64(sum_reserve, next_reserve));
 }

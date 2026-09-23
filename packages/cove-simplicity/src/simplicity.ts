@@ -14,8 +14,17 @@ import { dirname, join } from "node:path";
  * differential tests — TypeScript result MUST equal the Simplicity result.
  */
 
-export const MINT_CMR = "118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2";
-export const REDEEM_CMR = "a15ac4cbc450ac2dd113b1a9de178450ccc893a5213d8a2f56471fcd9aa274b7";
+/** Historical/dev CMRs (COVE_POLICY_V1/V2, preserved). */
+export const MINT_CMR_V1 = "118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2";
+export const REDEEM_CMR_V2 = "a15ac4cbc450ac2dd113b1a9de178450ccc893a5213d8a2f56471fcd9aa274b7";
+
+/**
+ * Production CMRs (COVE_POLICY_V3): the predicates now enforce the u64
+ * overflow/borrow flags directly (see rust/src/mint.simf + redeem.simf). These
+ * are the ONLY CMRs new deployments should use.
+ */
+export const MINT_CMR = "0b594eb3fadec17b45bb1d245ae18f8c512a1ba42751f820cd28351ced6c8377";
+export const REDEEM_CMR = "37e681b3e70a34acc3b38680c06fbe4f1b2799bede2607c6c9ed7fcac8c95d56";
 
 export interface MintWitness {
   amount: bigint; // display tokens

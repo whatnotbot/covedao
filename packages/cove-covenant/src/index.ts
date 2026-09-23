@@ -15,6 +15,16 @@ export {
   stateHash,
 } from "./state.js";
 export {
+  COVE_STATE_V2_BYTES,
+  COVE_STATE_V2_VERSION,
+  COVE_STATE_V2_DOMAIN,
+  serializeStateV2,
+  deserializeStateV2,
+  stateHashV2,
+  impliedStageV2,
+  type CoveStateV2,
+} from "./stateV2.js";
+export {
   stateCommitment,
   stateTweak,
   deriveStateOutput,
@@ -25,6 +35,8 @@ export {
   CovenantError,
   isCovenantError,
   applyMint,
+  applyRedeem,
   isCorrectMintSuccessor,
   type MintResult,
+  type RedeemResult,
 } from "./transition.js";

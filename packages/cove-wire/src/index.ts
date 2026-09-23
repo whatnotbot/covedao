@@ -19,3 +19,13 @@ export {
   type AmountEnvelope,
   type ParsedEnvelope,
 } from "./codec.js";
+export {
+  CHAIN_BITCOIN_MAINNET,
+  CHAIN_BITCOIN_REGTEST,
+  CHAIN_BITCOIN_SIGNET,
+  CHAIN_BITCOIN_TESTNET,
+  canonicalTicker,
+  computeTokenId,
+  tokenIdHex,
+  type TokenIdentityInput,
+} from "./tokenId.js";

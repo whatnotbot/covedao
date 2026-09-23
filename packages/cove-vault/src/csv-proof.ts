@@ -30,16 +30,16 @@ const ownerKey = ECPair.fromPrivateKey(Buffer.alloc(32, 0x43), {
   network: bitcoin.networks.regtest,
 });
 const ownerXOnly = Buffer.from(ownerKey.publicKey.subarray(1));
-const S1_HASH = Buffer.from(
-  "27fb483afe745a89ea8d5f55ecc9401e0a96b15abd2ecb7ea4afb6633482828a",
+const S0_HASH = Buffer.from(
+  "e27d7047a2a2f05a3f7ac319e12207c11487b59dcb212402785c129b85c518e2",
   "hex",
 );
-const CMR = Buffer.from("118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2", "hex");
+const CMR = Buffer.from("0b594eb3fadec17b45bb1d245ae18f8c512a1ba42751f820cd28351ced6c8377", "hex");
 const POLICY_IDENTITY = policyIdentityHash({
-  version: 1,
+  version: 3,
   operation: 3,
   tokenId: "ab".repeat(32),
-  successorStateHash: S1_HASH,
+  currentStateHash: S0_HASH,
   cmr: CMR,
 });
 

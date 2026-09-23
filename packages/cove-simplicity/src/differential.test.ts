@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { applyMint, type CoveState } from "@crclaunch/cove-covenant";
 import { validateMint } from "@crclaunch/cove-guardian";
-import { MINT_CMR, executeMint, isSimplicityAvailable, type MintWitness } from "./simplicity.js";
+import {
+  MINT_CMR,
+  MINT_CMR_V1,
+  executeMint,
+  isSimplicityAvailable,
+  type MintWitness,
+} from "./simplicity.js";
 
 /**
  * Differential oracle: the TypeScript reference policy (`validateMint`) MUST
@@ -68,9 +74,12 @@ function expectAgree(w: MintWitness): void {
   expect(sim, `witness ${label}`).toBe(ts);
 }
 
-describe("Simplicity CMR is frozen", () => {
-  it("MINT_CMR matches the compiled program", () => {
-    expect(MINT_CMR).toBe("118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2");
+describe("Simplicity CMR is frozen (V3)", () => {
+  it("MINT_CMR matches the compiled V3 program", () => {
+    expect(MINT_CMR).toBe("0b594eb3fadec17b45bb1d245ae18f8c512a1ba42751f820cd28351ced6c8377");
+  });
+  it("historical V1 CMR is preserved", () => {
+    expect(MINT_CMR_V1).toBe("118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2");
   });
 });
 
@@ -139,5 +148,50 @@ describe("differential: TS validateMint == Simplicity Bit Machine", () => {
       nextReserve: 21_001n,
       contribution: 21_000n,
     });
+  });
+});
+
+describe("V3 overflow enforcement (u64 wraparound must be rejected)", () => {
+  const U64MAX = 18446744073709551615n;
+
+  it.skipIf(!isSimplicityAvailable())("supply + amount wrap → MINT FAIL", () => {
+    // prev = u64::MAX, amount = 1: sum wraps to 0. le_64(prev, sum) must fail.
+    expect(
+      executeMint({
+        amount: 1n,
+        prevSupply: U64MAX,
+        nextSupply: 0n,
+        prevReserve: 0n,
+        nextReserve: 1n,
+        contribution: 1n,
+      }),
+    ).toBe("FAIL");
+  });
+
+  it.skipIf(!isSimplicityAvailable())("backing + contribution wrap → MINT FAIL", () => {
+    expect(
+      executeMint({
+        amount: 1n,
+        prevSupply: 0n,
+        nextSupply: 1n,
+        prevReserve: U64MAX,
+        nextReserve: 0n,
+        contribution: 1n,
+      }),
+    ).toBe("FAIL");
+  });
+
+  it.skipIf(!isSimplicityAvailable())("exact u64 boundary (no wrap) is handled", () => {
+    // prev = 0, amount = 1: valid at the boundary (no overflow).
+    expect(
+      executeMint({
+        amount: 1n,
+        prevSupply: 0n,
+        nextSupply: 1n,
+        prevReserve: 0n,
+        nextReserve: 1n,
+        contribution: 1n,
+      }),
+    ).toBe("PASS");
   });
 });

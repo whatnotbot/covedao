@@ -5,6 +5,7 @@ export {
   OP_REDEEM,
   COVE_POLICY_V1,
   COVE_POLICY_V2,
+  COVE_POLICY_V3,
   COVE_POLICY_CMRS,
   policyIdentityHash,
   type PolicyCmrs,

@@ -24,15 +24,17 @@ fn main() {
     let next_reserve: u64 = witness::NEXT_RESERVE;
     let contribution: u64 = witness::CONTRIBUTION;
 
-    // Supply conservation: S1 = S0 + amount (ignoring impossible overflow carry).
+    // Supply conservation: S1 = S0 + amount; NO u64 overflow.
     let (carry, sum_supply): (bool, u64) = jet::add_64(prev_supply, amount);
+    assert!(jet::le_64(prev_supply, sum_supply));
     assert!(jet::eq_64(sum_supply, next_supply));
     // No overmint: public supply cap = 840,000,000 display tokens.
     assert!(jet::le_64(next_supply, 840_000_000));
     // Positive amount.
     assert!(jet::lt_64(0, amount));
-    // Reserve movement: reserve grows by exactly the curve contribution.
+    // Reserve movement: reserve grows by exactly the curve contribution; NO overflow.
     let (carry2, sum_reserve): (bool, u64) = jet::add_64(prev_reserve, contribution);
+    assert!(jet::le_64(prev_reserve, sum_reserve));
     assert!(jet::eq_64(sum_reserve, next_reserve));
 }
 "#;
@@ -51,10 +53,11 @@ fn main() {
     assert!(jet::lt_64(0, amount));
     // No underflow: amount <= old supply.
     assert!(jet::le_64(amount, old_supply));
-    // Supply conservation: new = old - amount.
+    // Supply conservation: new = old - amount; NO borrow.
     let (borrow, diff): (bool, u64) = jet::subtract_64(old_supply, amount);
     assert!(jet::eq_64(diff, new_supply));
-    // Backing conservation: newBacking = oldBacking - payout.
+    // Backing conservation: newBacking = oldBacking - payout; NO borrow.
+    assert!(jet::le_64(payout, old_backing));
     let (borrow2, diff2): (bool, u64) = jet::subtract_64(old_backing, payout);
     assert!(jet::eq_64(diff2, new_backing));
 }

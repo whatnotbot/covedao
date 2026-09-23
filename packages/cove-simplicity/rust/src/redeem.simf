@@ -1,13 +1,14 @@
-// Cove REDEEM (sell-to-backing) policy — Simfony source (frozen).
+// Cove REDEEM (sell-to-backing) policy — Simfony source (production V3).
 //
 // Real Simplicity: compiled by the `simfony` crate, real CMR via rust-simplicity,
 // executed on the Simplicity Bit Machine. NOT a TypeScript/Rust predicate.
 //
-// Bitcoin-introspection limitation (honest, same as mint.simf): tx state arrives
-// as WITNESS values; the TypeScript reference (`quoteRedeem`/`validateRedeem`) is
-// the differential oracle. Invariant overlap verified here:
-//   positive amount, no underflow, supply conservation (new = old - amount),
-//   backing conservation (newBacking = oldBacking - payout).
+// V3 change: u64 underflow/borrow is now enforced directly. For the supply
+// subtraction the existing `le_64(amount, old_supply)` already implies no borrow;
+// for the backing subtraction `le_64(payout, old_backing)` is added (the
+// mathematically-equivalent no-borrow check). Underflow-shaped witness values can
+// no longer satisfy the equalities. Bitcoin-introspection limitation (honest):
+// tx state arrives as WITNESS values; the TS reference is the differential oracle.
 
 fn main() {
     let amount: u64 = witness::AMOUNT;
@@ -21,10 +22,11 @@ fn main() {
     assert!(jet::lt_64(0, amount));
     // No underflow: amount <= old supply.
     assert!(jet::le_64(amount, old_supply));
-    // Supply conservation: new = old - amount.
+    // Supply conservation: new = old - amount; NO borrow.
     let (borrow, diff): (bool, u64) = jet::subtract_64(old_supply, amount);
     assert!(jet::eq_64(diff, new_supply));
-    // Backing conservation: newBacking = oldBacking - payout.
+    // Backing conservation: newBacking = oldBacking - payout; NO borrow.
+    assert!(jet::le_64(payout, old_backing));
     let (borrow2, diff2): (bool, u64) = jet::subtract_64(old_backing, payout);
     assert!(jet::eq_64(diff2, new_backing));
 }

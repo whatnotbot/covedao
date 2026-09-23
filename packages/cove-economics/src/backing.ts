@@ -38,9 +38,34 @@ export interface Quote {
   net: Sats;
 }
 
+/** Typed backing/economics error. */
+export class BackingError extends Error {
+  readonly code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = "BackingError";
+    this.code = code;
+  }
+}
+
 function assertSupplyInRange(supply: DisplayTokens): void {
-  if (supply < 0n) throw new Error("supply must be non-negative");
-  if (supply > PUBLIC_SUPPLY) throw new Error("supply exceeds public cap");
+  if (supply < 0n) throw new BackingError("INVALID_SUPPLY", "supply must be non-negative");
+  if (supply > PUBLIC_SUPPLY)
+    throw new BackingError("PUBLIC_CAP_EXCEEDED", "supply exceeds public cap");
+}
+
+/**
+ * Economic-validity rule (§1.1): a positive quantity whose R-delta rounds to
+ * zero satoshis is non-executable. One canonical R(s) is preserved; we never
+ * invent a different R for buys vs redeems and never add fake backing.
+ */
+function assertPositiveDelta(gross: Sats): void {
+  if (gross < 1n) {
+    throw new BackingError(
+      "ECONOMIC_DUST",
+      "zero backing delta: positive quantity produced a 0-sat R-delta",
+    );
+  }
 }
 
 /**
@@ -54,17 +79,23 @@ function assertSupplyInRange(supply: DisplayTokens): void {
  */
 export function grossBuy(supply: DisplayTokens, amount: DisplayTokens): Sats {
   assertSupplyInRange(supply);
-  if (amount <= 0n) throw new Error("amount must be positive");
-  if (supply + amount > PUBLIC_SUPPLY) throw new Error("public cap exceeded");
-  return requiredBackingSats(supply + amount) - requiredBackingSats(supply);
+  if (amount <= 0n) throw new BackingError("INVALID_AMOUNT", "amount must be positive");
+  if (supply + amount > PUBLIC_SUPPLY)
+    throw new BackingError("PUBLIC_CAP_EXCEEDED", "public cap exceeded");
+  const gross = requiredBackingSats(supply + amount) - requiredBackingSats(supply);
+  assertPositiveDelta(gross);
+  return gross;
 }
 
 /** Gross backing payout to redeem `amount` tokens from `supply` (reverse movement). */
 export function grossRedeem(supply: DisplayTokens, amount: DisplayTokens): Sats {
   assertSupplyInRange(supply);
-  if (amount <= 0n) throw new Error("amount must be positive");
-  if (amount > supply) throw new Error("redeem amount exceeds issued supply");
-  return requiredBackingSats(supply) - requiredBackingSats(supply - amount);
+  if (amount <= 0n) throw new BackingError("INVALID_AMOUNT", "amount must be positive");
+  if (amount > supply)
+    throw new BackingError("INSUFFICIENT_TOKEN_BALANCE", "redeem amount exceeds issued supply");
+  const gross = requiredBackingSats(supply) - requiredBackingSats(supply - amount);
+  assertPositiveDelta(gross);
+  return gross;
 }
 
 /** Full backing BUY quote (buyer pays gross + fee). */

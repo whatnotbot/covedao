@@ -101,7 +101,7 @@ describe("CoveIndexer (binary envelope, classification, tx index)", () => {
     expect(idx.getStats().invalidOps).toBe(1);
   });
 
-  it("reorg rebuild is deterministic", () => {
+  it("reconstructing the same operation sequence is deterministic (not a reorg test)", () => {
     const build = (mintAmount: bigint) => {
       const idx = new CoveIndexer(CFG);
       idx.processBlock(CFG.genesisHeight, [

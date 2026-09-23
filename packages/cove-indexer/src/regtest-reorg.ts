@@ -303,13 +303,14 @@ async function main(): Promise<void> {
 
   const liveIndexer = new CoveIndexer(CFG);
   await indexAndPersist(provider, store, liveIndexer, CFG.genesisHeight, tip);
-  const liveRoot = liveIndexer.getStateRoot();
 
   const cursor = await store.getCursor(CFG.network);
   if (!cursor) throw new Error("cursor not persisted");
   const checkpoint = await store.getLatestCheckpoint(CFG.network);
   if (!checkpoint || checkpoint.height !== cursor.height) throw new Error("checkpoint/cursor mismatch");
-  if (checkpoint.stateRoot !== liveRoot) throw new Error("checkpoint root != live root");
+  // Read the live root from POSTGRES and verify the in-memory fold agrees.
+  const liveRoot = checkpoint.stateRoot;
+  if (checkpoint.stateRoot !== liveIndexer.getStateRoot()) throw new Error("checkpoint root != in-memory root");
 
   const restarted = new CoveIndexer(CFG);
   await indexRange(provider, restarted, CFG.genesisHeight, Number(cursor.height));
@@ -318,6 +319,12 @@ async function main(): Promise<void> {
 
   // ── Reorg: invalidate TRANSFER block, restart bitcoind (empty mempool), mine
   //    a competing branch that does NOT re-mine the orphaned TRANSFER ──
+  //
+  // PROPERTY PROVED: this clears the mempool (persistmempool=0 + wallet not
+  // auto-loaded), so it proves the WEAKER property — "a TRANSFER that was never
+  // re-broadcast stays absent after recovery" — plus that the recovered root
+  // (read from Postgres) equals a clean replay of the real chain. Real reorgs
+  // do not clear mempools; that stronger property is not what this CI asserts.
   const transferBlockHash = await provider.getBlockHash(tip);
   await rpc.invalidateBlock(transferBlockHash);
   await stopAndRestartBitcoind(rpc); // clears mempool (persistmempool=0)
@@ -334,7 +341,13 @@ async function main(): Promise<void> {
 
   const recovered = new CoveIndexer(CFG);
   await indexAndPersist(provider, store, recovered, CFG.genesisHeight, newTip);
-  const recoveredRoot = recovered.getStateRoot();
+  // B-1: read the recovered root from POSTGRES, not from the in-memory indexer.
+  // Otherwise this comparison is a tautology (two fresh in-memory folds over the
+  // same range), and a regression that broke persistence would stay green.
+  const recoveredCheckpoint = await store.getLatestCheckpoint(CFG.network);
+  if (!recoveredCheckpoint) throw new Error("no checkpoint persisted after recovery");
+  if (recoveredCheckpoint.height !== BigInt(newTip)) throw new Error(`recovered checkpoint height ${recoveredCheckpoint.height} != tip ${newTip}`);
+  const recoveredRoot = recoveredCheckpoint.stateRoot;
 
   const clean = new CoveIndexer(CFG);
   await indexRange(provider, clean, CFG.genesisHeight, newTip);

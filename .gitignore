@@ -43,3 +43,6 @@ uploads/
 .cove-proof.json
 .cove-mutinynet-proof.json
 .cove-mainnet-canary.json
+
+# Forensic reference clones + fetched tx data (third-party)
+.forensics/

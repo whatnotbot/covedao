@@ -1,6 +1,6 @@
 import { createDb, schema, type Database } from "@crclaunch/db";
 import type { CoveState } from "@crclaunch/protocol";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { CoveIndexEvent } from "./indexer.js";
 
 /**
@@ -87,6 +87,30 @@ export class CoveStore {
               target: [schema.coveBalances.network, schema.coveBalances.ownerScript, schema.coveBalances.deploymentId],
               set: { availableAtoms: b.availableAtoms, lockedAtoms: 0n },
             });
+        }
+      }
+      // Prune balances that no longer exist in state (drained-to-zero). The state
+      // engine prunes zero balances, so the DB projection must delete them too —
+      // not merely upsert the remaining rows.
+      const stateKeys = new Set<string>();
+      for (const [owner, m] of state.balances) {
+        for (const deploymentId of m.keys()) stateKeys.add(`${owner}:${deploymentId}`);
+      }
+      const existing = await tx
+        .select()
+        .from(schema.coveBalances)
+        .where(eq(schema.coveBalances.network, network));
+      for (const row of existing) {
+        if (!stateKeys.has(`${row.ownerScript}:${row.deploymentId}`)) {
+          await tx
+            .delete(schema.coveBalances)
+            .where(
+              and(
+                eq(schema.coveBalances.network, network),
+                eq(schema.coveBalances.ownerScript, row.ownerScript),
+                eq(schema.coveBalances.deploymentId, row.deploymentId),
+              ),
+            );
         }
       }
       // checkpoint + cursor

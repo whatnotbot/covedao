@@ -199,9 +199,13 @@ async function scanAndPersist(
 }
 
 /**
- * Continuous indexer (item 15): read cursor → read tip → fetch next block →
- * check previousBlockHash → process in order → persist → advance → repeat.
- * On a parent-hash mismatch it fails closed and rebuilds from genesis.
+ * Continuous indexer. Restart-safe:
+ *   1. Reconstruct state from genesis to the stored cursor (replay), verify the
+ *      resulting root against the persisted checkpoint, THEN process new blocks.
+ *   2. Every poll, verify the stored cursor height/hash against Bitcoin (even
+ *      when there is no new block or the tip moved backward) — not just the
+ *      next block's parent hash.
+ *   3. On reorg, clear Cove projections and rebuild from genesis.
  */
 async function cmdWorker(): Promise<void> {
   const url = process.env.DATABASE_URL;
@@ -212,32 +216,48 @@ async function cmdWorker(): Promise<void> {
   const store = new CoveStore(url);
   const network = COVE_SIGNET_CONFIG.network;
 
-  // Resume from stored cursor, else from activation height.
-  const cursor = await store.getCursor(network);
-  let from = cursor ? Number(cursor.height) + 1 : GENESIS;
+  // 1. Reconstruct from genesis to the stored cursor (or start fresh at genesis).
   let indexer = new CoveIndexer(COVE_SIGNET_CONFIG);
-  console.log(`Cove worker: resuming from height ${from} (activation ${GENESIS})`);
+  let from = GENESIS;
+  const cursor = await store.getCursor(network);
+  if (cursor) {
+    const toHeight = Number(cursor.height);
+    await scanRange(provider, GENESIS, toHeight, indexer);
+    const cp = await store.getLatestCheckpoint(network);
+    if (cp && cp.stateRoot !== indexer.getStateRoot()) {
+      throw new Error(`checkpoint mismatch at ${toHeight}: persisted ${cp.stateRoot} != replay ${indexer.getStateRoot()}`);
+    }
+    from = toHeight + 1;
+    console.log(`Cove worker: reconstructed to ${toHeight}, root verified. Resuming at ${from}.`);
+  } else {
+    console.log(`Cove worker: starting from activation height ${GENESIS}.`);
+  }
 
   for (;;) {
     const tip = await provider.getBestHeight();
-    if (from > tip) {
-      await new Promise((r) => setTimeout(r, pollMs));
-      continue;
-    }
-    // Reorg check: the next block's parent must equal the stored tip hash.
+
+    // 2. Every poll, verify the stored cursor against Bitcoin (incl. backward tip).
     const stored = await store.getCursor(network);
-    if (stored && from > GENESIS) {
-      const nextHash = await provider.getBlockHash(from);
-      const nextBlock = await provider.getBlock(nextHash);
-      if (stored.blockHash !== nextBlock.previousBlockHash) {
-        console.error(`REORG detected at ${from}: parent ${nextBlock.previousBlockHash} != tip ${stored.blockHash}. Rebuilding.`);
+    if (stored) {
+      const storedHeight = Number(stored.height);
+      const chainHashAtHeight = await provider.getBlockHash(storedHeight).catch(() => undefined);
+      const tipBackward = tip < storedHeight;
+      const hashMismatch = chainHashAtHeight !== stored.blockHash;
+      if (tipBackward || hashMismatch) {
+        console.error(
+          `REORG: tip ${tip}, stored ${storedHeight}:${stored.blockHash.slice(0, 8)}, chain@${storedHeight}=${chainHashAtHeight?.slice(0, 8)}. Rebuilding.`,
+        );
         await store.clearCove(network);
         indexer = new CoveIndexer(COVE_SIGNET_CONFIG);
-        from = GENESIS;
-        await scanAndPersist(provider, store, indexer, from, tip);
+        await scanAndPersist(provider, store, indexer, GENESIS, tip);
         from = tip + 1;
         continue;
       }
+    }
+
+    if (from > tip) {
+      await new Promise((r) => setTimeout(r, pollMs));
+      continue;
     }
     await scanAndPersist(provider, store, indexer, from, tip);
     from = tip + 1;

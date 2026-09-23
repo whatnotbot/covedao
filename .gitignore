@@ -37,3 +37,4 @@ blob-report/
 data/
 uploads/
 .cove-signet-keys.json
+.cove-owner-signer.wif

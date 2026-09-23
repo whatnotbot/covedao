@@ -25,15 +25,54 @@ import {
   type CoveState,
 } from "@crclaunch/protocol";
 import { CoveIndexer } from "./indexer.js";
+import { decideNextAction, validateTicker, type ProofManifest } from "./proof-manifest.js";
 
 const CFG = COVE_V1_SIGNET_CONFIG;
 const RPC_URL = process.env.COVE_RPC_URL ?? "https://bitcoin-signet-rpc.publicnode.com";
 const ESPLORA = process.env.COVE_ESPLORA_URL ?? "https://blockstream.info/signet/api";
 const EXPECTED_SIGNER_ADDRESS = "tb1q3gn3xgduwymejw9vw2xayr4u2ldvc2zf05r3kx";
 const B_BACKUP_PATH = fileURLToPath(new URL("../../../.cove-signer-b.wif", import.meta.url));
+const MANIFEST_PATH = fileURLToPath(new URL("../../../.cove-proof.json", import.meta.url));
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
+}
+
+function loadManifest(): ProofManifest | undefined {
+  if (!existsSync(MANIFEST_PATH)) return undefined;
+  return JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as ProofManifest;
+}
+
+function saveManifest(m: ProofManifest): void {
+  writeFileSync(MANIFEST_PATH, JSON.stringify(m, null, 2) + "\n", { mode: 0o600 });
+}
+
+/** Bounded exponential retry for idempotent READ calls. Never for writes. */
+async function readWithRetry<T>(fn: () => Promise<T>, label: string, retries = 4): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      await new Promise((r) => setTimeout(r, 500 * 2 ** i));
+    }
+  }
+  throw new Error(`${label} failed after ${retries} retries: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
+}
+
+function localTxid(signedHex: string): string {
+  return bitcoin.Transaction.fromHex(signedHex).getId();
+}
+
+/** True when the txid is observable in mempool or chain. */
+async function isTxKnown(provider: CoreRpcProvider, txid: string): Promise<boolean> {
+  try {
+    await provider.getRawTransaction(txid);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function readWif(envKey: string, fileKey: string): string {
@@ -116,7 +155,7 @@ async function waitConfirmation(provider: CoreRpcProvider, txid: string): Promis
 }
 
 async function indexConfirmedBlock(provider: CoreRpcProvider, indexer: CoveIndexer, height: number, hash: string): Promise<void> {
-  const block = await provider.getBlock(hash);
+  const block = await readWithRetry(() => provider.getBlock(hash), `getBlock ${hash.slice(0, 8)}`);
   const txs: BitcoinProtocolTx[] = [];
   for (let i = 0; i < block.rawTxs.length; i++) {
     const raw = block.rawTxs[i]!;
@@ -151,7 +190,7 @@ async function indexConfirmedBlock(provider: CoreRpcProvider, indexer: CoveIndex
 /** Index every block in [from, to] in canonical order (preserving height/txIndex). */
 async function catchUpTo(provider: CoreRpcProvider, indexer: CoveIndexer, from: number, to: number): Promise<void> {
   for (let h = from; h <= to; h++) {
-    const hash = await provider.getBlockHash(h);
+    const hash = await readWithRetry(() => provider.getBlockHash(h), `getBlockHash ${h}`);
     await indexConfirmedBlock(provider, indexer, h, hash);
   }
 }
@@ -164,10 +203,26 @@ function assertEvent(indexer: CoveIndexer, txid: string, expectedOp: string): vo
   assert(ev!.operation === expectedOp, `event ${txid} op ${ev!.operation} != ${expectedOp}`);
 }
 
-async function broadcastChecked(provider: CoreRpcProvider, signedHex: string): Promise<string> {
+/**
+ * Broadcast with ambiguity handling: derive the txid locally BEFORE sending;
+ * on a transport error/timeout, query the exact txid instead of rebuilding.
+ * Never constructs a replacement transaction because an RPC response was lost.
+ */
+async function broadcastSafely(provider: CoreRpcProvider, signedHex: string): Promise<string> {
+  const txid = localTxid(signedHex);
   const pre = await provider.testMempoolAccept(signedHex, CFG.maxFeeRateSatVb);
   if (!pre.allowed) throw new Error(`testmempoolaccept rejected: ${pre.rejectReason ?? "unknown"}`);
-  return provider.broadcastTransaction(signedHex);
+  try {
+    await provider.broadcastTransaction(signedHex);
+    return txid;
+  } catch (err) {
+    // Ambiguous: the send may have succeeded. Check the exact derived txid.
+    if (await isTxKnown(provider, txid)) {
+      console.log(`  broadcast response lost but ${txid} is in mempool/chain; continuing.`);
+      return txid;
+    }
+    throw new Error(`broadcast failed and ${txid} not found: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 async function verifyUtxos(provider: CoreRpcProvider, utxos: ChainUtxo[]): Promise<ChainUtxo[]> {
@@ -204,7 +259,6 @@ async function main() {
   assert(signerA.getAddress() === EXPECTED_SIGNER_ADDRESS, `WIF derives ${signerA.getAddress()}, expected ${EXPECTED_SIGNER_ADDRESS}`);
   console.log("✓ key control verified:", signerA.getAddress());
 
-  // Second signer (recipient): loaded or freshly generated, WIF never printed.
   let signerB: LocalP2WPKHSigner;
   if (process.env.COVE_WIF_B_FILE || process.env.COVE_WIF_B) {
     signerB = new LocalP2WPKHSigner(readWif("COVE_WIF_B", "COVE_WIF_B_FILE"), "signet");
@@ -216,20 +270,59 @@ async function main() {
   }
   console.log("✓ recipient signer B:", signerB.getAddress());
 
-  const provider = new CoreRpcProvider({ url: RPC_URL, maxFeeRateSatVb: CFG.maxFeeRateSatVb });
-  const info = await provider.getBlockchainInfo();
-  assert(info.chain === "signet", `chain is ${info.chain}, expected signet`);
-  const esplora = new EsploraUtxoProvider(ESPLORA, "signet");
-  const indexer = new CoveIndexer(CFG); // canonical state (advanced only on confirmation)
-  let indexedHeight = CFG.genesisHeight - 1;
   const actorScript = scriptOf(signerA);
+  const recipientScript = scriptOf(signerB);
 
-  async function freshUtxos(signer: LocalP2WPKHSigner): Promise<ChainUtxo[]> {
-    const tip = await provider.getBestHeight();
+  // Public, WIF-free manifest: resume instead of re-broadcasting.
+  let manifest = loadManifest();
+  const ticker = validateTicker(process.env.COVE_PROOF_TICKER ?? manifest?.ticker ?? "FROG");
+  if (!manifest) {
+    manifest = { protocol: "cove", network: "signet", ticker, signerA: signerA.getAddress(), signerB: signerB.getAddress() };
+  } else {
+    manifest.ticker = ticker;
+    manifest.signerA = signerA.getAddress();
+    manifest.signerB = signerB.getAddress();
+  }
+  saveManifest(manifest);
+  console.log(`✓ proof ticker: ${ticker}`);
+
+  const provider = new CoreRpcProvider({ url: RPC_URL, maxFeeRateSatVb: CFG.maxFeeRateSatVb });
+  const info = await readWithRetry(() => provider.getBlockchainInfo(), "getblockchaininfo");
+  assert(info.chain === "signet", `chain is ${info.chain}, expected signet`);
+
+  const esplora = new EsploraUtxoProvider(ESPLORA, "signet");
+
+  // ── Funding gate FIRST (cheap), before the expensive canonical replay ──────
+  async function freshUtxos(signer: LocalP2WPKHSigner, requireConfirmed: boolean): Promise<ChainUtxo[]> {
+    const tip = await readWithRetry(() => provider.getBestHeight(), "getblockcount");
     const discovered = await esplora.getUtxos(signer.getAddress(), tip);
     const verified = await verifyUtxos(provider, discovered);
+    if (requireConfirmed) {
+      const confirmed = verified.filter((u) => u.confirmations >= 1);
+      assert(confirmed.length > 0, `no CONFIRMED UTXOs for ${signer.getAddress()} (unconfirmed faucet funding rejected)`);
+      return confirmed;
+    }
     assert(verified.length > 0, `no verified UTXOs for ${signer.getAddress()}`);
     return verified;
+  }
+  await freshUtxos(signerA, true);
+
+  // ── Canonical replay from activation height ────────────────────────────────
+  const indexer = new CoveIndexer(CFG);
+  let indexedHeight = CFG.genesisHeight - 1;
+  const initialTip = await readWithRetry(() => provider.getBestHeight(), "getblockcount");
+  if (initialTip >= CFG.genesisHeight) {
+    await catchUpTo(provider, indexer, CFG.genesisHeight, initialTip);
+    indexedHeight = initialTip;
+    console.log(`✓ replayed genesis ${CFG.genesisHeight} → ${initialTip}`);
+  }
+
+  async function catchUpToTip(): Promise<void> {
+    const tip = await readWithRetry(() => provider.getBestHeight(), "getblockcount");
+    if (tip > indexedHeight) {
+      await catchUpTo(provider, indexer, indexedHeight + 1, tip);
+      indexedHeight = tip;
+    }
   }
 
   async function preflight(signedHex: string): Promise<{ feeSats: bigint; vsize: number; feeRate: bigint }> {
@@ -238,107 +331,83 @@ async function main() {
     const v = validatePure(indexer.getState(), tx, 0);
     assert(v.ok, `Cove validation failed: ${v.reason}`);
     assert(fee.feeSats <= CFG.maxMinerFeeSats, `fee ${fee.feeSats} exceeds max ${CFG.maxMinerFeeSats}`);
-    // Fee-rate cap by multiplication (no flooring of the rate before comparison).
-    assert(!feeRateExceedsCap(fee.feeSats, fee.vsize, CFG.maxFeeRateSatVb), `fee rate exceeds max ${CFG.maxFeeRateSatVb} sat/vB (fee ${fee.feeSats}, vsize ${fee.vsize})`);
+    assert(!feeRateExceedsCap(fee.feeSats, fee.vsize, CFG.maxFeeRateSatVb), `fee rate exceeds max ${CFG.maxFeeRateSatVb} sat/vB`);
     return fee;
   }
 
-  async function catchUpToTip(): Promise<void> {
-    const tip = await provider.getBestHeight();
-    if (tip > indexedHeight) {
-      await catchUpTo(provider, indexer, indexedHeight + 1, tip);
-      indexedHeight = tip;
-    }
-  }
-
-  async function confirmAndIndex(txid: string, op: string, assertState: () => void): Promise<{ height: number; txIndex: number }> {
+  async function confirmAndIndex(txid: string, op: string, assertState: () => void): Promise<{ height: number; txIndex: number; stateRoot: string }> {
     const conf = await waitConfirmation(provider, txid);
-    // Index EVERY intervening block through the confirmation block (preserving
-    // exact height and txIndex), not just the confirmation block.
     if (conf.height > indexedHeight) {
       await catchUpTo(provider, indexer, indexedHeight + 1, conf.height);
       indexedHeight = conf.height;
     }
     assertEvent(indexer, txid, op);
     assertState();
-    return conf;
+    return { height: conf.height, txIndex: conf.txIndex, stateRoot: indexer.getStateRoot() };
   }
 
-  // Initialize: canonical replay from activation height to the current tip.
-  const initialTip = await provider.getBestHeight();
-  if (initialTip >= CFG.genesisHeight) {
-    await catchUpTo(provider, indexer, CFG.genesisHeight, initialTip);
-    indexedHeight = initialTip;
-    console.log(`✓ replayed genesis ${CFG.genesisHeight} → ${initialTip}`);
-  }
-
-  // ── DEPLOY ────────────────────────────────────────────────────────────────
-  {
-    await catchUpToTip();
-    const utxos = await freshUtxos(signerA);
-    const coins = selectCoins(utxos, 10_000n + 1_000n);
-    const psbt = buildCoveDeployPsbt({
-      network: "signet", ticker: "FROG", inputs: coins.selected,
-      changeAddress: signerA.getAddress(), feeRateSatVb: 2n, config: CFG,
-    });
-    const hex = await signerA.signPsbt(psbt.psbtBase64);
-    const fee = await preflight(hex);
-    const txid = await broadcastChecked(provider, hex);
-    const conf = await confirmAndIndex(txid, "DEPLOY", () => {
-      const token = indexer.getState().tokens.get(txid);
-      assert(token !== undefined, "FROG token not created");
-      assert(token!.ticker === "FROG", `ticker ${token!.ticker} != FROG`);
-      assert(token!.confirmedSupplyAtoms === 0n, "initial supply not 0");
-    });
-    console.log(`✓ DEPLOY ${txid} @ ${conf.height} tx=${conf.txIndex} fee=${fee.feeSats} rate=${fee.feeRate}`);
-  }
-
-  // ── MINT (recipient = signerA, who becomes the token holder) ──────────────
   const mintAmount = 2_000_000n * 100_000_000n;
-  {
-    await catchUpToTip();
-    const utxos = await freshUtxos(signerA);
-    const coins = selectCoins(utxos, 1_010n + 1_000n);
-    const psbt = buildCoveMintPsbt({
-      network: "signet", ticker: "FROG", amountAtoms: mintAmount, supplyBeforeAtoms: 0n,
-      recipientScriptHex: actorScript, inputs: coins.selected,
-      changeAddress: signerA.getAddress(), feeRateSatVb: 2n, config: CFG,
-    });
-    const hex = await signerA.signPsbt(psbt.psbtBase64);
-    const fee = await preflight(hex);
-    const txid = await broadcastChecked(provider, hex);
-    const conf = await confirmAndIndex(txid, "MINT", () => {
-      const dep = indexer.getState().tickerIndex.get("FROG")!;
-      const t = indexer.getState().tokens.get(dep)!;
-      assert(t.confirmedSupplyAtoms === mintAmount, `mint supply ${t.confirmedSupplyAtoms} != ${mintAmount}`);
-      const bal = indexer.getState().balances.get(actorScript)?.get(dep);
-      assert(bal?.availableAtoms === mintAmount, "mint balance wrong");
-    });
-    console.log(`✓ MINT ${txid} @ ${conf.height} tx=${conf.txIndex} fee=${fee.feeSats}`);
-  }
-
-  // ── TRANSFER (signerA → signerB) ──────────────────────────────────────────
   const transferAmount = 500_000n * 100_000_000n;
-  {
-    await catchUpToTip();
-    const utxos = await freshUtxos(signerA);
-    const coins = selectCoins(utxos, 1_000n);
-    const psbt = buildCoveTransferPsbt({
-      network: "signet", ticker: "FROG", amountAtoms: transferAmount,
-      recipientScriptHex: scriptOf(signerB), actorScriptHex: actorScript,
-      inputs: coins.selected, changeAddress: signerA.getAddress(), feeRateSatVb: 2n, config: CFG,
-    });
-    const hex = await signerA.signPsbt(psbt.psbtBase64);
-    const fee = await preflight(hex);
-    const txid = await broadcastChecked(provider, hex);
-    const conf = await confirmAndIndex(txid, "TRANSFER", () => {
-      const dep = indexer.getState().tickerIndex.get("FROG")!;
-      const a = indexer.getState().balances.get(actorScript)?.get(dep);
-      const b = indexer.getState().balances.get(scriptOf(signerB))?.get(dep);
-      assert(a?.availableAtoms === mintAmount - transferAmount, "A balance wrong after transfer");
-      assert(b?.availableAtoms === transferAmount, "B balance wrong after transfer");
-    });
-    console.log(`✓ TRANSFER ${txid} @ ${conf.height} tx=${conf.txIndex} fee=${fee.feeSats}`);
+
+  // ── Decision-driven resume ─────────────────────────────────────────────────
+  let decision = decideNextAction(manifest, indexer.getState(), actorScript, recipientScript, mintAmount, transferAmount);
+  while (decision.action !== "DONE") {
+    if (decision.action === "DEPLOY") {
+      await catchUpToTip();
+      const utxos = await freshUtxos(signerA, true);
+      const coins = selectCoins(utxos, 10_000n + 1_000n);
+      const psbt = buildCoveDeployPsbt({ network: "signet", ticker, inputs: coins.selected, changeAddress: signerA.getAddress(), feeRateSatVb: 2n, config: CFG });
+      const hex = await signerA.signPsbt(psbt.psbtBase64);
+      const fee = await preflight(hex);
+      const txid = await broadcastSafely(provider, hex);
+      manifest.deploy = { txid, height: 0, blockHash: "", stateRoot: "" };
+      saveManifest(manifest);
+      const conf = await confirmAndIndex(txid, "DEPLOY", () => {
+        const token = indexer.getState().tokens.get(txid);
+        assert(token !== undefined && token.ticker === ticker, "deploy token not created");
+        assert(token!.confirmedSupplyAtoms === 0n, "initial supply not 0");
+      });
+      manifest.deploy = { txid, height: conf.height, blockHash: "", stateRoot: conf.stateRoot };
+      saveManifest(manifest);
+      console.log(`✓ DEPLOY ${txid} @ ${conf.height} tx=${conf.txIndex} fee=${fee.feeSats}`);
+    } else if (decision.action === "MINT") {
+      await catchUpToTip();
+      const utxos = await freshUtxos(signerA, true);
+      const coins = selectCoins(utxos, 1_010n + 1_000n);
+      const psbt = buildCoveMintPsbt({ network: "signet", ticker, amountAtoms: mintAmount, supplyBeforeAtoms: 0n, recipientScriptHex: actorScript, inputs: coins.selected, changeAddress: signerA.getAddress(), feeRateSatVb: 2n, config: CFG });
+      const hex = await signerA.signPsbt(psbt.psbtBase64);
+      const fee = await preflight(hex);
+      const txid = await broadcastSafely(provider, hex);
+      manifest.mint = { txid, height: 0, blockHash: "", stateRoot: "" };
+      saveManifest(manifest);
+      const conf = await confirmAndIndex(txid, "MINT", () => {
+        const dep = indexer.getState().tickerIndex.get(ticker)!;
+        assert(indexer.getState().tokens.get(dep)!.confirmedSupplyAtoms === mintAmount, "mint supply wrong");
+        assert(indexer.getState().balances.get(actorScript)?.get(dep)?.availableAtoms === mintAmount, "mint balance wrong");
+      });
+      manifest.mint = { txid, height: conf.height, blockHash: "", stateRoot: conf.stateRoot };
+      saveManifest(manifest);
+      console.log(`✓ MINT ${txid} @ ${conf.height} tx=${conf.txIndex} fee=${fee.feeSats}`);
+    } else if (decision.action === "TRANSFER") {
+      await catchUpToTip();
+      const utxos = await freshUtxos(signerA, true);
+      const coins = selectCoins(utxos, 1_000n);
+      const psbt = buildCoveTransferPsbt({ network: "signet", ticker, amountAtoms: transferAmount, recipientScriptHex: recipientScript, actorScriptHex: actorScript, inputs: coins.selected, changeAddress: signerA.getAddress(), feeRateSatVb: 2n, config: CFG });
+      const hex = await signerA.signPsbt(psbt.psbtBase64);
+      const fee = await preflight(hex);
+      const txid = await broadcastSafely(provider, hex);
+      manifest.transfer = { txid, height: 0, blockHash: "", stateRoot: "" };
+      saveManifest(manifest);
+      const conf = await confirmAndIndex(txid, "TRANSFER", () => {
+        const dep = indexer.getState().tickerIndex.get(ticker)!;
+        assert(indexer.getState().balances.get(actorScript)?.get(dep)?.availableAtoms === mintAmount - transferAmount, "A balance wrong");
+        assert(indexer.getState().balances.get(recipientScript)?.get(dep)?.availableAtoms === transferAmount, "B balance wrong");
+      });
+      manifest.transfer = { txid, height: conf.height, blockHash: "", stateRoot: conf.stateRoot };
+      saveManifest(manifest);
+      console.log(`✓ TRANSFER ${txid} @ ${conf.height} tx=${conf.txIndex} fee=${fee.feeSats}`);
+    }
+    decision = decideNextAction(manifest, indexer.getState(), actorScript, recipientScript, mintAmount, transferAmount);
   }
 
   console.log(`✓ state root: ${indexer.getStateRoot()}`);

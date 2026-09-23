@@ -39,3 +39,4 @@ uploads/
 .cove-signet-keys.json
 .cove-owner-signer.wif
 .cove-signer-b.wif
+.cove-proof.json

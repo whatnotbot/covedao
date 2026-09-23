@@ -30,3 +30,4 @@ export {
   type BuildCoveVaultV3Params,
 } from "./vault.js";
 export { taprootMerkleRoot, merklePaths } from "./taproot.js";
+export { buildBackingVaultV3 } from "./backingVault.js";

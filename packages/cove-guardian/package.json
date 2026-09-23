@@ -13,11 +13,15 @@
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "regtest-proof": "tsx src/regtest-proof.ts"
+    "regtest-proof": "tsx src/regtest-proof.ts",
+    "v3-regtest-lifecycle": "tsx src/v3-lifecycle.ts"
   },
   "dependencies": {
     "@crclaunch/bitcoin": "workspace:*",
     "@crclaunch/cove-covenant": "workspace:*",
+    "@crclaunch/cove-economics": "workspace:*",
+    "@crclaunch/cove-vault": "workspace:*",
+    "@crclaunch/cove-wire": "workspace:*",
     "@crclaunch/curve": "workspace:*",
     "bitcoinjs-lib": "^6.1.7",
     "ecpair": "^2.1.0",

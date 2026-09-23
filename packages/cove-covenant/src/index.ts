@@ -55,3 +55,11 @@ export {
   type MintV2Result,
   type RedeemV2Result,
 } from "./transitionV2.js";
+export { TOKEN_CARRIER_SATS, isCarrierValue } from "./carrier.js";
+export {
+  CoveChainView,
+  type OutPoint,
+  type TokenUtxo,
+  type TokenMeta,
+  type BackingView,
+} from "./resolver.js";

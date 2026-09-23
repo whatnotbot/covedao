@@ -180,10 +180,17 @@ export function validateConfig(config: RuntimeConfig): void {
   }
 
   // Cove mainnet two-stage activation gate (fail-closed, enforced in code).
-  // The owner canary proof must be COMPLETE (future activation height + all
-  // three txids + matching final/replay roots) before ANY Cove mainnet flag —
-  // including public writes — may enable.
-  const coveMainnetWrites = Object.values(config.coveFlags).some(Boolean);
+  // Stage 2 (public writes) is reachable ONLY after stage 1 (OWNER_CANARY):
+  // a public write flag without COVE_MAINNET_ENABLED is refused.
+  const { mainnetEnabled, deployMainnet, mintMainnet, transferMainnet } = config.coveFlags;
+  const anyPublicWrite = deployMainnet || mintMainnet || transferMainnet;
+  if (anyPublicWrite && !mainnetEnabled) {
+    throw new ConfigError(
+      "A Cove public write flag is enabled but COVE_MAINNET_ENABLED (stage 1) is not. " +
+        "Public writes require stage 1 first. Refusing to boot.",
+    );
+  }
+  const coveMainnetWrites = mainnetEnabled || anyPublicWrite;
   if (coveMainnetWrites && !isCoveMainnetCanaryAsserted(config)) {
     throw new ConfigError(
       "A Cove mainnet flag is enabled but the full owner canary proof is not recorded. " +

@@ -15,12 +15,12 @@ export type ProductMode = "DEMO" | "READ_ONLY_MAINNET" | "CANONICAL_CRC";
 export type CoveMainnetActivationStage = "READ_ONLY" | "OWNER_CANARY" | "PUBLIC_WRITES";
 
 export function coveMainnetActivationStage(config: RuntimeConfig): CoveMainnetActivationStage {
-  const anyPublic =
-    config.coveFlags.deployMainnet ||
-    config.coveFlags.mintMainnet ||
-    config.coveFlags.transferMainnet;
-  const anyCoveFlag = config.coveFlags.mainnetEnabled || anyPublic;
-  if (!anyCoveFlag) return "READ_ONLY";
+  const { mainnetEnabled, deployMainnet, mintMainnet, transferMainnet } = config.coveFlags;
+  const anyPublic = deployMainnet || mintMainnet || transferMainnet;
+  // Stage 2 (PUBLIC_WRITES) is reachable ONLY after stage 1 (OWNER_CANARY):
+  // public flags without the COVE_MAINNET_ENABLED master switch are NOT stage 2
+  // — they are a fail-closed READ_ONLY (and validateConfig rejects them).
+  if (!mainnetEnabled) return "READ_ONLY";
   if (!anyPublic) return "OWNER_CANARY";
   return "PUBLIC_WRITES";
 }

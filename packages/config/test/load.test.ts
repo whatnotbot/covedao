@@ -88,7 +88,7 @@ describe("Cove mainnet full-canary gating", () => {
   it("refuses any Cove mainnet flag without a complete canary proof", () => {
     const config = loadConfig(env({ COVE_MAINNET_ENABLED: "true" }));
     expect(() => validateConfig(config)).toThrow(/full owner canary proof is not recorded/);
-    const config2 = loadConfig(env({ COVE_DEPLOY_MAINNET_ENABLED: "true" }));
+    const config2 = loadConfig(env({ COVE_MAINNET_ENABLED: "true", COVE_DEPLOY_MAINNET_ENABLED: "true" }));
     expect(() => validateConfig(config2)).toThrow(/full owner canary proof is not recorded/);
   });
 
@@ -129,9 +129,14 @@ describe("Cove mainnet full-canary gating", () => {
     expect(() => validateConfig(config)).not.toThrow();
   });
 
-  it("accepts PUBLIC_WRITES stage with a complete canary proof and a public flag", () => {
-    const config = loadConfig(env({ COVE_DEPLOY_MAINNET_ENABLED: "true", ...CANARY }));
+  it("accepts PUBLIC_WRITES stage with the master switch + a public flag", () => {
+    const config = loadConfig(env({ COVE_MAINNET_ENABLED: "true", COVE_DEPLOY_MAINNET_ENABLED: "true", ...CANARY }));
     expect(() => validateConfig(config)).not.toThrow();
+  });
+
+  it("rejects a public write flag without the stage-1 master switch", () => {
+    const config = loadConfig(env({ COVE_DEPLOY_MAINNET_ENABLED: "true", ...CANARY }));
+    expect(() => validateConfig(config)).toThrow(/COVE_MAINNET_ENABLED \(stage 1\) is not/);
   });
 });
 
@@ -146,8 +151,13 @@ describe("coveMainnetActivationStage", () => {
     expect(coveMainnetActivationStage(config)).toBe("OWNER_CANARY");
   });
 
-  it("is PUBLIC_WRITES when a public write flag is set", () => {
+  it("is READ_ONLY (not PUBLIC_WRITES) when a public flag is set without the master switch", () => {
     const config = loadConfig(env({ COVE_MINT_MAINNET_ENABLED: "true" }));
+    expect(coveMainnetActivationStage(config)).toBe("READ_ONLY");
+  });
+
+  it("is PUBLIC_WRITES when the master switch and a public flag are both set", () => {
+    const config = loadConfig(env({ COVE_MAINNET_ENABLED: "true", COVE_MINT_MAINNET_ENABLED: "true" }));
     expect(coveMainnetActivationStage(config)).toBe("PUBLIC_WRITES");
   });
 });

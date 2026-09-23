@@ -70,7 +70,9 @@ class RegtestRpc {
 
   async createWallet(name: string): Promise<void> {
     try {
-      await this.call("createwallet", [name]);
+      // Legacy (non-descriptor) wallet so `importaddress` (watch-only discovery)
+      // is supported. descriptors=false is the 6th positional arg.
+      await this.call("createwallet", [name, false, false, "", false, false, true]);
     } catch {
       await this.call("loadwallet", [name]);
     }

@@ -80,9 +80,12 @@ class RegtestRpc {
 
   async createWallet(name: string): Promise<void> {
     // Legacy (non-descriptor) wallet so `importaddress` (watch-only discovery)
-    // is supported. descriptors=false is the 6th positional arg. CI is always a
-    // fresh datadir, so "already exists" is not a concern here.
-    await this.call("createwallet", [name, false, false, "", false, false, true]);
+    // is supported. descriptors=false is the 6th positional arg; the 7th
+    // (load_on_startup=false) prevents the wallet from being auto-loaded — and
+    // therefore from re-broadcasting the orphaned TRANSFER — after the reorg
+    // restart. CI is always a fresh datadir, so "already exists" is not a
+    // concern here.
+    await this.call("createwallet", [name, false, false, "", false, false, false]);
   }
 
   async importAddress(address: string, label: string): Promise<void> {

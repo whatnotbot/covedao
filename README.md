@@ -124,6 +124,19 @@ A total database loss does not imply loss of user funds.
 runs under `tsx`/Node. See `.env.example` for required production variables and
 `docs/MAINNET_CHECKLIST.md` before enabling any mainnet write.
 
+## CI and branch protection
+
+Two GitHub Actions workflows gate the repo:
+
+- `.github/workflows/ci.yml` — `pnpm typecheck`, `pnpm lint`, `pnpm test`,
+  `pnpm build` on every push and pull request.
+- `.github/workflows/cove-regtest.yml` — real Bitcoin Core regtest lifecycle +
+  reorg recovery (downloads a pinned, checksum-verified Bitcoin Core release).
+
+Branch protection must be configured in GitHub (Settings → Branches) to require
+**both** workflows as status checks on `main`; that setting lives in GitHub, not
+in this repo, so it cannot be encoded here and must not be forgotten.
+
 ---
 
 *CRC Launch will never ask for your seed phrase or private key.*

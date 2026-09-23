@@ -2,10 +2,16 @@ import { describe, expect, it } from "vitest";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { ECPairFactory } from "ecpair";
-import { s0StateV2, applyMintV2 } from "@crclaunch/cove-covenant";
+import { s0StateV2, applyMintV2, applyRedeemV2, TOKEN_CARRIER_SATS } from "@crclaunch/cove-covenant";
 import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
 import { CHAIN_BITCOIN_REGTEST, decodeV2 } from "@crclaunch/cove-wire";
-import { buildDeployPsbtV3, buildMintPsbtV3, RESERVE_ANCHOR_SATS } from "./builder.js";
+import {
+  buildDeployPsbtV3,
+  buildMintPsbtV3,
+  buildRedeemPsbtV3,
+  buildTransferPsbtV2,
+  RESERVE_ANCHOR_SATS,
+} from "./builder.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 const ECPair = ECPairFactory(ecc);
@@ -105,5 +111,116 @@ describe("V3 builders (offline)", () => {
       recoveryKeyXOnly: recoveryXOnly,
     });
     expect(v.mintLeaf.tapleafHash.equals(v.redeemLeaf.tapleafHash)).toBe(false);
+  });
+
+  it("TRANSFER: token conservation enforced, wire v2 allocations keyed by vout", () => {
+    const d = deploy();
+    const t = buildTransferPsbtV2({
+      network: bitcoin.networks.regtest,
+      tokenId: d.tokenId,
+      tokenInputs: [
+        {
+          txid: "c".repeat(64),
+          vout: 2,
+          script: Buffer.from("0014" + "a".repeat(20), "hex"),
+          valueSats: TOKEN_CARRIER_SATS,
+        },
+      ],
+      tokenInputTotalAtoms: 84_000_000n * 100_000_000n,
+      tokenOutputs: [
+        { script: Buffer.from("0014" + "b".repeat(20), "hex"), amountAtoms: 42_000_000n * 100_000_000n },
+        { script: Buffer.from("0014" + "c".repeat(20), "hex"), amountAtoms: 42_000_000n * 100_000_000n },
+      ],
+      funderInputs: [
+        {
+          txid: "d".repeat(64),
+          vout: 0,
+          script: Buffer.from("0014" + "d".repeat(20), "hex"),
+          valueSats: 1_000_000n,
+        },
+      ],
+      funderChangeScript: Buffer.from("0014" + "d".repeat(20), "hex"),
+      btcOutputs: [],
+      minerFeeSats: 1_000n,
+    });
+    // [0] OP_RETURN, [1] carrier A, [2] carrier B, [3] funder change
+    expect(t.psbt.txOutputs.length).toBe(4);
+    expect(t.psbt.txOutputs[1]!.value).toBe(Number(TOKEN_CARRIER_SATS));
+    expect(t.psbt.txOutputs[2]!.value).toBe(Number(TOKEN_CARRIER_SATS));
+    const env = decodeV2(t.psbt.txOutputs[0]!.script.subarray(2));
+    expect(env.op).toBe(2); // TRANSFER
+    expect((env as { allocations: { vout: number; amount: bigint }[] }).allocations).toEqual([
+      { vout: 1, amount: 42_000_000n * 100_000_000n },
+      { vout: 2, amount: 42_000_000n * 100_000_000n },
+    ]);
+    // Conservation violation must throw.
+    expect(() =>
+      buildTransferPsbtV2({
+        network: bitcoin.networks.regtest,
+        tokenId: d.tokenId,
+        tokenInputs: [],
+        tokenInputTotalAtoms: 1n,
+        tokenOutputs: [{ script: Buffer.from("0014" + "b".repeat(20), "hex"), amountAtoms: 2n }],
+        funderInputs: [],
+        funderChangeScript: Buffer.from("0014" + "d".repeat(20), "hex"),
+        btcOutputs: [],
+        minerFeeSats: 1_000n,
+      }),
+    ).toThrow(/conservation/);
+  });
+
+  it("REDEEM: script-path REDEEM leaf, successor backing = R(next), net = gross - fee", () => {
+    const d = deploy();
+    const mintAmountAtoms = 84_000_000n * 100_000_000n;
+    const minted = applyMintV2(d.s0, mintAmountAtoms);
+    const r = buildRedeemPsbtV3({
+      network: bitcoin.networks.regtest,
+      tokenId: d.tokenId,
+      prevState: minted.nextState,
+      prevBacking: {
+        txid: "e".repeat(64),
+        vout: 1,
+        script: buildBackingVaultV3({
+          state: minted.nextState,
+          guardianXOnly,
+          recoveryKeyXOnly: recoveryXOnly,
+        }).scriptPubKey,
+        valueSats: RESERVE_ANCHOR_SATS + minted.nextState.backingSats,
+      },
+      redeemAmountAtoms: mintAmountAtoms,
+      tokenInputs: [
+        {
+          txid: "f".repeat(64),
+          vout: 1,
+          script: Buffer.from("0014" + "e".repeat(20), "hex"),
+          valueSats: TOKEN_CARRIER_SATS,
+        },
+      ],
+      tokenInputTotalAtoms: mintAmountAtoms,
+      guardianXOnly,
+      recoveryKeyXOnly: recoveryXOnly,
+      sellerPayoutScript: Buffer.from("0014" + "e".repeat(20), "hex"),
+      sellerChangeScript: Buffer.from("0014" + "e".repeat(20), "hex"),
+      feeScript: Buffer.from("0014" + "f".repeat(20), "hex"),
+      minerFeeSats: 1_000n,
+    });
+    const expected = applyRedeemV2(minted.nextState, mintAmountAtoms);
+    expect(r.nextState.backingSats).toBe(expected.nextState.backingSats);
+    expect(r.nextState.issuedPublicSupplyAtoms).toBe(0n);
+    expect(r.grossSats).toBe(49_350n);
+    expect(r.redeemFeeSats).toBe(494n);
+    expect(r.netSats).toBe(48_856n);
+    expect(r.changeAtoms).toBe(0n);
+    // State input spends the PREV vault via the REDEEM leaf.
+    expect(r.psbt.data.inputs[0]!.tapMerkleRoot!.equals(r.prevVault.merkleRoot)).toBe(true);
+    expect(
+      r.psbt.data.inputs[0]!.tapLeafScript![0]!.script.equals(r.prevVault.redeemLeaf.script),
+    ).toBe(true);
+    // [0] OP_RETURN, [1] successor vault, [2] payout, [3] fee (no change carrier, no BTC change).
+    expect(r.psbt.txOutputs[1]!.script.equals(r.nextVault.scriptPubKey)).toBe(true);
+    expect(r.psbt.txOutputs[2]!.value).toBe(48_856);
+    const env = decodeV2(r.psbt.txOutputs[0]!.script.subarray(2));
+    expect(env.op).toBe(4); // REDEEM
+    expect((env as { redeemAmount: bigint }).redeemAmount).toBe(mintAmountAtoms);
   });
 });

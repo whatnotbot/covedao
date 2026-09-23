@@ -3,6 +3,7 @@ import * as ecc from "tiny-secp256k1";
 import {
   TOKEN_CARRIER_SATS,
   applyMintV2,
+  applyRedeemV2,
   s0StateV2,
   type CoveStateV2,
 } from "@crclaunch/cove-covenant";
@@ -12,6 +13,8 @@ import {
   computeTokenId,
   encodeDeployV2,
   encodeMintV2,
+  encodeRedeemV2,
+  encodeTransferV2,
   type TokenIdentityInput,
 } from "@crclaunch/cove-wire";
 import { grossBuy } from "@crclaunch/cove-economics";
@@ -165,7 +168,7 @@ export function buildMintPsbtV3(params: {
   psbt.addOutput({ script: Buffer.concat([Buffer.from([0x6a, wire.length]), wire]), value: 0 });
   psbt.addOutput({
     script: nextVault.scriptPubKey,
-    value: Number(RESERVE_ANCHOR_SATS + grossSats),
+    value: Number(RESERVE_ANCHOR_SATS + nextState.backingSats),
   });
   psbt.addOutput({ script: params.buyerCarrierScript, value: Number(TOKEN_CARRIER_SATS) });
   psbt.addOutput({ script: params.feeScript, value: Number(buyFeeSats) });
@@ -174,7 +177,7 @@ export function buildMintPsbtV3(params: {
     params.prevBacking.valueSats + params.buyerInputs.reduce((s, i) => s + i.valueSats, 0n);
   const change =
     totalIn -
-    (RESERVE_ANCHOR_SATS + grossSats) -
+    (RESERVE_ANCHOR_SATS + nextState.backingSats) -
     TOKEN_CARRIER_SATS -
     buyFeeSats -
     params.minerFeeSats;
@@ -192,6 +195,201 @@ export function buildMintPsbtV3(params: {
     buyFeeSats,
     wire,
     stateInputIndex: 0,
+  };
+}
+
+export interface TransferResult {
+  psbt: bitcoin.Psbt;
+  wire: Buffer;
+  /** wire-v2 TRANSFER allocations, keyed by FINAL output vout. */
+  allocations: { vout: number; amount: bigint }[];
+  /** Token carrier outputs actually created (vout, script, amount). */
+  tokenOutputs: { vout: number; script: Buffer; amountAtoms: bigint }[];
+}
+
+/**
+ * Build a real TRANSFER PSBT (§10). Ordinary Bitcoin — no backing, no Guardian.
+ * Canonical outputs: [0] OP_RETURN (wire v2 TRANSFER), [1..n] token carrier
+ * outputs (one per allocation), then any BTC outputs (e.g. P2P payment + fee),
+ * then funder change. Token conservation is enforced here and re-verified by the
+ * resolver. Backing/supply are NOT touched by a transfer.
+ */
+export function buildTransferPsbtV2(params: {
+  network: bitcoin.networks.Network;
+  tokenId: Buffer;
+  tokenInputs: ResolvedInput[];
+  /** Sum of token amounts (atoms) on tokenInputs, resolved from the chain view. */
+  tokenInputTotalAtoms: bigint;
+  /** Token outputs (recipient + change); sum must equal tokenInputTotalAtoms. */
+  tokenOutputs: { script: Buffer; amountAtoms: bigint }[];
+  /** Ordinary BTC inputs funding carriers + BTC outputs + miner fee. */
+  funderInputs: ResolvedInput[];
+  funderChangeScript: Buffer;
+  /** BTC outputs in addition to the carrier outputs (P2P payment, p2p fee, …). */
+  btcOutputs: { script: Buffer; valueSats: Sats }[];
+  minerFeeSats: Sats;
+}): TransferResult {
+  if (params.tokenOutputs.length === 0) throw new Error("no token outputs");
+  if (params.tokenOutputs.length > 4) throw new Error("max 4 token outputs");
+  const tokenOutTotal = params.tokenOutputs.reduce((s, o) => s + o.amountAtoms, 0n);
+  if (tokenOutTotal !== params.tokenInputTotalAtoms)
+    throw new Error(
+      `token conservation violated: in=${params.tokenInputTotalAtoms} out=${tokenOutTotal}`,
+    );
+
+  let vout = 0;
+  const wire = encodeTransferV2({
+    tokenId: params.tokenId,
+    allocations: params.tokenOutputs.map((o) => ({ vout: ++vout, amount: o.amountAtoms })),
+  });
+
+  const psbt = new bitcoin.Psbt({ network: params.network });
+  for (const input of [...params.tokenInputs, ...params.funderInputs]) {
+    psbt.addInput({
+      hash: input.txid,
+      index: input.vout,
+      witnessUtxo: { script: input.script, value: Number(input.valueSats) },
+    });
+  }
+
+  psbt.addOutput({ script: Buffer.concat([Buffer.from([0x6a, wire.length]), wire]), value: 0 });
+  const tokenOutputs: TransferResult["tokenOutputs"] = [];
+  for (const o of params.tokenOutputs) {
+    tokenOutputs.push({ vout: psbt.txOutputs.length, script: o.script, amountAtoms: o.amountAtoms });
+    psbt.addOutput({ script: o.script, value: Number(TOKEN_CARRIER_SATS) });
+  }
+  for (const o of params.btcOutputs) {
+    psbt.addOutput({ script: o.script, value: Number(o.valueSats) });
+  }
+
+  const totalIn = [...params.tokenInputs, ...params.funderInputs].reduce(
+    (s, i) => s + i.valueSats,
+    0n,
+  );
+  const carriersOut = BigInt(params.tokenOutputs.length) * TOKEN_CARRIER_SATS;
+  const btcOut = params.btcOutputs.reduce((s, o) => s + o.valueSats, 0n);
+  const change = totalIn - carriersOut - btcOut - params.minerFeeSats;
+  if (change < 0n) throw new Error("insufficient transfer funds");
+  if (change >= 294n) {
+    psbt.addOutput({ script: params.funderChangeScript, value: Number(change) });
+  }
+
+  const allocations = params.tokenOutputs.map((o, i) => ({ vout: i + 1, amount: o.amountAtoms }));
+  return { psbt, wire, allocations, tokenOutputs };
+}
+
+export interface RedeemResult {
+  psbt: bitcoin.Psbt;
+  prevVault: CoveVaultV3;
+  nextState: CoveStateV2;
+  nextVault: CoveVaultV3;
+  grossSats: Sats;
+  redeemFeeSats: Sats;
+  netSats: Sats;
+  changeAtoms: bigint;
+  wire: Buffer;
+}
+
+/**
+ * Build a real REDEEM PSBT (§11). Script-path REDEEM execution leaf (analogous
+ * to MINT). Canonical outputs: [0] OP_RETURN (wire v2 REDEEM), [1] successor
+ * backing vault, [2] seller BTC payout (net = gross - fee), [3] Cove redeem fee,
+ * [4] token change carrier (only if partial redeem), [5] seller BTC change.
+ */
+export function buildRedeemPsbtV3(params: {
+  network: bitcoin.networks.Network;
+  tokenId: Buffer;
+  prevState: CoveStateV2;
+  prevBacking: ResolvedInput;
+  redeemAmountAtoms: bigint;
+  tokenInputs: ResolvedInput[];
+  tokenInputTotalAtoms: bigint;
+  guardianXOnly: Buffer;
+  recoveryKeyXOnly: Buffer;
+  sellerPayoutScript: Buffer;
+  sellerChangeScript: Buffer;
+  feeScript: Buffer;
+  minerFeeSats: Sats;
+}): RedeemResult {
+  const { nextState, grossSats } = applyRedeemV2(params.prevState, params.redeemAmountAtoms);
+  const prevVault = buildBackingVaultV3({
+    state: params.prevState,
+    guardianXOnly: params.guardianXOnly,
+    recoveryKeyXOnly: params.recoveryKeyXOnly,
+    network: params.network,
+  });
+  const nextVault = buildBackingVaultV3({
+    state: nextState,
+    guardianXOnly: params.guardianXOnly,
+    recoveryKeyXOnly: params.recoveryKeyXOnly,
+    network: params.network,
+  });
+  const redeemFeeSats = deterministicFee(grossSats, COVE_FEE_CONFIG.redeemFeeBps);
+  const netSats = grossSats - redeemFeeSats;
+  const changeAtoms = params.tokenInputTotalAtoms - params.redeemAmountAtoms;
+  if (changeAtoms < 0n) throw new Error("redeem exceeds token input");
+
+  const changeCarrierVout = 4; // [0] OP_RETURN, [1] vault, [2] payout, [3] fee, [4] change carrier
+  const wire = encodeRedeemV2({
+    tokenId: params.tokenId,
+    redeemAmount: params.redeemAmountAtoms,
+    changeAllocations: changeAtoms > 0n ? [{ vout: changeCarrierVout, amount: changeAtoms }] : [],
+  });
+
+  const psbt = new bitcoin.Psbt({ network: params.network });
+  psbt.addInput({
+    hash: params.prevBacking.txid,
+    index: params.prevBacking.vout,
+    witnessUtxo: { script: params.prevBacking.script, value: Number(params.prevBacking.valueSats) },
+    tapInternalKey: prevVault.numsKey,
+    tapMerkleRoot: prevVault.merkleRoot,
+    tapLeafScript: [
+      {
+        leafVersion: 0xc0,
+        script: prevVault.redeemLeaf.script,
+        controlBlock: prevVault.redeemControlBlock,
+      },
+    ],
+  });
+  for (const input of params.tokenInputs) {
+    psbt.addInput({
+      hash: input.txid,
+      index: input.vout,
+      witnessUtxo: { script: input.script, value: Number(input.valueSats) },
+    });
+  }
+
+  psbt.addOutput({ script: Buffer.concat([Buffer.from([0x6a, wire.length]), wire]), value: 0 });
+  psbt.addOutput({
+    script: nextVault.scriptPubKey,
+    value: Number(RESERVE_ANCHOR_SATS + nextState.backingSats),
+  });
+  psbt.addOutput({ script: params.sellerPayoutScript, value: Number(netSats) });
+  psbt.addOutput({ script: params.feeScript, value: Number(redeemFeeSats) });
+  if (changeAtoms > 0n) {
+    psbt.addOutput({ script: params.sellerChangeScript, value: Number(TOKEN_CARRIER_SATS) });
+  }
+
+  const totalIn =
+    params.prevBacking.valueSats + params.tokenInputs.reduce((s, i) => s + i.valueSats, 0n);
+  const successorValue = RESERVE_ANCHOR_SATS + nextState.backingSats;
+  const changeCarrierValue = changeAtoms > 0n ? TOKEN_CARRIER_SATS : 0n;
+  const change = totalIn - successorValue - netSats - redeemFeeSats - changeCarrierValue - params.minerFeeSats;
+  if (change < 0n) throw new Error("insufficient redeem funds");
+  if (change >= 294n) {
+    psbt.addOutput({ script: params.sellerChangeScript, value: Number(change) });
+  }
+
+  return {
+    psbt,
+    prevVault,
+    nextState,
+    nextVault,
+    grossSats,
+    redeemFeeSats,
+    netSats,
+    changeAtoms,
+    wire,
   };
 }
 

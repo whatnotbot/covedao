@@ -379,7 +379,10 @@ export const coveBlocks = pgTable(
     canonical: boolean("canonical").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("cove_blocks_height_uq").on(t.network, t.height)],
+  (t) => [
+    uniqueIndex("cove_blocks_height_uq").on(t.network, t.height),
+    index("cove_blocks_hash_idx").on(t.network, t.hash),
+  ],
 );
 
 export const coveOperations = pgTable(
@@ -397,7 +400,10 @@ export const coveOperations = pgTable(
     canonical: boolean("canonical").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("cove_ops_txid_uq").on(t.network, t.txid)],
+  (t) => [
+    uniqueIndex("cove_ops_txid_uq").on(t.network, t.txid),
+    index("cove_ops_block_height_idx").on(t.network, t.blockHeight),
+  ],
 );
 
 export const coveTokens = pgTable(
@@ -451,6 +457,8 @@ export const coveCursor = pgTable(
     network: text("network").notNull(),
     height: atoms("height").notNull(),
     blockHash: text("block_hash").notNull(),
+    /** True while a reorg rebuild is in progress (clearCove → reindex). */
+    rebuilding: boolean("rebuilding").notNull().default(false),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("cove_cursor_network_uq").on(t.network)],

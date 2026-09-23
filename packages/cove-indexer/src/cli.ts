@@ -260,9 +260,11 @@ async function cmdWorker(): Promise<void> {
       const tipBackward = tip < storedHeight;
       if (tipBackward) {
         console.error(`REORG: tip ${tip} moved below stored cursor ${storedHeight}. Rebuilding.`);
+        await store.setRebuilding(network, true);
         await store.clearCove(network);
         indexer = new CoveIndexer(COVE_SIGNET_CONFIG);
         await scanAndPersist(provider, store, indexer, GENESIS, tip);
+        await store.setRebuilding(network, false);
         from = tip + 1;
         continue;
       }
@@ -278,9 +280,11 @@ async function cmdWorker(): Promise<void> {
         console.error(
           `REORG: stored ${storedHeight}:${stored.blockHash.slice(0, 8)}, chain@${storedHeight}=${chainHashAtHeight.slice(0, 8)}. Rebuilding.`,
         );
+        await store.setRebuilding(network, true);
         await store.clearCove(network);
         indexer = new CoveIndexer(COVE_SIGNET_CONFIG);
         await scanAndPersist(provider, store, indexer, GENESIS, tip);
+        await store.setRebuilding(network, false);
         from = tip + 1;
         continue;
       }

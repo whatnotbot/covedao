@@ -140,6 +140,24 @@ export class CoveStore {
     return rows[0] ? { height: rows[0].height, blockHash: rows[0].blockHash } : undefined;
   }
 
+  /** True while a reorg rebuild is in progress (clearCove → reindex). */
+  async isRebuilding(network: string): Promise<boolean> {
+    const rows = await this.db
+      .select()
+      .from(schema.coveCursor)
+      .where(eq(schema.coveCursor.network, network))
+      .execute();
+    return rows[0]?.rebuilding ?? false;
+  }
+
+  /** Set the in-progress flag so readers can tell a rebuild from empty state. */
+  async setRebuilding(network: string, rebuilding: boolean): Promise<void> {
+    await this.db
+      .update(schema.coveCursor)
+      .set({ rebuilding })
+      .where(eq(schema.coveCursor.network, network));
+  }
+
   /**
    * Persist one indexed block ATOMICALLY: block record, operations, full state
    * projections, checkpoint and cursor commit in a single DB transaction. A

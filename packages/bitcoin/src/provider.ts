@@ -16,6 +16,13 @@ export interface ChainUtxo {
   scriptPubKeyHex: string;
   valueSats: bigint;
   confirmations: number;
+  /**
+   * For P2TR inputs: the 32-byte UNTWEAKED internal key P (x-only, hex). It is
+   * NOT recoverable from the scriptPubKey (which carries the tweaked output key
+   * Q = P + H_TapTweak(P)·G), so the caller must supply it. Required to build a
+   * P2TR input; the builder throws rather than setting a wrong value.
+   */
+  tapInternalKeyHex?: string;
 }
 
 export interface BlockchainInfo {

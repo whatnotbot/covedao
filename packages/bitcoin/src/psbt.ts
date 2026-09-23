@@ -121,13 +121,28 @@ export function buildUnsignedPsbt(params: BuildTxParams): CovePsbt {
     } else if (isP2TR(script)) {
       hasWitness = true;
       vsize += estimateInputVsize(u.scriptPubKeyHex);
+      // The scriptPubKey carries the TWEAKED output key Q, not the internal key
+      // P. P cannot be recovered from a scriptPubKey, so require the caller to
+      // supply it — never derive a wrong value (S-4).
+      if (!u.tapInternalKeyHex) {
+        throw new Error(
+          `Input ${i} is P2TR but no tapInternalKeyHex was supplied. ` +
+            "The untweaked internal key P cannot be derived from the scriptPubKey.",
+        );
+      }
+      const tapInternalKey = Buffer.from(u.tapInternalKeyHex, "hex");
+      if (tapInternalKey.length !== 32) {
+        throw new Error(`Input ${i} tapInternalKeyHex must be 32 bytes, got ${tapInternalKey.length}.`);
+      }
       psbt.addInput({
         hash: u.txid,
         index: u.vout,
         sequence: 0xfffffffd,
         witnessUtxo: { script, value },
-        tapInternalKey: script.subarray(2),
-        sighashType: bitcoin.Transaction.SIGHASH_ALL,
+        tapInternalKey,
+        // No sighashType field: taproot key-path signing defaults to
+        // SIGHASH_DEFAULT. (SIGHASH_ALL is invalid for taproot, and bip174
+        // cannot store SIGHASH_DEFAULT=0 via addInput — 0 is treated as falsy.)
       });
     } else {
       // Legacy / nested-segwit inputs need nonWitnessUtxo (the full parent tx),

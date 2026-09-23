@@ -138,9 +138,16 @@ describe("buildUnsignedPsbt (relay-safety hardening)", () => {
     expect(() => build({ inputs: [utxo(p2pkh, 100_000n)] })).toThrow(/unsupported script type/);
   });
 
-  it("builds a P2TR input with tapInternalKey", () => {
-    const r = build({ inputs: [utxo(p2trSpk, 1_000_000n)] });
+  it("builds a P2TR input with the caller-supplied internal key", () => {
+    const internalKeyHex = "ab".repeat(32);
+    const r = build({ inputs: [{ ...utxo(p2trSpk, 1_000_000n), tapInternalKeyHex: internalKeyHex }] });
     const psbt = bitcoin.Psbt.fromBase64(r.psbtBase64, { network: bitcoin.networks.testnet });
-    expect(psbt.data.inputs[0]!.tapInternalKey).toBeDefined();
+    // The actual internal key bytes must be what the caller supplied, NOT the
+    // tweaked output key from the scriptPubKey (which differs from P).
+    expect(psbt.data.inputs[0]!.tapInternalKey).toEqual(Buffer.from(internalKeyHex, "hex"));
+  });
+
+  it("rejects a P2TR input without a supplied internal key", () => {
+    expect(() => build({ inputs: [utxo(p2trSpk, 1_000_000n)] })).toThrow(/no tapInternalKeyHex/);
   });
 });

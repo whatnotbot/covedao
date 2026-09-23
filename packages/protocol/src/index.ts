@@ -138,14 +138,16 @@ export {
 export {
   COVE_V1_SIGNET_GENESIS_HEIGHT,
   COVE_V1_MAINNET_GENESIS_HEIGHT,
+  COVE_V1_MAINNET_SETTLEMENT_SCRIPT,
+  COVE_V1_MAINNET_TREASURY_SCRIPT,
   COVE_V1_SIGNET_CONFIG,
   COVE_MUTINYNET_GENESIS_HEIGHT,
   COVE_MUTINYNET_CONFIG,
   COVE_V1_REGTEST_CONFIG,
-  makeCoveMainnetConfig,
+  COVE_V1_MAINNET_CONFIG,
+  isCoveMainnetActivated,
   configDomain,
   type CoveConfig,
-  type CoveMainnetConfigParams,
 } from "./cove/config.js";
 export {
   createCoveState,

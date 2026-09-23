@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
 
+import { spawn } from "node:child_process";
 import {
   CoreRpcProvider,
   LocalP2WPKHSigner,
@@ -40,6 +41,8 @@ const CFG = COVE_V1_REGTEST_CONFIG;
 const RPC_URL = process.env.COVE_REGTEST_RPC_URL ?? "http://127.0.0.1:18443";
 const RPC_USER = process.env.COVE_REGTEST_RPC_USER ?? "user";
 const RPC_PASSWORD = process.env.COVE_REGTEST_RPC_PASSWORD ?? "pass";
+const DATADIR = process.env.COVE_REGTEST_DATADIR ?? "/tmp/btc-regtest";
+const RPC_PORT = process.env.COVE_REGTEST_RPC_PORT ?? "18443";
 const MINT_AMOUNT_ATOMS = 2_000_000n * 100_000_000n;
 const TRANSFER_AMOUNT_ATOMS = 500_000n * 100_000_000n;
 const RECIPIENT_SCRIPT = "0014" + "ab".repeat(20); // valid P2WPKH (throwaway)
@@ -125,6 +128,47 @@ async function waitForRpc(rpc: RegtestRpc): Promise<void> {
     }
   }
   throw new Error("bitcoind RPC never became ready");
+}
+
+function bitcoindArgs(): string[] {
+  return [
+    "-regtest",
+    "-daemonwait",
+    "-server=1",
+    `-rpcuser=${RPC_USER}`,
+    `-rpcpassword=${RPC_PASSWORD}`,
+    `-rpcport=${RPC_PORT}`,
+    "-fallbackfee=0.0002",
+    `-datadir=${DATADIR}`,
+    "-txindex=1",
+    "-deprecatedrpc=create_bdb",
+    // Do NOT persist/load the mempool across restarts. This is what lets the
+    // reorg test drop the orphaned TRANSFER instead of re-mining it.
+    "-persistmempool=0",
+  ];
+}
+
+/** Gracefully stop bitcoind and restart it with an EMPTY mempool. */
+async function stopAndRestartBitcoind(rpc: RegtestRpc): Promise<void> {
+  try {
+    await rpc.call("stop");
+  } catch {
+    /* the RPC connection may drop before the response is fully read */
+  }
+  for (let i = 0; i < 60; i++) {
+    try {
+      await rpc.getBlockchainInfo();
+      await new Promise((r) => setTimeout(r, 1_000));
+    } catch {
+      break; // down
+    }
+  }
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("bitcoind", bitcoindArgs(), { stdio: "ignore" });
+    child.on("error", reject);
+    child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`bitcoind exited with code ${code}`))));
+  });
+  await waitForRpc(rpc);
 }
 
 /** Decode a block's txs, resolving Cove actor prevouts from the full node. */
@@ -268,15 +312,14 @@ async function main(): Promise<void> {
   assert(restarted.getStateRoot() === liveRoot, `restart root ${restarted.getStateRoot()} != live root ${liveRoot}`);
   console.log(`✓ restart reconstruction == live root ${liveRoot}`);
 
-  // ── Reorg: invalidate TRANSFER block, mine competing branch ──
+  // ── Reorg: invalidate TRANSFER block, restart bitcoind (empty mempool), mine
+  //    a competing branch that does NOT re-mine the orphaned TRANSFER ──
   const transferBlockHash = await provider.getBlockHash(tip);
   await rpc.invalidateBlock(transferBlockHash);
-  // Mine the competing branch to a DIFFERENT coinbase address (walletAddress),
-  // so the replacement block is not byte-identical to the invalidated one
-  // (identical content → same hash → "AcceptBlock FAILED (duplicate)").
+  await stopAndRestartBitcoind(rpc); // clears mempool (persistmempool=0)
   await rpc.generateToAddress(2, walletAddress);
   const newTip = await provider.getBestHeight();
-  console.log(`✓ reorg: invalidated ${transferBlockHash.slice(0, 8)}; new tip=${newTip}`);
+  console.log(`✓ reorg: invalidated ${transferBlockHash.slice(0, 8)}; competing branch; new tip=${newTip}`);
 
   // ── Worker recovery: cursor hash mismatch → clear + rebuild ──
   const stored = await store.getCursor(CFG.network);
@@ -300,9 +343,23 @@ async function main(): Promise<void> {
   const events = recovered.getEvents().filter((e) => e.classification === "VALID");
   assert(events.some((e) => e.operation === "DEPLOY" && e.txid === deployTxid), "DEPLOY not in recovered state");
   assert(events.some((e) => e.operation === "MINT" && e.txid === mintTxid), "MINT not in recovered state");
-  assert(events.some((e) => e.operation === "TRANSFER" && e.txid === transferTxid), "TRANSFER not in recovered state");
+  assert(!events.some((e) => e.operation === "TRANSFER"), "orphaned TRANSFER must NOT be in recovered state");
 
-  console.log("REGTEST REORG LIFECYCLE PASSED: recovered root == clean replay root");
+  const state = recovered.getState();
+  const dep = state.tickerIndex.get("FROG");
+  if (!dep) throw new Error("FROG ticker not deployed");
+  const token = state.tokens.get(dep)!;
+  assert(token.confirmedSupplyAtoms === MINT_AMOUNT_ATOMS, `supply ${token.confirmedSupplyAtoms} != ${MINT_AMOUNT_ATOMS} atoms (2,000,000 tokens)`);
+  const aBal = state.balances.get(actorScript)?.get(dep)?.availableAtoms ?? 0n;
+  assert(aBal === MINT_AMOUNT_ATOMS, `A balance ${aBal} != ${MINT_AMOUNT_ATOMS} atoms (2,000,000 tokens)`);
+  const bBal = state.balances.get(RECIPIENT_SCRIPT)?.get(dep)?.availableAtoms ?? 0n;
+  assert(bBal === 0n, `B balance ${bBal} != 0`);
+
+  console.log(`  supply (tokens) ${token.confirmedSupplyAtoms / 100_000_000n}`);
+  console.log(`  A balance      ${aBal / 100_000_000n}`);
+  console.log(`  B balance      ${bBal / 100_000_000n}`);
+
+  console.log("REGTEST REORG LIFECYCLE PASSED: orphaned TRANSFER dropped; recovered root == clean replay root");
   process.exit(0);
 }
 

@@ -67,7 +67,7 @@ jobs:
           bitcoind -regtest -daemonwait \
             -server=1 -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
             -rpcport=18443 -fallbackfee=0.0002 -datadir=/tmp/btc-regtest \
-            -txindex=1 -deprecatedrpc=create_bdb -debug=validation
+            -txindex=1 -deprecatedrpc=create_bdb -debug=validation -persistmempool=0
           for i in $(seq 1 60); do
             bitcoin-cli -regtest -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
               -rpcport=18443 getblockchaininfo >/dev/null 2>&1 && break

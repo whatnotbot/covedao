@@ -1,35 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { makeCoveMainnetConfig } from "./config.js";
+import {
+  COVE_V1_MAINNET_CONFIG,
+  COVE_V1_MAINNET_GENESIS_HEIGHT,
+  COVE_V1_MAINNET_SETTLEMENT_SCRIPT,
+  COVE_V1_MAINNET_TREASURY_SCRIPT,
+  isCoveMainnetActivated,
+} from "./config.js";
 
-describe("makeCoveMainnetConfig (no usable mainnet config without activation values)", () => {
-  const scripts = {
-    settlementScript: "0014" + "11".repeat(20),
-    treasuryScript: "0014" + "22".repeat(20),
-  };
-
-  it("builds a valid mainnet config with a future activation height + scripts", () => {
-    const cfg = makeCoveMainnetConfig({ genesisHeight: 850_000, ...scripts });
-    expect(cfg.network).toBe("mainnet");
-    expect(cfg.genesisHeight).toBe(850_000);
-    expect(cfg.settlementScript).toBe(scripts.settlementScript);
-    expect(cfg.treasuryScript).toBe(scripts.treasuryScript);
+describe("COVE_V1_MAINNET_CONFIG (immutable literal consensus constants)", () => {
+  it("is a literal constant, not env-defined", () => {
+    // The committed config must reference the literal constants directly.
+    expect(COVE_V1_MAINNET_CONFIG.genesisHeight).toBe(COVE_V1_MAINNET_GENESIS_HEIGHT);
+    expect(COVE_V1_MAINNET_CONFIG.settlementScript).toBe(COVE_V1_MAINNET_SETTLEMENT_SCRIPT);
+    expect(COVE_V1_MAINNET_CONFIG.treasuryScript).toBe(COVE_V1_MAINNET_TREASURY_SCRIPT);
+    expect(COVE_V1_MAINNET_CONFIG.network).toBe("mainnet");
   });
 
-  it("rejects a non-positive activation height (no -1 sentinel)", () => {
-    expect(() => makeCoveMainnetConfig({ genesisHeight: -1, ...scripts })).toThrow(/>= 1/);
-    expect(() => makeCoveMainnetConfig({ genesisHeight: 0, ...scripts })).toThrow(/>= 1/);
+  it("is NOT activated until the owner commits a future H and both scripts", () => {
+    expect(COVE_V1_MAINNET_GENESIS_HEIGHT).toBe(0);
+    expect(isCoveMainnetActivated(COVE_V1_MAINNET_CONFIG)).toBe(false);
   });
 
-  it("rejects a non-integer activation height", () => {
-    expect(() => makeCoveMainnetConfig({ genesisHeight: 1.5, ...scripts })).toThrow(/>= 1/);
-  });
-
-  it("rejects empty scripts", () => {
-    expect(() => makeCoveMainnetConfig({ genesisHeight: 850_000, settlementScript: "", treasuryScript: scripts.treasuryScript })).toThrow(/settlementScript/);
-    expect(() => makeCoveMainnetConfig({ genesisHeight: 850_000, settlementScript: scripts.settlementScript, treasuryScript: "" })).toThrow(/treasuryScript/);
-  });
-
-  it("rejects non-hex scripts", () => {
-    expect(() => makeCoveMainnetConfig({ genesisHeight: 850_000, settlementScript: "zz", treasuryScript: scripts.treasuryScript })).toThrow(/settlementScript/);
+  it("reports activated only when H >= 1 and both scripts are non-empty", () => {
+    expect(isCoveMainnetActivated({ ...COVE_V1_MAINNET_CONFIG, genesisHeight: 1, settlementScript: "0014", treasuryScript: "0014" })).toBe(true);
+    expect(isCoveMainnetActivated({ ...COVE_V1_MAINNET_CONFIG, genesisHeight: 0, settlementScript: "0014", treasuryScript: "0014" })).toBe(false);
+    expect(isCoveMainnetActivated({ ...COVE_V1_MAINNET_CONFIG, genesisHeight: 1, settlementScript: "", treasuryScript: "0014" })).toBe(false);
+    expect(isCoveMainnetActivated({ ...COVE_V1_MAINNET_CONFIG, genesisHeight: 1, settlementScript: "0014", treasuryScript: "" })).toBe(false);
   });
 });

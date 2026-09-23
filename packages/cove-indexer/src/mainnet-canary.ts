@@ -14,12 +14,13 @@ import {
   type ChainUtxo,
 } from "@crclaunch/bitcoin";
 import {
+  COVE_V1_MAINNET_CONFIG,
   buildCoveDeployPsbt,
   buildCoveMintPsbt,
   buildCoveTransferPsbt,
   decodeCoveEnvelope,
   isCoveMagic,
-  makeCoveMainnetConfig,
+  isCoveMainnetActivated,
   toCoveTransaction,
   validateCoveOperation,
   type CoveConfig,
@@ -36,13 +37,14 @@ import { decodeMainnetCustodyAddress } from "./mainnet-custody.js";
  * This tool NEVER holds a mainnet private key. For each step it exports an
  * unsigned PSBT, the owner signs it OUTSIDE this process, and the signed
  * transaction is imported back for validation + (under `--confirm-mainnet`)
- * broadcast. A WIF-free manifest makes the whole lifecycle resumable by local
- * txid, so a lost RPC response can never cause a double spend.
+ * broadcast. A WIF-free manifest makes the lifecycle resumable by local txid:
+ * the locally-derived txid and the signed raw tx are persisted BEFORE any
+ * broadcast, so a lost RPC response can never cause a double spend or a
+ * silently reconstructed replacement.
  *
- * Activation (item 3): the mainnet activation height H MUST be chosen as a
- * FUTURE Bitcoin block height and committed (COVE_V1_MAINNET_GENESIS_HEIGHT)
- * BEFORE the first mainnet Cove transaction. This tool refuses to run until H
- * is set and the chain tip has reached H.
+ * Consensus config (H, treasuryScript, settlementScript) is the committed
+ * literal COVE_V1_MAINNET_CONFIG — runtime env may only VERIFY against it,
+ * never define it.
  */
 
 const ESPLORA = process.env.COVE_MAINNET_ESPLORA_URL || "https://blockstream.info/api";
@@ -72,6 +74,11 @@ interface CanaryStep {
   expectedTxid?: string;
   feeSats?: string;
   vsize?: number;
+  /** Locally-derived txid, persisted BEFORE broadcast (resume anchor). */
+  broadcastTxid?: string;
+  /** Signed raw tx hex, persisted BEFORE broadcast (re-broadcast same tx only). */
+  signedHex?: string;
+  /** Set only after the tx is confirmed + indexed. */
   txid?: string;
   height?: number;
   blockHash?: string;
@@ -119,20 +126,14 @@ function stepOf(manifest: CanaryManifest, action: Exclude<CanaryAction, "DONE">)
 /** Pure decision-driven resume, mirroring the signet/mutinynet proofs. */
 function decideNextCanaryAction(state: CoveState, manifest: CanaryManifest): CanaryAction {
   const dep = state.tickerIndex.get(manifest.ticker);
-  if (dep === undefined) {
-    return "DEPLOY"; // ticker not yet deployed (or deploy not yet replayed)
-  }
+  if (dep === undefined) return "DEPLOY";
   const token = state.tokens.get(dep)!;
-  if (token.confirmedSupplyAtoms < MINT_AMOUNT_ATOMS) {
-    return "MINT";
-  }
+  if (token.confirmedSupplyAtoms < MINT_AMOUNT_ATOMS) return "MINT";
   const actorScript = bitcoin.address.toOutputScript(manifest.actorAddress, bitcoin.networks.bitcoin).toString("hex");
   const recipientScript = bitcoin.address.toOutputScript(manifest.recipientAddress, bitcoin.networks.bitcoin).toString("hex");
   const aBal = state.balances.get(actorScript)?.get(dep)?.availableAtoms ?? 0n;
   const bBal = state.balances.get(recipientScript)?.get(dep)?.availableAtoms ?? 0n;
-  if (aBal === MINT_AMOUNT_ATOMS - TRANSFER_AMOUNT_ATOMS && bBal === TRANSFER_AMOUNT_ATOMS) {
-    return "DONE";
-  }
+  if (aBal === MINT_AMOUNT_ATOMS - TRANSFER_AMOUNT_ATOMS && bBal === TRANSFER_AMOUNT_ATOMS) return "DONE";
   return "TRANSFER";
 }
 
@@ -278,51 +279,120 @@ async function indexBlock(provider: EsploraChainProvider, indexer: CoveIndexer, 
   indexer.processBlock(height, txs);
 }
 
+type Resolution = { kind: "CONFIRMED"; height: number } | { kind: "MEMPOOL" } | { kind: "LOST" };
+
+/** Resolve a recorded-but-unconfirmed tx's status without mutating anything. */
+async function resolveRecorded(provider: EsploraChainProvider, txid: string): Promise<Resolution> {
+  const st = await provider.getTxStatus(txid);
+  if (st?.confirmed && st.blockHeight !== undefined && st.blockHash) {
+    return { kind: "CONFIRMED", height: st.blockHeight };
+  }
+  if (st && !st.confirmed) return { kind: "MEMPOOL" };
+  return { kind: "LOST" };
+}
+
+/** Broadcast the SAME signed tx (never a replacement), wait for confirm, index + record. */
+async function broadcastAndConfirm(
+  action: Exclude<CanaryAction, "DONE">,
+  signedHex: string,
+  manifest: CanaryManifest,
+  cfg: CoveConfig,
+  indexer: CoveIndexer,
+  indexedHeight: number,
+): Promise<number> {
+  const provider = new EsploraChainProvider(ESPLORA, "mainnet");
+  const step = stepOf(manifest, action);
+  const txid = localTxid(signedHex);
+  assert(broadcastTxidMatches(step, txid), `signed tx ${txid} does not match the recorded ${action} txid ${step.broadcastTxid ?? step.expectedTxid}.`);
+
+  // Persist txid + signed raw tx BEFORE any broadcast (resume anchor).
+  step.broadcastTxid = txid;
+  step.signedHex = signedHex;
+  saveManifest(manifest);
+
+  const broadcastTxid = await provider.broadcastTransaction(signedHex);
+  assert(broadcastTxid === txid, `broadcast returned ${broadcastTxid}, expected ${txid}`);
+  console.log(`✓ broadcast ${txid}`);
+
+  const conf = await waitConfirmation(provider, txid);
+  for (let h = indexedHeight + 1; h <= conf.height; h++) {
+    await indexBlock(provider, indexer, h, await provider.getBlockHash(h));
+  }
+  const ev = indexer.getEvents().find((e) => e.txid === txid);
+  assert(ev !== undefined && ev.classification === "VALID" && ev.valid && ev.operation === action, `event ${txid} not VALID ${action}: ${ev?.classification} ${ev?.reason}`);
+
+  step.txid = txid;
+  step.height = conf.height;
+  step.blockHash = conf.hash;
+  step.stateRoot = indexer.getStateRoot();
+  saveManifest(manifest);
+  console.log(`✓ ${action} ${txid} @ ${conf.height} tx=${conf.txIndex} root=${step.stateRoot}`);
+  return conf.height;
+}
+
+function broadcastTxidMatches(step: CanaryStep, txid: string): boolean {
+  if (step.broadcastTxid) return step.broadcastTxid === txid;
+  if (step.expectedTxid) return step.expectedTxid === txid;
+  return true;
+}
+
 async function main(): Promise<void> {
   const confirmMainnet = process.argv.includes("--confirm-mainnet");
+
+  // Committed consensus config — env never defines it.
+  const cfg: CoveConfig = COVE_V1_MAINNET_CONFIG;
+  assert(isCoveMainnetActivated(cfg), "Cove mainnet is NOT activated. Commit COVE_V1_MAINNET_CONFIG with a future H + treasury/settlement scripts before running the canary.");
+  const H = cfg.genesisHeight;
+
   const ticker = (optionalEnv("COVE_MAINNET_CANARY_TICKER") ?? "COVE").toUpperCase();
   assert(/^[A-Z0-9]{4}$/.test(ticker), `ticker must match [A-Z0-9]{4}, got "${ticker}"`);
 
+  // Env VERIFIES the committed custody scripts (never defines them).
   const treasury = decodeMainnetCustodyAddress(requireEnv("COVE_MAINNET_TREASURY_ADDRESS"));
   const settlement = decodeMainnetCustodyAddress(requireEnv("COVE_MAINNET_SETTLEMENT_ADDRESS"));
+  assert(treasury.scriptPubKeyHex === cfg.treasuryScript, "COVE_MAINNET_TREASURY_ADDRESS does not match committed COVE_V1_MAINNET_CONFIG.treasuryScript");
+  assert(settlement.scriptPubKeyHex === cfg.settlementScript, "COVE_MAINNET_SETTLEMENT_ADDRESS does not match committed COVE_V1_MAINNET_CONFIG.settlementScript");
+  const envH = optionalEnv("COVE_V1_MAINNET_GENESIS_HEIGHT");
+  if (envH) {
+    assert(/^\d+$/.test(envH) && Number.parseInt(envH, 10) === H, "COVE_V1_MAINNET_GENESIS_HEIGHT (if set) must equal committed COVE_V1_MAINNET_CONFIG.genesisHeight");
+  }
+
   const actorAddress = requireEnv("COVE_MAINNET_ACTOR_ADDRESS");
   const recipientAddress = requireEnv("COVE_MAINNET_RECIPIENT_ADDRESS");
   const actorScript = bitcoin.address.toOutputScript(actorAddress, bitcoin.networks.bitcoin).toString("hex");
   const recipientScript = bitcoin.address.toOutputScript(recipientAddress, bitcoin.networks.bitcoin).toString("hex");
 
-  // Activation height H must already be committed as a FUTURE height.
-  const hRaw = optionalEnv("COVE_V1_MAINNET_GENESIS_HEIGHT");
-  assert(!!hRaw && /^\d+$/.test(hRaw), "COVE_V1_MAINNET_GENESIS_HEIGHT (future activation height H) is required and must be a positive integer.");
-  const H = Number.parseInt(hRaw!, 10);
-  assert(H >= 1, "activation height H must be >= 1");
-
-  const cfg = makeCoveMainnetConfig({ genesisHeight: H, settlementScript: settlement.scriptPubKeyHex, treasuryScript: treasury.scriptPubKeyHex });
-
-  const provider = new EsploraChainProvider(ESPLORA, "mainnet");
-
-  const tip = await provider.getBestHeight();
-  assert(tip >= H, `chain tip ${tip} is below activation height ${H}. Wait for H before running the canary.`);
-
   console.log(`✓ treasury   ${treasury.address} (${treasury.type})`);
   console.log(`✓ settlement ${settlement.address} (${settlement.type})`);
   console.log(`✓ actor      ${actorAddress}`);
   console.log(`✓ recipient  ${recipientAddress}`);
-  console.log(`✓ activation height H=${H} (committed BEFORE canary; tip=${tip})`);
+  console.log(`✓ activation H=${H} (committed literal; env may only verify)`);
 
+  // Load + VALIDATE an existing manifest (reject mismatches, never overwrite).
   const loaded = loadManifest();
-  const manifest: CanaryManifest = loaded
-    ? { ...loaded, ticker, activationHeight: H, treasuryAddress: treasury.address, settlementAddress: settlement.address, actorAddress, recipientAddress }
-    : {
-        protocol: "cove-mainnet-canary",
-        network: "mainnet",
-        ticker,
-        activationHeight: H,
-        treasuryAddress: treasury.address,
-        settlementAddress: settlement.address,
-        actorAddress,
-        recipientAddress,
-      };
+  if (loaded) {
+    assert(loaded.ticker === ticker, `manifest ticker ${loaded.ticker} != env ticker ${ticker} (refusing to overwrite)`);
+    assert(loaded.activationHeight === H, `manifest activationHeight ${loaded.activationHeight} != committed H ${H} (refusing to overwrite)`);
+    assert(loaded.treasuryAddress === treasury.address, "manifest treasuryAddress != committed treasury (refusing to overwrite)");
+    assert(loaded.settlementAddress === settlement.address, "manifest settlementAddress != committed settlement (refusing to overwrite)");
+    assert(loaded.actorAddress === actorAddress, "manifest actorAddress != env actor (refusing to overwrite)");
+    assert(loaded.recipientAddress === recipientAddress, "manifest recipientAddress != env recipient (refusing to overwrite)");
+  }
+  const manifest: CanaryManifest = loaded ?? {
+    protocol: "cove-mainnet-canary",
+    network: "mainnet",
+    ticker,
+    activationHeight: H,
+    treasuryAddress: treasury.address,
+    settlementAddress: settlement.address,
+    actorAddress,
+    recipientAddress,
+  };
   saveManifest(manifest);
+
+  const provider = new EsploraChainProvider(ESPLORA, "mainnet");
+  const tip = await provider.getBestHeight();
+  assert(tip >= H, `chain tip ${tip} is below activation height ${H}. Wait for H before running the canary.`);
 
   // Canonical replay from H → tip (this IS the "restart" reconstruction).
   const indexer = new CoveIndexer(cfg);
@@ -333,21 +403,92 @@ async function main(): Promise<void> {
   }
   console.log(`✓ replayed canonical state ${H} → ${tip}`);
 
-  const action = decideNextCanaryAction(indexer.getState(), manifest);
+  for (;;) {
+    const action = decideNextCanaryAction(indexer.getState(), manifest);
+    if (action === "DONE") {
+      await finalize(provider, manifest, indexer, cfg, indexedHeight);
+      return;
+    }
 
-  if (action === "DONE") {
-    await finalize(provider, manifest, indexer, cfg, indexedHeight);
-    return;
+    const step = stepOf(manifest, action);
+
+    // Resolve a recorded-but-unconfirmed tx BEFORE doing anything else. Never
+    // construct a replacement while a recorded step is unresolved.
+    if (step.broadcastTxid && !step.txid) {
+      const r = await resolveRecorded(provider, step.broadcastTxid);
+      if (r.kind === "CONFIRMED") {
+        for (let h = indexedHeight + 1; h <= r.height; h++) {
+          await indexBlock(provider, indexer, h, await provider.getBlockHash(h));
+        }
+        const ev = indexer.getEvents().find((e) => e.txid === step.broadcastTxid);
+        assert(ev !== undefined && ev.classification === "VALID" && ev.valid && ev.operation === action, `recorded ${action} ${step.broadcastTxid} not VALID after indexing: ${ev?.classification} ${ev?.reason}`);
+        step.txid = step.broadcastTxid;
+        step.height = r.height;
+        step.stateRoot = indexer.getStateRoot();
+        saveManifest(manifest);
+        indexedHeight = Math.max(indexedHeight, r.height);
+        console.log(`✓ resolved recorded ${action} ${step.broadcastTxid} as confirmed @ ${r.height}`);
+        continue; // re-decide
+      }
+      if (r.kind === "MEMPOOL") {
+        console.log(`recorded ${action} ${step.broadcastTxid} is in the mempool (unconfirmed). Awaiting confirmation — NOT constructing a replacement.`);
+        process.exit(0);
+      }
+      // LOST: never construct a replacement. Re-broadcast the SAME signed tx only.
+      if (confirmMainnet && step.signedHex) {
+        console.log(`recorded ${action} ${step.broadcastTxid} is not in mempool/chain. Re-broadcasting the SAME signed tx (never a replacement).`);
+        indexedHeight = await broadcastAndConfirm(action, step.signedHex, manifest, cfg, indexer, indexedHeight);
+        continue; // re-decide
+      }
+      console.log(`recorded ${action} ${step.broadcastTxid} is not in mempool/chain. Re-run with --confirm-mainnet to re-broadcast the SAME tx; refusing to construct a replacement.`);
+      process.exit(0);
+    }
+
+    const signedHex = readSignedHex();
+    if (!signedHex) {
+      await buildAndExport(action, manifest, cfg, actorScript, recipientScript);
+      return;
+    }
+
+    // Import + validate + (persist before broadcast) + (broadcast under --confirm-mainnet).
+    const txid = localTxid(signedHex);
+    if (step.broadcastTxid && step.broadcastTxid !== txid) {
+      throw new Error(`provided signed tx ${txid} does not match recorded ${action} txid ${step.broadcastTxid}.`);
+    }
+
+    const tx = await resolveSignedTxInputs(provider, signedHex);
+    const v = validateCanary(cfg, indexer.getState(), tx, action);
+    assert(v.ok, `Cove ${action} validation failed: ${v.reason}`);
+    const fee = computeFee(tx, signedHex);
+    assert(fee.feeSats <= cfg.maxMinerFeeSats, `fee ${fee.feeSats} exceeds max ${cfg.maxMinerFeeSats}`);
+    assert(!feeRateExceedsCap(fee.feeSats, fee.vsize, cfg.maxFeeRateSatVb), `fee rate exceeds max ${cfg.maxFeeRateSatVb} sat/vB`);
+    console.log(`✓ imported + decoded signed ${action} tx`);
+    console.log(`  txid     ${txid}`);
+    console.log(`  fee      ${fee.feeSats} sats (${fee.vsize} vB, ${fee.feeRate} sat/vB)`);
+
+    // Core RPC testmempoolaccept — REQUIRED to broadcast under --confirm-mainnet.
+    if (RPC_URL) {
+      const rpc = new CoreRpcProvider({ url: RPC_URL, maxFeeRateSatVb: cfg.maxFeeRateSatVb });
+      const info = await rpc.getBlockchainInfo();
+      assert(info.chain === "main", `RPC chain is ${info.chain}, expected main`);
+      const pre = await rpc.testMempoolAccept(signedHex, cfg.maxFeeRateSatVb);
+      assert(pre.allowed, `testmempoolaccept rejected: ${pre.rejectReason ?? "unknown"}`);
+      console.log(`✓ testmempoolaccept allowed (chain=${info.chain}, tip=${info.blocks})`);
+    } else if (confirmMainnet) {
+      throw new Error("--confirm-mainnet requires COVE_MAINNET_RPC_URL (Bitcoin Core mainnet RPC) and a successful testmempoolaccept. Broadcasting is forbidden without Core.");
+    } else {
+      console.log("⚠ no COVE_MAINNET_RPC_URL set — skipped testmempoolaccept (broadcast is disabled without --confirm-mainnet).");
+    }
+
+    if (!confirmMainnet) {
+      console.log();
+      console.log(`SUMMARY: ${action} is signed, decoded, prevouts resolved, pure-validated, and fee-checked.`);
+      console.log("No broadcast occurred. Re-run with --confirm-mainnet to broadcast + confirm.");
+      process.exit(0);
+    }
+
+    indexedHeight = await broadcastAndConfirm(action, signedHex, manifest, cfg, indexer, indexedHeight);
   }
-
-  const signedHex = readSignedHex();
-  if (!signedHex) {
-    await buildAndExport(action, manifest, cfg, actorScript, recipientScript);
-    return;
-  }
-
-  // Import + validate (+ broadcast under --confirm-mainnet).
-  await importAndBroadcast(action, signedHex, manifest, cfg, indexer, indexedHeight, confirmMainnet);
 }
 
 async function buildAndExport(action: Exclude<CanaryAction, "DONE">, manifest: CanaryManifest, cfg: CoveConfig, actorScript: string, recipientScript: string): Promise<void> {
@@ -387,82 +528,6 @@ async function buildAndExport(action: Exclude<CanaryAction, "DONE">, manifest: C
   process.exit(0);
 }
 
-async function importAndBroadcast(
-  action: Exclude<CanaryAction, "DONE">,
-  signedHex: string,
-  manifest: CanaryManifest,
-  cfg: CoveConfig,
-  indexer: CoveIndexer,
-  indexedHeight: number,
-  confirmMainnet: boolean,
-): Promise<void> {
-  const provider = new EsploraChainProvider(ESPLORA, "mainnet");
-
-  const step = stepOf(manifest, action);
-  const txid = localTxid(signedHex);
-  if (step.expectedTxid && step.expectedTxid !== txid) {
-    throw new Error(`signed tx ${txid} does not match the exported ${action} txid ${step.expectedTxid}.`);
-  }
-
-  const tx = await resolveSignedTxInputs(provider, signedHex);
-  const v = validateCanary(cfg, indexer.getState(), tx, action);
-  assert(v.ok, `Cove ${action} validation failed: ${v.reason}`);
-
-  const fee = computeFee(tx, signedHex);
-  assert(fee.feeSats <= cfg.maxMinerFeeSats, `fee ${fee.feeSats} exceeds max ${cfg.maxMinerFeeSats}`);
-  assert(!feeRateExceedsCap(fee.feeSats, fee.vsize, cfg.maxFeeRateSatVb), `fee rate exceeds max ${cfg.maxFeeRateSatVb} sat/vB`);
-
-  console.log(`✓ imported + decoded signed ${action} tx`);
-  console.log(`  txid     ${txid}`);
-  console.log(`  fee      ${fee.feeSats} sats (${fee.vsize} vB, ${fee.feeRate} sat/vB)`);
-
-  if (RPC_URL) {
-    const rpc = new CoreRpcProvider({ url: RPC_URL, maxFeeRateSatVb: cfg.maxFeeRateSatVb });
-    const info = await rpc.getBlockchainInfo();
-    assert(info.chain === "main", `RPC chain is ${info.chain}, expected main`);
-    const pre = await rpc.testMempoolAccept(signedHex, cfg.maxFeeRateSatVb);
-    assert(pre.allowed, `testmempoolaccept rejected: ${pre.rejectReason ?? "unknown"}`);
-    console.log(`✓ testmempoolaccept allowed (chain=${info.chain}, tip=${info.blocks})`);
-  } else {
-    console.log("⚠ no COVE_MAINNET_RPC_URL set — skipped testmempoolaccept (node-side policy check).");
-  }
-
-  if (!confirmMainnet) {
-    console.log();
-    console.log(`SUMMARY: ${action} is signed, decoded, prevouts resolved, pure-validated, and fee-checked.`);
-    console.log("No broadcast occurred. Re-run with --confirm-mainnet to broadcast + confirm.");
-    process.exit(0);
-  }
-
-  const broadcastTxid = await provider.broadcastTransaction(signedHex);
-  assert(broadcastTxid === txid, `broadcast returned ${broadcastTxid}, expected ${txid}`);
-  console.log(`✓ broadcast ${txid}`);
-
-  const conf = await waitConfirmation(provider, txid);
-  // Catch the indexer up to the confirmation block and assert the event.
-  for (let h = indexedHeight + 1; h <= conf.height; h++) {
-    await indexBlock(provider, indexer, h, await provider.getBlockHash(h));
-  }
-  const ev = indexer.getEvents().find((e) => e.txid === txid);
-  assert(ev !== undefined && ev.classification === "VALID" && ev.valid && ev.operation === action, `event ${txid} not VALID ${action}: ${ev?.classification} ${ev?.reason}`);
-
-  step.txid = txid;
-  step.height = conf.height;
-  step.blockHash = conf.hash;
-  step.stateRoot = indexer.getStateRoot();
-  saveManifest(manifest);
-  console.log(`✓ ${action} ${txid} @ ${conf.height} tx=${conf.txIndex} root=${step.stateRoot}`);
-
-  // If this was the final step, finalize; otherwise build+export the next step.
-  const next = decideNextCanaryAction(indexer.getState(), manifest);
-  if (next === "DONE") {
-    await finalize(provider, manifest, indexer, cfg, conf.height);
-  } else {
-    console.log(`\nNext step: ${next}. Building its unsigned PSBT for external signing…`);
-    await buildAndExport(next, manifest, cfg, bitcoin.address.toOutputScript(manifest.actorAddress, bitcoin.networks.bitcoin).toString("hex"), bitcoin.address.toOutputScript(manifest.recipientAddress, bitcoin.networks.bitcoin).toString("hex"));
-  }
-}
-
 async function finalize(provider: EsploraChainProvider, manifest: CanaryManifest, indexer: CoveIndexer, cfg: CoveConfig, indexedHeight: number): Promise<void> {
   const liveRoot = indexer.getStateRoot();
   const clean = new CoveIndexer(cfg);
@@ -487,14 +552,14 @@ async function finalize(provider: EsploraChainProvider, manifest: CanaryManifest
   console.log(`  TRANSFER ${manifest.transfer?.txid ?? "?"}`);
   console.log(`  rootsEqual ${manifest.rootsEqual}`);
   console.log();
-  console.log("To activate OWNER_CANARY (public writes still closed), set in .env:");
-  console.log(`  COVE_V1_MAINNET_GENESIS_HEIGHT=${manifest.activationHeight}`);
+  console.log("To activate OWNER_CANARY (public writes still closed), commit the canary proof in .env:");
   console.log(`  COVE_V1_MAINNET_CANARY_DEPLOY_TXID=${manifest.deploy?.txid ?? ""}`);
   console.log(`  COVE_V1_MAINNET_CANARY_MINT_TXID=${manifest.mint?.txid ?? ""}`);
   console.log(`  COVE_V1_MAINNET_CANARY_TRANSFER_TXID=${manifest.transfer?.txid ?? ""}`);
   console.log(`  COVE_V1_MAINNET_CANARY_STATE_ROOT=${liveRoot}`);
   console.log(`  COVE_V1_MAINNET_CANARY_REPLAY_ROOT=${replayRoot}`);
   console.log(`  COVE_MAINNET_ENABLED=true`);
+  console.log("(COVE_V1_MAINNET_GENESIS_HEIGHT is the committed literal COVE_V1_MAINNET_CONFIG.genesisHeight; env only verifies it.)");
   console.log("Only after the FULL canary proof is recorded may you enable COVE_DEPLOY/MINT/TRANSFER_MAINNET_ENABLED.");
   process.exit(0);
 }

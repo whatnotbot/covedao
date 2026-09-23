@@ -76,8 +76,16 @@ class RegtestRpc {
     }
   }
 
-  async importPrivKey(wif: string, label: string): Promise<void> {
-    await this.call("importprivkey", [wif, label, false]);
+  async importAddress(address: string, label: string): Promise<void> {
+    await this.call("importaddress", [address, label, false]);
+  }
+
+  async getNewAddress(): Promise<string> {
+    return this.call<string>("getnewaddress");
+  }
+
+  async sendToAddress(address: string, amountBtc: number): Promise<string> {
+    return this.call<string>("sendtoaddress", [address, amountBtc]);
   }
 
   async generateToAddress(n: number, address: string): Promise<string[]> {
@@ -199,9 +207,12 @@ async function main(): Promise<void> {
   const actorScript = bitcoin.address.toOutputScript(actorAddress, bitcoin.networks.regtest).toString("hex");
 
   await rpc.createWallet("cove");
-  await rpc.importPrivKey(signerA.toWIF(), "canary-actor");
-  await rpc.generateToAddress(101, actorAddress);
-  console.log("✓ funded actor (101 regtest blocks)");
+  const walletAddress = await rpc.getNewAddress();
+  await rpc.generateToAddress(101, walletAddress); // mature coinbase funds the wallet
+  await rpc.importAddress(actorAddress, "canary-actor"); // watch-only discovery (no key into bitcoind)
+  await rpc.sendToAddress(actorAddress, 5.0); // actor gets a normal (non-coinbase) 5 BTC UTXO
+  await rpc.generateToAddress(1, walletAddress); // confirm the funding tx
+  console.log("✓ funded actor (5 BTC, confirmed)");
 
   const broadcastAndMine = async (hex: string): Promise<string> => {
     const txid = await provider.broadcastTransaction(hex);

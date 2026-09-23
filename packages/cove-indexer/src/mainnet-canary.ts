@@ -120,7 +120,7 @@ function stepOf(manifest: CanaryManifest, action: Exclude<CanaryAction, "DONE">)
 function decideNextCanaryAction(state: CoveState, manifest: CanaryManifest): CanaryAction {
   const dep = state.tickerIndex.get(manifest.ticker);
   if (dep === undefined) {
-    return manifest.deploy?.txid ? "DEPLOY" : "DEPLOY"; // DEPLOY still pending confirm/resolve
+    return "DEPLOY"; // ticker not yet deployed (or deploy not yet replayed)
   }
   const token = state.tokens.get(dep)!;
   if (token.confirmedSupplyAtoms < MINT_AMOUNT_ATOMS) {

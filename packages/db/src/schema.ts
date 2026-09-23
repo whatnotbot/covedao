@@ -365,3 +365,93 @@ export const protocolSnapshots = pgTable("protocol_snapshots", {
   height: atoms("height").notNull(),
   capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ── Cove V1 (Bitcoin signet) persistent indexer state ───────────────────────
+
+export const coveBlocks = pgTable(
+  "cove_blocks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    network: text("network").notNull(),
+    height: atoms("height").notNull(),
+    hash: text("hash").notNull(),
+    parentHash: text("parent_hash").notNull(),
+    canonical: boolean("canonical").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("cove_blocks_height_uq").on(t.network, t.height)],
+);
+
+export const coveOperations = pgTable(
+  "cove_operations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    network: text("network").notNull(),
+    txid: text("txid").notNull(),
+    blockHeight: atoms("block_height").notNull(),
+    txIndex: integer("tx_index").notNull(),
+    operation: text("operation"),
+    classification: text("classification").notNull(),
+    valid: boolean("valid").notNull(),
+    reason: text("reason"),
+    canonical: boolean("canonical").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("cove_ops_txid_uq").on(t.network, t.txid)],
+);
+
+export const coveTokens = pgTable(
+  "cove_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    network: text("network").notNull(),
+    deploymentId: text("deployment_id").notNull(),
+    ticker: text("ticker").notNull(),
+    creator: text("creator").notNull(),
+    confirmedSupplyAtoms: atoms("confirmed_supply_atoms").notNull(),
+    currentStage: integer("current_stage").notNull(),
+    canonical: boolean("canonical").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("cove_tokens_deployment_uq").on(t.network, t.deploymentId)],
+);
+
+export const coveBalances = pgTable(
+  "cove_balances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    network: text("network").notNull(),
+    ownerScript: text("owner_script").notNull(),
+    deploymentId: text("deployment_id").notNull(),
+    availableAtoms: atoms("available_atoms").notNull(),
+    lockedAtoms: atoms("locked_atoms").notNull(),
+    canonical: boolean("canonical").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("cove_balances_owner_uq").on(t.network, t.ownerScript, t.deploymentId)],
+);
+
+export const coveCheckpoints = pgTable(
+  "cove_checkpoints",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    network: text("network").notNull(),
+    height: atoms("height").notNull(),
+    blockHash: text("block_hash").notNull(),
+    stateRoot: text("state_root").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("cove_checkpoints_height_uq").on(t.network, t.height)],
+);
+
+export const coveCursor = pgTable(
+  "cove_cursor",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    network: text("network").notNull(),
+    height: atoms("height").notNull(),
+    blockHash: text("block_hash").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("cove_cursor_network_uq").on(t.network)],
+);

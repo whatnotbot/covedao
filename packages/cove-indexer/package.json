@@ -15,13 +15,17 @@
     "test": "vitest run",
     "index": "tsx src/cli.ts index",
     "verify": "tsx src/cli.ts verify",
-    "status": "tsx src/cli.ts status"
+    "status": "tsx src/cli.ts status",
+    "test:integration": "tsx src/store.integration.ts"
   },
   "dependencies": {
     "@crclaunch/bitcoin": "workspace:*",
     "@crclaunch/config": "workspace:*",
     "@crclaunch/curve": "workspace:*",
-    "@crclaunch/protocol": "workspace:*"
+    "@crclaunch/protocol": "workspace:*",
+    "@crclaunch/db": "workspace:*",
+    "drizzle-orm": "^0.36.4",
+    "dotenv": "^16.4.7"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

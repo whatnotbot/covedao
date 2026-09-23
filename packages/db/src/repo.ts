@@ -530,6 +530,12 @@ const PROJECTION_TABLES = [
   "indexer_cursors",
   "deployments",
   "tokens",
+  "cove_blocks",
+  "cove_operations",
+  "cove_tokens",
+  "cove_balances",
+  "cove_checkpoints",
+  "cove_cursor",
 ];
 
 /**

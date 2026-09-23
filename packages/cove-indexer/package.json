@@ -1,5 +1,5 @@
 {
-  "name": "@crclaunch/bitcoin",
+  "name": "@crclaunch/cove-indexer",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,15 +12,19 @@
     "build": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run",
+    "index": "tsx src/cli.ts index",
+    "verify": "tsx src/cli.ts verify",
+    "status": "tsx src/cli.ts status"
   },
   "dependencies": {
+    "@crclaunch/bitcoin": "workspace:*",
+    "@crclaunch/config": "workspace:*",
     "@crclaunch/curve": "workspace:*",
-    "bitcoinjs-lib": "^6.1.7",
-    "ecpair": "^2.1.0",
-    "tiny-secp256k1": "^2.2.3"
+    "@crclaunch/protocol": "workspace:*"
   },
   "devDependencies": {
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }

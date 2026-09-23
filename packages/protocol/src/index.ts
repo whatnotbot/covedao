@@ -113,3 +113,38 @@ export {
   UnavailableCanonicalCRCProvider,
   crcLaunchV1DeploymentRules,
 } from "./canonical-mock.js";
+
+export {
+  parseCoveEnvelope,
+  COVE_PROTOCOL,
+  COVE_VERSION,
+  type CoveEnvelope,
+  type CoveOp,
+  type CoveDeploy,
+  type CoveMint,
+  type CoveTransfer,
+  type CoveParseResult,
+} from "./cove/parser.js";
+export {
+  createCoveState,
+  type CoveState,
+  type CoveToken,
+  type CoveBalance,
+  type CoveTransaction,
+  type CoveOperationKind,
+  type ProtocolOwnerId,
+  type CoveProtocolOutput,
+  type CoveValidationResult,
+} from "./cove/types.js";
+export { validateCoveOperation, applyCoveOperation, type CoveConfig } from "./cove/validator.js";
+export { toCoveTransaction, type CoveMapResult } from "./cove/mapper.js";
+export { computeStateRoot } from "./cove/state-root.js";
+export {
+  buildCoveDeployPsbt,
+  buildCoveMintPsbt,
+  buildCoveTransferPsbt,
+  RECIPIENT_DUST_SATS,
+  type BuildDeployParams,
+  type BuildMintParams,
+  type BuildTransferParams,
+} from "./cove/build.js";

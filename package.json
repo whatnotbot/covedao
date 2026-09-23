@@ -25,6 +25,9 @@
     "reindex": "pnpm --filter @crclaunch/worker reindex",
     "demo:reset": "pnpm --filter @crclaunch/worker demo:reset",
     "mock-crc": "pnpm --filter @crclaunch/mock-crc-service dev",
+    "cove:index": "pnpm --filter @crclaunch/cove-indexer index",
+    "cove:verify": "pnpm --filter @crclaunch/cove-indexer verify",
+    "cove:status": "pnpm --filter @crclaunch/cove-indexer status",
     "clean": "turbo run clean && rm -rf node_modules",
     "test:integration": "pnpm --filter @crclaunch/worker test:integration"
   },

@@ -53,7 +53,11 @@ import { decodeMainnetCustodyAddress } from "./mainnet-custody.js";
  * never define it.
  */
 
-const ESPLORA = process.env.COVE_MAINNET_ESPLORA_URL || "https://blockstream.info/api";
+// A-5: the mainnet Esplora endpoint MUST be explicit. No fallback that resolves
+// toward real money — an unset URL is an error, not a default to blockstream.
+function esploraUrl(): string {
+  return requireEnv("COVE_MAINNET_ESPLORA_URL");
+}
 const RPC_URL = process.env.COVE_MAINNET_RPC_URL || "";
 const MANIFEST_PATH = fileURLToPath(new URL("../../../.cove-mainnet-canary.json", import.meta.url));
 const MINT_AMOUNT_ATOMS = 2_000_000n * 100_000_000n;
@@ -325,7 +329,7 @@ async function broadcastAndConfirm(
   indexer: CoveIndexer,
   indexedHeight: number,
 ): Promise<number> {
-  const provider = new EsploraChainProvider(ESPLORA, "mainnet");
+  const provider = new EsploraChainProvider(esploraUrl(), "mainnet");
   const step = stepOf(manifest, action);
   const txid = localTxid(signedHex);
   assert(broadcastTxidMatches(step, txid), `signed tx ${txid} does not match the recorded ${action} txid ${step.broadcastTxid ?? step.expectedTxid}.`);
@@ -418,7 +422,7 @@ async function main(): Promise<void> {
   };
   saveManifest(manifest);
 
-  const provider = new EsploraChainProvider(ESPLORA, "mainnet");
+  const provider = new EsploraChainProvider(esploraUrl(), "mainnet");
   const tip = await provider.getBestHeight();
   assert(tip >= H, `chain tip ${tip} is below activation height ${H}. Wait for H before running the canary.`);
 
@@ -520,8 +524,8 @@ async function main(): Promise<void> {
 }
 
 async function buildAndExport(action: Exclude<CanaryAction, "DONE">, manifest: CanaryManifest, cfg: CoveConfig, actorScript: string, recipientScript: string): Promise<void> {
-  const provider = new EsploraChainProvider(ESPLORA, "mainnet");
-  const utxoProvider = new EsploraUtxoProvider(ESPLORA, "mainnet");
+  const provider = new EsploraChainProvider(esploraUrl(), "mainnet");
+  const utxoProvider = new EsploraUtxoProvider(esploraUrl(), "mainnet");
   const feeRate = BigInt(optionalEnv("COVE_MAINNET_FEE_RATE_SATVB") ?? "5");
 
   let psbt: { psbtBase64: string; unsignedHex: string; feeSats: bigint };

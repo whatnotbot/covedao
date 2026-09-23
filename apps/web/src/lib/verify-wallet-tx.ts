@@ -1,4 +1,4 @@
-import { decodePsbtOutputs, scriptToAddress, type NetworkName } from "@crclaunch/bitcoin";
+import { decodePsbtOutputs, scriptToAddress, type NetworkName } from "@crclaunch/bitcoin/psbt-decode";
 import type { UnsignedProtocolTransaction } from "@crclaunch/protocol";
 
 function networkToBitcoin(network: string): NetworkName {

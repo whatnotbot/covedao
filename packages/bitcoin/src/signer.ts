@@ -45,27 +45,10 @@ export function decodeUnsignedOutputs(unsignedHex: string): SignPsbtOutput[] {
   }));
 }
 
-/**
- * Decode the outputs of a (real) PSBT base64 string into intent outputs.
- * Throws on anything that is not a valid bitcoinjs-lib PSBT. Callers that may
- * receive a mock envelope must first establish the network is not "mock".
- */
-export function decodePsbtOutputs(psbtBase64: string, network: NetworkName = "signet"): SignPsbtOutput[] {
-  const psbt = bitcoin.Psbt.fromBase64(psbtBase64, { network: btcNetwork(network) });
-  return psbt.txOutputs.map((o) => ({
-    scriptPubKeyHex: o.script.toString("hex"),
-    valueSats: BigInt(o.value),
-  }));
-}
-
-/** Derive a display address for a standard output script, or undefined. */
-export function scriptToAddress(scriptPubKeyHex: string, network: NetworkName = "signet"): string | undefined {
-  try {
-    return bitcoin.address.fromOutputScript(Buffer.from(scriptPubKeyHex, "hex"), btcNetwork(network));
-  } catch {
-    return undefined;
-  }
-}
+// Re-export the lightweight PSBT-decode helpers from their own module so a
+// client bundle can import them WITHOUT pulling in the secp256k1 WASM.
+export { decodePsbtOutputs, scriptToAddress } from "./psbt-decode.js";
+export type { PsbtDecodeOutput } from "./psbt-decode.js";
 
 /**
  * Build a signing intent from an unsigned raw transaction hex. Used by callers

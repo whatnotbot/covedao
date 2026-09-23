@@ -9,6 +9,7 @@ import {
   bitcoin,
   decodeRawTransaction,
   parseCanonicalOpReturn,
+  psbtIntent,
   type BitcoinBlock,
   type BitcoinProtocolTx,
   type ChainUtxo,
@@ -276,19 +277,19 @@ async function main(): Promise<void> {
   // DEPLOY
   let coins = selectCoins(await freshUtxos(rpc, actorAddress, true), CFG.launchFeeSats + 1_000n);
   let psbt = buildCoveDeployPsbt({ network: "regtest", ticker: "FROG", inputs: coins.selected, changeAddress: actorAddress, feeRateSatVb: 2n, config: CFG });
-  const deployTxid = await broadcastAndMine(await signerA.signPsbt(psbt.psbtBase64));
+  const deployTxid = await broadcastAndMine(await signerA.signPsbt(psbt.psbtBase64, psbtIntent(psbt.unsignedHex, { maxFeeSats: CFG.maxMinerFeeSats, changeScriptPubKeyHex: psbt.changeSats > 0n ? actorScript : undefined })));
   console.log(`✓ DEPLOY ${deployTxid}`);
 
   // MINT (to self)
   coins = selectCoins(await freshUtxos(rpc, actorAddress, true), 1_010n + 1_000n);
   psbt = buildCoveMintPsbt({ network: "regtest", ticker: "FROG", amountAtoms: MINT_AMOUNT_ATOMS, supplyBeforeAtoms: 0n, recipientScriptHex: actorScript, inputs: coins.selected, changeAddress: actorAddress, feeRateSatVb: 2n, config: CFG });
-  const mintTxid = await broadcastAndMine(await signerA.signPsbt(psbt.psbtBase64));
+  const mintTxid = await broadcastAndMine(await signerA.signPsbt(psbt.psbtBase64, psbtIntent(psbt.unsignedHex, { maxFeeSats: CFG.maxMinerFeeSats, changeScriptPubKeyHex: psbt.changeSats > 0n ? actorScript : undefined })));
   console.log(`✓ MINT ${mintTxid}`);
 
   // TRANSFER (to RECIPIENT_SCRIPT)
   coins = selectCoins(await freshUtxos(rpc, actorAddress, true), 1_000n);
   psbt = buildCoveTransferPsbt({ network: "regtest", ticker: "FROG", amountAtoms: TRANSFER_AMOUNT_ATOMS, recipientScriptHex: RECIPIENT_SCRIPT, actorScriptHex: actorScript, inputs: coins.selected, changeAddress: actorAddress, feeRateSatVb: 2n, config: CFG });
-  const transferTxid = await broadcastAndMine(await signerA.signPsbt(psbt.psbtBase64));
+  const transferTxid = await broadcastAndMine(await signerA.signPsbt(psbt.psbtBase64, psbtIntent(psbt.unsignedHex, { maxFeeSats: CFG.maxMinerFeeSats, changeScriptPubKeyHex: psbt.changeSats > 0n ? actorScript : undefined })));
   console.log(`✓ TRANSFER ${transferTxid}`);
 
   const tip = await provider.getBestHeight();

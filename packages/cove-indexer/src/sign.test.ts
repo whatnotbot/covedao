@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeRawTransaction, LocalP2WPKHSigner } from "@crclaunch/bitcoin";
+import { decodeRawTransaction, LocalP2WPKHSigner, psbtIntent } from "@crclaunch/bitcoin";
 import { buildCoveDeployPsbt, COVE_V1_SIGNET_CONFIG } from "@crclaunch/protocol";
 import { CoveIndexer } from "./indexer.js";
 
@@ -22,7 +22,13 @@ describe("Cove end-to-end build → sign → decode → validate (local signer)"
       config: CFG,
     });
 
-    const signedHex = await signer.signPsbt(psbt.psbtBase64);
+    const signedHex = await signer.signPsbt(
+      psbt.psbtBase64,
+      psbtIntent(psbt.unsignedHex, {
+        maxFeeSats: CFG.maxMinerFeeSats,
+        changeScriptPubKeyHex: psbt.changeSats > 0n ? ACTOR_SCRIPT : undefined,
+      }),
+    );
     expect(signedHex).toMatch(/^020000000001/); // version 2 + segwit marker
 
     // The signed raw tx is authoritative. Decode it and resolve the prevout.

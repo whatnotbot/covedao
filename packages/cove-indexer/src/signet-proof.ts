@@ -10,6 +10,7 @@ import {
   bitcoin,
   decodeRawTransaction,
   parseCanonicalOpReturn,
+  psbtIntent,
   type BitcoinProtocolTx,
   type ChainUtxo,
 } from "@crclaunch/bitcoin";
@@ -357,7 +358,7 @@ async function main() {
       const utxos = await freshUtxos(signerA, true);
       const coins = selectCoins(utxos, 10_000n + 1_000n);
       const psbt = buildCoveDeployPsbt({ network: "signet", ticker, inputs: coins.selected, changeAddress: signerA.getAddress(), feeRateSatVb: 2n, config: CFG });
-      const hex = await signerA.signPsbt(psbt.psbtBase64);
+      const hex = await signerA.signPsbt(psbt.psbtBase64, psbtIntent(psbt.unsignedHex, { maxFeeSats: CFG.maxMinerFeeSats, changeScriptPubKeyHex: psbt.changeSats > 0n ? actorScript : undefined }));
       const fee = await preflight(hex);
       const txid = await broadcastSafely(provider, hex);
       manifest.deploy = { txid, height: 0, blockHash: "", stateRoot: "" };
@@ -375,7 +376,7 @@ async function main() {
       const utxos = await freshUtxos(signerA, true);
       const coins = selectCoins(utxos, 1_010n + 1_000n);
       const psbt = buildCoveMintPsbt({ network: "signet", ticker, amountAtoms: mintAmount, supplyBeforeAtoms: 0n, recipientScriptHex: actorScript, inputs: coins.selected, changeAddress: signerA.getAddress(), feeRateSatVb: 2n, config: CFG });
-      const hex = await signerA.signPsbt(psbt.psbtBase64);
+      const hex = await signerA.signPsbt(psbt.psbtBase64, psbtIntent(psbt.unsignedHex, { maxFeeSats: CFG.maxMinerFeeSats, changeScriptPubKeyHex: psbt.changeSats > 0n ? actorScript : undefined }));
       const fee = await preflight(hex);
       const txid = await broadcastSafely(provider, hex);
       manifest.mint = { txid, height: 0, blockHash: "", stateRoot: "" };
@@ -393,7 +394,7 @@ async function main() {
       const utxos = await freshUtxos(signerA, true);
       const coins = selectCoins(utxos, 1_000n);
       const psbt = buildCoveTransferPsbt({ network: "signet", ticker, amountAtoms: transferAmount, recipientScriptHex: recipientScript, actorScriptHex: actorScript, inputs: coins.selected, changeAddress: signerA.getAddress(), feeRateSatVb: 2n, config: CFG });
-      const hex = await signerA.signPsbt(psbt.psbtBase64);
+      const hex = await signerA.signPsbt(psbt.psbtBase64, psbtIntent(psbt.unsignedHex, { maxFeeSats: CFG.maxMinerFeeSats, changeScriptPubKeyHex: psbt.changeSats > 0n ? actorScript : undefined }));
       const fee = await preflight(hex);
       const txid = await broadcastSafely(provider, hex);
       manifest.transfer = { txid, height: 0, blockHash: "", stateRoot: "" };

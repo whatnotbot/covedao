@@ -38,5 +38,12 @@ export {
   isP2TR,
   DUST_RELAY_FEE_SAT_PER_KVB,
 } from "./dust.js";
-export { LocalP2WPKHSigner, type WalletSigner } from "./signer.js";
+export {
+  LocalP2WPKHSigner,
+  decodeUnsignedOutputs,
+  psbtIntent,
+  type WalletSigner,
+  type SignPsbtIntent,
+  type SignPsbtOutput,
+} from "./signer.js";
 export { EsploraUtxoProvider, EsploraChainProvider } from "./esplora.js";

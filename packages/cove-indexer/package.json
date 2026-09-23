@@ -22,7 +22,8 @@
     "mutinynet-proof": "tsx src/mutinynet-proof.ts",
     "mainnet-config": "tsx src/mainnet-config.ts",
     "mainnet-canary": "tsx src/mainnet-canary.ts",
-    "regtest-reorg": "tsx src/regtest-reorg.ts"
+    "regtest-reorg": "tsx src/regtest-reorg.ts",
+    "liquidity-demo": "tsx src/liquidity-demo.ts"
   },
   "dependencies": {
     "@crclaunch/bitcoin": "workspace:*",

@@ -83,19 +83,50 @@ export class EsploraChainProvider {
   }
 
   async getBestHeight(): Promise<number> {
-    return Number.parseInt(await this.getText("/blocks/tip/height"), 10);
+    const raw = await this.getText("/blocks/tip/height");
+    const height = Number.parseInt(raw, 10);
+    if (!Number.isFinite(height) || height < 0) {
+      throw new Error(`Esplora /blocks/tip/height returned non-numeric value "${raw}"`);
+    }
+    return height;
   }
 
   async getBlockHash(height: number): Promise<string> {
-    return this.getText(`/block-height/${height}`);
+    const hash = await this.getText(`/block-height/${height}`);
+    if (!/^[0-9a-f]{64}$/.test(hash)) {
+      throw new Error(`Esplora /block-height/${height} returned invalid block hash "${hash}"`);
+    }
+    return hash;
   }
 
   async getBlock(hash: string): Promise<BitcoinBlock> {
     const txids = await this.get<string[]>(`/block/${hash}/txids`);
-    const meta = await this.get<{ id: string; height: number; previousblockhash?: string }>(`/block/${hash}`);
+    const meta = await this.get<{ id: string; height: number; previousblockhash?: string; merkle_root?: string }>(`/block/${hash}`);
+    // Verify the host actually returned the requested block (B-3: mirror Core's
+    // provider.getBlock hash + merkle verification).
+    if (meta.id !== hash) {
+      throw new Error(`Esplora block id ${meta.id} != requested ${hash}`);
+    }
     const rawTxs: string[] = [];
+    const txs: bitcoin.Transaction[] = [];
     for (const txid of txids) {
-      rawTxs.push(await this.getText(`/tx/${txid}/hex`));
+      const raw = await this.getText(`/tx/${txid}/hex`);
+      const tx = bitcoin.Transaction.fromHex(raw);
+      if (tx.getId() !== txid) {
+        throw new Error(`Esplora tx ${txid} decoded to a different txid ${tx.getId()}`);
+      }
+      rawTxs.push(raw);
+      txs.push(tx);
+    }
+    if (meta.merkle_root && txs.length > 0) {
+      const mutated = { value: false };
+      const root = bitcoin.Block.calculateMerkleRoot(txs, false, mutated);
+      // calculateMerkleRoot returns the internal (little-endian) order; Esplora
+      // presents the merkle root in display order.
+      const display = Buffer.from(root).reverse().toString("hex");
+      if (mutated.value || display !== meta.merkle_root) {
+        throw new Error("Esplora block merkle root mismatch");
+      }
     }
     return { hash, height: meta.height, previousBlockHash: meta.previousblockhash ?? "", txids, rawTxs };
   }

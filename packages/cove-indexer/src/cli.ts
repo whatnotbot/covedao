@@ -5,6 +5,7 @@ loadEnv({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
 import { CoreRpcProvider, decodeRawTransaction, type BitcoinProtocolTx } from "@crclaunch/bitcoin";
 import { isCoveMagic } from "@crclaunch/protocol";
 import { CoveIndexer } from "./indexer.js";
+import { assertSignetChain } from "./chain-assert.js";
 import { COVE_SIGNET_CONFIG } from "./config.js";
 import { CoveStore } from "./store.js";
 
@@ -52,6 +53,7 @@ async function requireSignet(provider: CoreRpcProvider): Promise<void> {
   if (info.chain !== "signet") {
     throw new Error(`Chain mismatch: expected signet, got ${info.chain}. Refusing to index.`);
   }
+  await assertSignetChain(provider);
 }
 
 async function scanRange(

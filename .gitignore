@@ -39,6 +39,7 @@ uploads/
 .cove-signet-keys.json
 .cove-owner-signer.wif
 .cove-signer-b.wif
+.cove-mutinynet-signer-b.wif
 .cove-proof.json
 .cove-mutinynet-proof.json
 .cove-mainnet-canary.json

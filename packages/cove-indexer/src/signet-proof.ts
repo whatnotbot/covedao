@@ -8,6 +8,7 @@ import {
   EsploraUtxoProvider,
   LocalP2WPKHSigner,
   bitcoin,
+  btcNetwork,
   decodeRawTransaction,
   parseCanonicalOpReturn,
   psbtIntent,
@@ -26,6 +27,7 @@ import {
   type CoveState,
 } from "@crclaunch/protocol";
 import { CoveIndexer } from "./indexer.js";
+import { assertSignetChain } from "./chain-assert.js";
 import { decideNextAction, validateTicker, type ProofManifest } from "./proof-manifest.js";
 
 const CFG = COVE_V1_SIGNET_CONFIG;
@@ -252,7 +254,7 @@ function selectCoins(utxos: ChainUtxo[], requiredSats: bigint): { selected: Chai
 }
 
 function scriptOf(signer: LocalP2WPKHSigner): string {
-  return bitcoin.address.toOutputScript(signer.getAddress(), bitcoin.networks.testnet).toString("hex");
+  return bitcoin.address.toOutputScript(signer.getAddress(), btcNetwork(signer.getNetwork())).toString("hex");
 }
 
 async function main() {
@@ -290,6 +292,7 @@ async function main() {
   const provider = new CoreRpcProvider({ url: RPC_URL, maxFeeRateSatVb: CFG.maxFeeRateSatVb });
   const info = await readWithRetry(() => provider.getBlockchainInfo(), "getblockchaininfo");
   assert(info.chain === "signet", `chain is ${info.chain}, expected signet`);
+  await assertSignetChain(provider);
 
   const esplora = new EsploraUtxoProvider(ESPLORA, "signet");
 

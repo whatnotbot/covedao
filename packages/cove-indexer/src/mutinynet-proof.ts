@@ -8,6 +8,7 @@ import {
   EsploraUtxoProvider,
   LocalP2WPKHSigner,
   bitcoin,
+  btcNetwork,
   decodeRawTransaction,
   parseCanonicalOpReturn,
   psbtIntent,
@@ -22,13 +23,15 @@ import {
   isCoveMagic,
 } from "@crclaunch/protocol";
 import { CoveIndexer } from "./indexer.js";
+import { assertSignetChain } from "./chain-assert.js";
 import { computeFee, feeRateExceedsCap, validatePure } from "./signet-proof.js";
 import { decideNextAction, validateTicker, type ProofManifest } from "./proof-manifest.js";
 
 const CFG = COVE_MUTINYNET_CONFIG;
 const ESPLORA = "https://mutinynet.com/api";
 const SIGNER_A = "tb1q3gn3xgduwymejw9vw2xayr4u2ldvc2zf05r3kx";
-const B_BACKUP_PATH = fileURLToPath(new URL("../../../.cove-signer-b.wif", import.meta.url));
+// Separate key file from signet: a WIF is never shared across networks.
+const B_BACKUP_PATH = fileURLToPath(new URL("../../../.cove-mutinynet-signer-b.wif", import.meta.url));
 const MANIFEST_PATH = fileURLToPath(new URL("../../../.cove-mutinynet-proof.json", import.meta.url));
 
 function assert(cond: boolean, msg: string): void {
@@ -47,7 +50,7 @@ function readWif(envKey: string, fileKey: string): string {
 }
 
 function scriptOf(signer: LocalP2WPKHSigner): string {
-  return bitcoin.address.toOutputScript(signer.getAddress(), bitcoin.networks.testnet).toString("hex");
+  return bitcoin.address.toOutputScript(signer.getAddress(), btcNetwork(signer.getNetwork())).toString("hex");
 }
 
 function loadManifest(): ProofManifest | undefined {
@@ -139,13 +142,13 @@ async function waitConfirmation(provider: EsploraChainProvider, txid: string): P
 }
 
 async function main() {
-  const signerA = new LocalP2WPKHSigner(readWif("COVE_WIF", "COVE_WIF_FILE"), "mutinynet");
+  const signerA = new LocalP2WPKHSigner(readWif("COVE_MUTINYNET_WIF", "COVE_MUTINYNET_WIF_FILE"), "mutinynet");
   assert(signerA.getAddress() === SIGNER_A, `WIF derives ${signerA.getAddress()}, expected ${SIGNER_A}`);
   console.log("✓ key control verified:", signerA.getAddress());
 
   let signerB: LocalP2WPKHSigner;
-  if (process.env.COVE_WIF_B_FILE || process.env.COVE_WIF_B) {
-    signerB = new LocalP2WPKHSigner(readWif("COVE_WIF_B", "COVE_WIF_B_FILE"), "mutinynet");
+  if (process.env.COVE_MUTINYNET_WIF_B_FILE || process.env.COVE_MUTINYNET_WIF_B) {
+    signerB = new LocalP2WPKHSigner(readWif("COVE_MUTINYNET_WIF_B", "COVE_MUTINYNET_WIF_B_FILE"), "mutinynet");
   } else if (existsSync(B_BACKUP_PATH)) {
     signerB = new LocalP2WPKHSigner(readFileSync(B_BACKUP_PATH, "utf8").trim(), "mutinynet");
   } else {
@@ -157,6 +160,7 @@ async function main() {
   const actorScript = scriptOf(signerA);
   const recipientScript = scriptOf(signerB);
   const provider = new EsploraChainProvider(ESPLORA, "mutinynet");
+  await assertSignetChain(provider); // signet family genesis (not mainnet/testnet)
   const utxoProvider = new EsploraUtxoProvider(ESPLORA, "mutinynet");
 
   // Manifest + ticker.

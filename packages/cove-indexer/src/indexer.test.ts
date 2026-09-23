@@ -112,8 +112,7 @@ describe("CoveIndexer (binary envelope, classification, tx index)", () => {
           { index: 1, scriptPubKeyHex: RECIPIENT, valueSats: 330n },
           { index: 2, scriptPubKeyHex: CFG.settlementScript, valueSats: 1010n },
         ], "e".repeat(64)),
-      ]);
-      return idx;
+      ]);      return idx;
     };
     const a = build(200_000_000_000_000n);
     const fork = build(300_000_000_000_000n);
@@ -178,5 +177,39 @@ describe("CoveIndexer (binary envelope, classification, tx index)", () => {
     expect(idx.getStats().validOps).toBe(1);
     expect(idx.getStats().invalidOps).toBe(1);
     expect(idx.getState().reserveSats).toBe(0n); // rejected mint did not credit reserve
+  });
+
+  it("restart reconstruction matches and continues correctly (resume evidence)", () => {
+    const deploy = tx(encodeCoveDeploy("FROG"), [{ index: 1, scriptPubKeyHex: CFG.treasuryScript, valueSats: 10_000n }], "d".repeat(64));
+    const mint = tx(encodeCoveMint("FROG", 200_000_000_000_000n, 0n), [
+      { index: 1, scriptPubKeyHex: RECIPIENT, valueSats: 330n },
+      { index: 2, scriptPubKeyHex: CFG.settlementScript, valueSats: 1010n },
+    ], "e".repeat(64));
+    const transfer = tx(encodeCoveTransfer("FROG", 50_000_000_000_000n), [
+      { index: 1, scriptPubKeyHex: "0014" + "cc".repeat(20), valueSats: 294n },
+      { index: 2, scriptPubKeyHex: RECIPIENT, valueSats: 330n },
+    ], "f".repeat(64));
+    transfer.inputs[0]!.prevScriptPubKeyHex = RECIPIENT;
+
+    // Original: blocks 1..3.
+    const original = new CoveIndexer(CFG);
+    original.processBlock(CFG.genesisHeight, [deploy]);
+    original.processBlock(CFG.genesisHeight + 1, [mint]);
+    original.processBlock(CFG.genesisHeight + 2, [transfer]);
+    const originalFinal = original.getStateRoot();
+
+    // Restart: reconstruct 1..2, verify replay root matches the checkpoint at 2.
+    const checkpointIdx = new CoveIndexer(CFG);
+    checkpointIdx.processBlock(CFG.genesisHeight, [deploy]);
+    checkpointIdx.processBlock(CFG.genesisHeight + 1, [mint]);
+    const checkpointRoot = checkpointIdx.getStateRoot();
+
+    const resumed = new CoveIndexer(CFG);
+    resumed.processBlock(CFG.genesisHeight, [deploy]);
+    resumed.processBlock(CFG.genesisHeight + 1, [mint]);
+    expect(resumed.getStateRoot()).toBe(checkpointRoot); // replay == checkpoint
+    // Continue with block 3 on the reconstructed state.
+    resumed.processBlock(CFG.genesisHeight + 2, [transfer]);
+    expect(resumed.getStateRoot()).toBe(originalFinal); // continuation matches
   });
 });

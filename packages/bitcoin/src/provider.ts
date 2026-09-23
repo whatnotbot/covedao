@@ -36,6 +36,7 @@ export interface BitcoinChainProvider {
   getPrevout(txid: string, vout: number): Promise<ChainUtxo | undefined>;
   getUtxos(scriptOrAddress: string): Promise<ChainUtxo[]>;
   broadcastTransaction(hex: string): Promise<string>;
+  testMempoolAccept(hex: string, maxFeeRateSatVb?: bigint): Promise<{ allowed: boolean; rejectReason?: string }>;
   estimateFeeRate(): Promise<bigint>;
 }
 
@@ -178,6 +179,22 @@ export class CoreRpcProvider implements BitcoinChainProvider {
     // wildly over-paying tx on our behalf.
     const maxfeerate = this.cfg.maxFeeRateSatVb ? Number(this.cfg.maxFeeRateSatVb) / 100_000 : undefined;
     return this.call<string>("sendrawtransaction", maxfeerate === undefined ? [hex] : [hex, maxfeerate]);
+  }
+
+  /**
+   * Preflight a raw transaction against the mempool policy before broadcasting.
+   * Returns a structured result rather than throwing, so callers can surface
+   * the node's rejection reason.
+   */
+  async testMempoolAccept(hex: string, maxFeeRateSatVb?: bigint): Promise<{ allowed: boolean; rejectReason?: string }> {
+    const maxfeerate = (maxFeeRateSatVb ?? this.cfg.maxFeeRateSatVb) ? Number(maxFeeRateSatVb ?? this.cfg.maxFeeRateSatVb) / 100_000 : undefined;
+    const res = await this.call<{ allowed: boolean; "reject-reason"?: string }[]>(
+      "testmempoolaccept",
+      maxfeerate === undefined ? [[hex]] : [[hex, maxfeerate]],
+    );
+    const r = res?.[0];
+    if (!r) return { allowed: false, rejectReason: "no result" };
+    return { allowed: r.allowed, rejectReason: r["reject-reason"] };
   }
 
   async estimateFeeRate(): Promise<bigint> {

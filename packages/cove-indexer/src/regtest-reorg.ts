@@ -271,7 +271,10 @@ async function main(): Promise<void> {
   // ── Reorg: invalidate TRANSFER block, mine competing branch ──
   const transferBlockHash = await provider.getBlockHash(tip);
   await rpc.invalidateBlock(transferBlockHash);
-  await rpc.generateToAddress(2, actorAddress);
+  // Mine the competing branch to a DIFFERENT coinbase address (walletAddress),
+  // so the replacement block is not byte-identical to the invalidated one
+  // (identical content → same hash → "AcceptBlock FAILED (duplicate)").
+  await rpc.generateToAddress(2, walletAddress);
   const newTip = await provider.getBestHeight();
   console.log(`✓ reorg: invalidated ${transferBlockHash.slice(0, 8)}; new tip=${newTip}`);
 

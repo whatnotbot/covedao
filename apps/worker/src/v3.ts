@@ -8,7 +8,7 @@ import {
   reorgPersistentToTip,
   hydrateState,
 } from "@crclaunch/cove-indexer/v3";
-import { loadV3AppConfig, V3AppService } from "@crclaunch/cove-app";
+import { loadV3AppConfig, V3AppService, Metrics } from "@crclaunch/cove-app";
 import { GuardianV3Signer } from "@crclaunch/cove-guardian/v3";
 import type { V3IndexerConfig } from "@crclaunch/cove-indexer/v3";
 
@@ -47,6 +47,7 @@ async function main() {
   const store = new V3Store(config.network);
   const signer = config.guardianPrivateKey ? GuardianV3Signer.fromPrivateKey(config.guardianPrivateKey) : null;
   const app = new V3AppService(db, provider, config, signer);
+  const metrics = new Metrics();
 
   const indexerConfig: V3IndexerConfig = {
     network: config.network,
@@ -70,14 +71,18 @@ async function main() {
         if (coreHashAtCursor !== state.cursor.blockHash) {
           console.log(`reorg detected at height ${state.cursor.height}; rolling back to tip`);
           await reorgPersistentToTip({ db, store, state, provider, config: indexerConfig });
+          metrics.inc("market.confirmations");
         }
       }
       // 2. catch up persistent indexer
       await persistentWorker({ db, store, state, provider, config: indexerConfig });
       // 3. reconcile market
       const market = await app.market.reconcileMarket();
+      metrics.gauge("market.listings_active", BigInt(market.confirmed));
+      metrics.inc("market.confirmations", market.confirmed);
       // 4. reconcile app tx sessions
       const sessions = await app.reconcileAppSessions();
+      metrics.inc("market.broadcasts", sessions.confirmed);
       if (market.confirmed || sessions.confirmed || market.reorged) {
         console.log(`reconciled: market ${JSON.stringify(market)} sessions ${JSON.stringify(sessions)}`);
       }

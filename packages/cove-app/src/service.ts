@@ -443,7 +443,9 @@ export class V3AppService {
     const psbt = parsePsbt(params.signedPsbtBase64, btcNetwork(this.config.network));
     if (unsignedTxDigest(psbt) !== session.unsignedTxDigest) throw new AppError("PSBT_MUTATED", "unsigned tx digest changed");
     for (let i = 1; i < psbt.data.inputs.length; i++) validateInputSignature(psbt, i);
-    psbt.finalizeAllInputs();
+    // Finalize only the buyer BTC inputs; input 0 is the backing vault, which the
+    // Guardian already finalized (its finalScriptWitness is set at build time).
+    for (let i = 1; i < psbt.data.inputs.length; i++) psbt.finalizeInput(i);
     const rawTxHex = psbt.extractTransaction().toHex();
     const view = await this.loadView(session.tokenId!);
     const validated = validateFinalizedMintTransaction({
@@ -569,7 +571,8 @@ export class V3AppService {
     const psbt = parsePsbt(params.signedPsbtBase64, btcNetwork(this.config.network));
     if (unsignedTxDigest(psbt) !== session.unsignedTxDigest) throw new AppError("PSBT_MUTATED", "unsigned tx digest changed");
     for (let i = 1; i < psbt.data.inputs.length; i++) validateInputSignature(psbt, i);
-    psbt.finalizeAllInputs();
+    // Finalize only the seller token inputs; input 0 is the backing vault (Guardian-finalized).
+    for (let i = 1; i < psbt.data.inputs.length; i++) psbt.finalizeInput(i);
     const rawTxHex = psbt.extractTransaction().toHex();
     const view = await this.loadView(session.tokenId!);
     const validated = validateFinalizedRedeemTransaction({

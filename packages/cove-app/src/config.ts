@@ -3,6 +3,7 @@ import * as ecc from "tiny-secp256k1";
 import { ECPairFactory } from "ecpair";
 import { CHAIN_BITCOIN_REGTEST, CHAIN_BITCOIN_SIGNET, CHAIN_BITCOIN_TESTNET } from "@crclaunch/cove-wire";
 import { AppError } from "./errors.js";
+import type { VaultRecoveryProfile } from "@crclaunch/cove-vault";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 const ECPair = ECPairFactory(ecc);
@@ -19,6 +20,8 @@ export interface V3AppConfig {
   feeScript: Buffer;
   guardianXOnly: Buffer;
   recoveryKeyXOnly: Buffer;
+  /** Optional versioned recovery profile (MAINNET1); defaults to DEV1 single-key. */
+  recoveryProfile?: VaultRecoveryProfile;
   /** Guardian private key (server-side secret, regtest/staging ONLY). */
   guardianPrivateKey: Buffer | null;
   maxMinerFeeSats: bigint;

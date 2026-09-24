@@ -27,7 +27,8 @@
     "bitcoinjs-lib": "^6.1.7",
     "tiny-secp256k1": "^2.2.3",
     "ecpair": "^2.1.0",
-    "drizzle-orm": "^0.36.4"
+    "drizzle-orm": "^0.36.4",
+    "@crclaunch/cove-vault": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

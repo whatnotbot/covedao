@@ -265,6 +265,7 @@ export class V3AppService {
       identity: { chainIdentity: this.config.chainIdentity, policyVersion: 3, ticker: canonicalTicker(params.ticker), tokenNonce: Buffer.from(params.nonceHex, "hex") },
       guardianXOnly: this.config.guardianXOnly,
       recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile,
       deployerInputs,
       deployerChangeScript: Buffer.from(params.walletScript, "hex"),
       minerFeeSats: params.minerFeeSats,
@@ -322,6 +323,7 @@ export class V3AppService {
       chainIdentity: this.config.chainIdentity,
       guardianXOnly: this.config.guardianXOnly,
       recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile,
     });
     if (!("rawTxHex" in validated)) throw new AppError("GUARDIAN_REJECTED", validated.reason);
     const txid = await this.broadcast(validated);
@@ -391,6 +393,7 @@ export class V3AppService {
       mintAmountAtoms: params.amountAtoms,
       guardianXOnly: this.config.guardianXOnly,
       recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile,
       buyerInputs,
       buyerCarrierScript: Buffer.from(params.walletScript, "hex"),
       buyerChangeScript: Buffer.from(params.walletScript, "hex"),
@@ -398,7 +401,8 @@ export class V3AppService {
       minerFeeSats: params.minerFeeSats,
     });
     const view = await this.loadView(params.tokenId);
-    const signed = validateAndSignMintTransition({ signer, psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly, feeScript: this.config.feeScript });
+    const signed = validateAndSignMintTransition({ signer, psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript });
     if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
     const psbtBase64 = result.psbt.toBase64();
     const digest = unsignedTxDigest(result.psbt);
@@ -454,6 +458,7 @@ export class V3AppService {
       network: this.config.network,
       guardianXOnly: this.config.guardianXOnly,
       recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile,
       feeScript: this.config.feeScript,
       maxMinerFeeSats: this.config.maxMinerFeeSats,
     });
@@ -520,13 +525,15 @@ export class V3AppService {
       tokenInputTotalAtoms,
       guardianXOnly: this.config.guardianXOnly,
       recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile,
       sellerPayoutScript: Buffer.from(params.walletScript, "hex"),
       sellerChangeScript: Buffer.from(params.walletScript, "hex"),
       feeScript: this.config.feeScript,
       minerFeeSats: params.minerFeeSats,
     });
     const view = await this.loadView(params.tokenId, selected.map((u) => ({ txid: u.txid, vout: u.vout })));
-    const signed = validateAndSignRedeemTransition({ signer, psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly, feeScript: this.config.feeScript });
+    const signed = validateAndSignRedeemTransition({ signer, psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript });
     if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
     const psbtBase64 = result.psbt.toBase64();
     const digest = unsignedTxDigest(result.psbt);
@@ -581,6 +588,7 @@ export class V3AppService {
       network: this.config.network,
       guardianXOnly: this.config.guardianXOnly,
       recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile,
       feeScript: this.config.feeScript,
       maxMinerFeeSats: this.config.maxMinerFeeSats,
     });

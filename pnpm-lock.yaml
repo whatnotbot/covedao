@@ -256,6 +256,9 @@ importers:
       '@crclaunch/cove-market':
         specifier: workspace:*
         version: link:../cove-market
+      '@crclaunch/cove-vault':
+        specifier: workspace:*
+        version: link:../cove-vault
       '@crclaunch/cove-wire':
         specifier: workspace:*
         version: link:../cove-wire

@@ -124,6 +124,8 @@ export interface SignedTransitionResult {
   backingOutpoint: OutPoint;
   signedInputIndex: number;
   audit: AuditRecord;
+  /** Non-null when the post-sign audit finalization failed (SIGNED_BUT_AUDIT_FINALIZATION_FAILED). */
+  auditFinalizationError: string | null;
 }
 
 export interface AuditRecord {

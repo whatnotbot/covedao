@@ -122,4 +122,28 @@ describe("remote Guardian client (§24)", () => {
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.reason).toBe("RISK_POLICY_REJECTED");
   });
+
+  it("post-sign audit failure surfaces SIGNED_BUT_AUDIT_FINALIZATION_FAILED and keeps the journal reserved (§34)", async () => {
+    const { psbt, view } = mintFixture();
+    const journal = new InMemorySigningJournal();
+    const failingAfter: DurableAuditSink = {
+      async writeBeforeSign(_r: AuditRecord) { return { auditHash: "0".repeat(64) }; },
+      async writeAfterSign() { throw new Error("after-sign store unavailable"); },
+    };
+    const signer = GuardianV3Signer.fromPrivateKey(Buffer.alloc(32, 0x42));
+    const local = new LocalGuardianTransitionSigner(localSigningBackend(signer), journal, failingAfter, riskPolicy);
+    const out = await local.signMint({ psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile: MAINNET1, feeScript, maxMinerFeeSats: 1_000n });
+    expect(out.ok).toBe(true);
+    if (out.ok) {
+      expect(out.auditFinalizationError).not.toBeNull();
+      // A conflicting digest for the SAME backing outpoint must still be refused.
+      const conflict = await journal.reserve({
+        network: "regtest",
+        backingTxid: out.backingOutpoint.txid,
+        backingVout: out.backingOutpoint.vout,
+        unsignedTxDigest: "ff".repeat(32),
+      });
+      expect(conflict).toBe("CONFLICT");
+    }
+  });
 });

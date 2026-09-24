@@ -155,6 +155,7 @@ export function validateAndSignMintTransition(
     backingOutpoint: a.backingOutpoint,
     signedInputIndex: 0,
     audit,
+    auditFinalizationError: null,
   };
 }
 
@@ -220,5 +221,6 @@ export function validateAndSignRedeemTransition(
     backingOutpoint: a.backingOutpoint,
     signedInputIndex: 0,
     audit,
+    auditFinalizationError: null,
   };
 }

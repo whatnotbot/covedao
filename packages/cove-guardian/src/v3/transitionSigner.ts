@@ -197,7 +197,17 @@ export class LocalGuardianTransitionSigner implements GuardianTransitionSigner {
     const control = op === "MINT" ? prevVault.mintControlBlock : prevVault.redeemControlBlock;
     await this.signer.signVaultExecutionLeaf(req.psbt, 0, leaf, control);
 
-    await this.audit.writeAfterSign(record, receipt.auditHash).catch(() => {});
+    // 4. Durable after-sign update. A failure here does NOT undo the signature or
+    // release the journal reservation (§34): the critical property is that we
+    // NEVER produce a second signature because post-sign logging failed. Surface
+    // the failure so operators can reconcile the audit (do not silently swallow).
+    let auditFinalizationError: string | null = null;
+    try {
+      await this.audit.writeAfterSign(record, receipt.auditHash);
+    } catch (e) {
+      auditFinalizationError = (e as Error).message;
+      console.error(`SIGNED_BUT_AUDIT_FINALIZATION_FAILED: ${op} ${record.backingOutpoint.txid}:${record.backingOutpoint.vout} — ${auditFinalizationError}`);
+    }
 
     return {
       ok: true,
@@ -212,6 +222,7 @@ export class LocalGuardianTransitionSigner implements GuardianTransitionSigner {
       backingOutpoint: record.backingOutpoint,
       signedInputIndex: 0,
       audit: record,
+      auditFinalizationError,
     };
   }
 }

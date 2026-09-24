@@ -269,11 +269,11 @@ export default function TokenPage() {
                 <>
                   <label className="block">
                     <span className="text-xs text-gray-400">Listed amount (atoms)</span>
-                    <input value={amount} onChange={(e) => setAmount(e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-bg px-4 py-2 text-sm text-white outline-none focus:border-brand" />
+                    <input value={amount} placeholder="Listed amount (atoms)" onChange={(e) => setAmount(e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-bg px-4 py-2 text-sm text-white outline-none focus:border-brand" />
                   </label>
                   <label className="block">
                     <span className="text-xs text-gray-400">Total asking price (sats)</span>
-                    <input value={price} onChange={(e) => setPrice(e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-bg px-4 py-2 text-sm text-white outline-none focus:border-brand" />
+                    <input value={price} placeholder="Total asking price (sats)" onChange={(e) => setPrice(e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-bg px-4 py-2 text-sm text-white outline-none focus:border-brand" />
                   </label>
                 </>
               )}

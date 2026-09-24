@@ -80,6 +80,15 @@ function reject(code: string, detail: string): never {
 export function validateFinalizedP2PFill(params: P2PFillValidationParams): ValidatedP2PFill {
   const { terms } = params;
 
+  const tx = bitcoin.Transaction.fromHex(params.rawTxHex);
+
+  // (a) input 0 is the listing's exact source outpoint (checked first for a
+  // clear error before the deeper structural validation).
+  const ins0 = tx.ins[0];
+  if (!ins0 || inputTxid(ins0) !== terms.sourceTxid || ins0.index !== terms.sourceVout) {
+    reject("SOURCE_INPUT", "input 0 is not the listing source outpoint");
+  }
+
   // Build resolved prevouts for every input so the transfer validator enforces
   // the exact miner fee (it skips that check when prevouts are absent).
   const prevouts = new Map<string, ResolvedPrevout>();
@@ -99,18 +108,11 @@ export function validateFinalizedP2PFill(params: P2PFillValidationParams): Valid
   });
   if (!("rawTxHex" in base)) reject("TRANSFER_VALIDATION", base.reason);
 
-  const tx = bitcoin.Transaction.fromHex(params.rawTxHex);
   const wire = parseCoveTx(params.rawTxHex);
   if (wire.kind !== "TRANSFER") reject("NOT_TRANSFER", `kind=${wire.kind}`);
   const envelope = wire.envelope;
   if (envelope.op !== OP_TRANSFER) reject("NOT_TRANSFER", `op=${envelope.op}`);
   const allocations = envelope.allocations;
-
-  // (a) input 0 is the listing's exact source outpoint.
-  const ins0 = tx.ins[0];
-  if (!ins0 || inputTxid(ins0) !== terms.sourceTxid || ins0.index !== terms.sourceVout) {
-    reject("SOURCE_INPUT", "input 0 is not the listing source outpoint");
-  }
 
   // (b) NO backing/Guardian/supply involvement: no input may spend the backing.
   const tokenIdBuf = Buffer.from(terms.tokenId, "hex");

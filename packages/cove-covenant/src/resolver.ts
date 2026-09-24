@@ -127,6 +127,29 @@ export class CoveChainView {
     }
   }
 
+  /** Current backing state for a tokenId (the canonical backing UTXO's state). */
+  getCurrentBackingState(tokenId: Buffer): CoveStateV2 | null {
+    return this.backing.get(tokenId.toString("hex"))?.state ?? null;
+  }
+
+  /** Current backing outpoint for a tokenId (the canonical backing UTXO). */
+  getBackingOutpoint(tokenId: Buffer): OutPoint | null {
+    return this.backing.get(tokenId.toString("hex"))?.outpoint ?? null;
+  }
+
+  /** Resolve the backing state spent at a specific outpoint, if it is canonical. */
+  getBackingStateByOutpoint(o: OutPoint): CoveStateV2 | null {
+    for (const b of this.backing.values()) {
+      if (opKey(b.outpoint) === opKey(o)) return b.state;
+    }
+    return null;
+  }
+
+  /** Resolve a single token UTXO by outpoint. */
+  getTokenUtxo(o: OutPoint): TokenUtxo | null {
+    return this.tokenUtxos.get(opKey(o)) ?? null;
+  }
+
   /** Resolve the Cove token inputs actually referenced by a transaction's inputs. */
   resolveTokenInputs(ins: { txid: string; vout: number }[]): TokenUtxo[] {
     const out: TokenUtxo[] = [];

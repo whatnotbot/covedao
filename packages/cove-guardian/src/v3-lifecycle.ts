@@ -38,6 +38,15 @@ import {
   buildTransferPsbtV2,
   RESERVE_ANCHOR_SATS,
 } from "./v3/builder.js";
+import {
+  GuardianV3Signer,
+  consoleAuditSink,
+  validateAndSignMintTransition,
+  validateAndSignRedeemTransition,
+  validateFinalizedMintTransaction,
+  validateFinalizedRedeemTransaction,
+  validateFinalizedTransferTransaction,
+} from "./v3/index.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 const ECPair = ECPairFactory(ecc);
@@ -46,36 +55,16 @@ const RPC_URL = process.env.COVE_REGTEST_RPC_URL ?? "http://127.0.0.1:18443";
 const RPC_USER = process.env.COVE_REGTEST_RPC_USER ?? "user";
 const RPC_PASSWORD = process.env.COVE_REGTEST_RPC_PASSWORD ?? "pass";
 
-// Deterministic keys: guardian priv=0x42, recovery priv=0x43.
-const guardianKey = ECPair.fromPrivateKey(Buffer.alloc(32, 0x42), {
-  network: bitcoin.networks.regtest,
-});
-const guardianXOnly = Buffer.from(guardianKey.publicKey.subarray(1));
+// Deterministic Guardian key (priv=0x42) is held PRIVATELY by the production
+// signer — the lifecycle never touches the signing key directly (arch. test §22).
+const signer = GuardianV3Signer.fromPrivateKey(Buffer.alloc(32, 0x42));
+const guardianXOnly = signer.xOnlyPubkey();
 const recoveryXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x43), true)!.subarray(1));
 const NONCE = Buffer.alloc(32, 0xab);
 const MINER_FEE = 1_000n;
 
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(`ASSERT FAILED: ${msg}`);
-}
-
-function scriptWitness(items: Buffer[]): Buffer {
-  const varInt = (n: number): Buffer => {
-    if (n < 0xfd) return Buffer.from([n]);
-    if (n <= 0xffff) {
-      const b = Buffer.alloc(3);
-      b[0] = 0xfd;
-      b.writeUInt16LE(n, 1);
-      return b;
-    }
-    const b = Buffer.alloc(5);
-    b[0] = 0xfe;
-    b.writeUInt32LE(n, 1);
-    return b;
-  };
-  const parts: Buffer[] = [varInt(items.length)];
-  for (const it of items) parts.push(varInt(it.length), it);
-  return Buffer.concat(parts);
 }
 
 class RegtestRpc {
@@ -189,19 +178,21 @@ function extractWireV2(tx: bitcoin.Transaction): Buffer {
   return Buffer.from(s.subarray(2));
 }
 
-/** Guardian script-path signs a V3 vault execution leaf (MINT or REDEEM). */
-function signVaultPath(
-  psbt: bitcoin.Psbt,
-  inputIndex: number,
-  leaf: { script: Buffer; tapleafHash: Buffer },
-  controlBlock: Buffer,
-): void {
-  psbt.signTaprootInput(inputIndex, guardianKey, leaf.tapleafHash);
-  const sig = psbt.data.inputs[inputIndex]!.tapScriptSig![0]!.signature!;
-  const reveal = leaf.script.subarray(1, 33);
-  psbt.updateInput(inputIndex, {
-    finalScriptWitness: scriptWitness([Buffer.from(sig), reveal, leaf.script, controlBlock]),
-  });
+/** Print the production Guardian signing trace (Phase 4.4 §16). */
+function printSigningTrace(r: {
+  operation: string;
+  expectedCmr: string;
+  actualCmr: string;
+  simplicityResult: string;
+  referencePolicyResult: string;
+  signed: boolean;
+}): void {
+  console.log(`    policy: ${r.operation}`);
+  console.log(`    expected CMR: ${r.expectedCmr}`);
+  console.log(`    actual compiled CMR: ${r.actualCmr}`);
+  console.log(`    Simplicity result: ${r.simplicityResult}`);
+  console.log(`    reference policy: ${r.referencePolicyResult}`);
+  console.log(`    Guardian signed: ${r.signed ? "YES" : "NO"}`);
 }
 
 /** Extract + decode + re-encode-check a Cove tx's wire envelope; returns decoded. */
@@ -314,10 +305,36 @@ async function main(): Promise<void> {
     feeScript,
     minerFeeSats: MINER_FEE,
   });
-  signVaultPath(mint1.psbt, 0, mint1.prevVault.mintLeaf, mint1.prevVault.mintControlBlock);
+  const mintSign = validateAndSignMintTransition({
+    signer,
+    psbt: mint1.psbt,
+    view,
+    network: "regtest",
+    recoveryKeyXOnly: recoveryXOnly,
+    feeScript,
+    auditSink: consoleAuditSink,
+  });
+  assert(mintSign.ok, `Guardian refused MINT: ${mintSign.ok ? "" : mintSign.reason}`);
+  printSigningTrace({
+    operation: "MINT",
+    expectedCmr: mintSign.expectedCmr,
+    actualCmr: mintSign.actualCmr,
+    simplicityResult: mintSign.simplicityResult,
+    referencePolicyResult: mintSign.referencePolicyResult,
+    signed: true,
+  });
   mint1.psbt.signInput(1, alice);
   mint1.psbt.finalizeInput(1);
   const mint1Hex = mint1.psbt.extractTransaction().toHex();
+  const mint1Fin = validateFinalizedMintTransaction({
+    rawTxHex: mint1Hex,
+    view,
+    network: "regtest",
+    guardianXOnly,
+    recoveryKeyXOnly: recoveryXOnly,
+    feeScript,
+  });
+  assert(mint1Fin.ok, `finalized MINT revalidation failed: ${mint1Fin.reason}`);
   const mint1Accept = await provider.testMempoolAccept(mint1Hex);
   assert(mint1Accept.allowed === true, `mint rejected: ${mint1Accept.rejectReason}`);
   const mint1Txid = await provider.broadcastTransaction(mint1Hex);
@@ -358,6 +375,8 @@ async function main(): Promise<void> {
   transfer.psbt.signInput(1, alice); // BTC funder
   transfer.psbt.finalizeAllInputs();
   const transferHex = transfer.psbt.extractTransaction().toHex();
+  const transferFin = validateFinalizedTransferTransaction({ rawTxHex: transferHex, view });
+  assert(transferFin.ok, `finalized TRANSFER revalidation failed: ${transferFin.reason}`);
   const transferAccept = await provider.testMempoolAccept(transferHex);
   assert(transferAccept.allowed === true, `transfer rejected: ${transferAccept.rejectReason}`);
   const transferTxid = await provider.broadcastTransaction(transferHex);
@@ -399,10 +418,36 @@ async function main(): Promise<void> {
     feeScript,
     minerFeeSats: MINER_FEE,
   });
-  signVaultPath(redeem.psbt, 0, redeem.prevVault.redeemLeaf, redeem.prevVault.redeemControlBlock);
+  const redeemSign = validateAndSignRedeemTransition({
+    signer,
+    psbt: redeem.psbt,
+    view,
+    network: "regtest",
+    recoveryKeyXOnly: recoveryXOnly,
+    feeScript,
+    auditSink: consoleAuditSink,
+  });
+  assert(redeemSign.ok, `Guardian refused REDEEM: ${redeemSign.ok ? "" : redeemSign.reason}`);
+  printSigningTrace({
+    operation: "REDEEM",
+    expectedCmr: redeemSign.expectedCmr,
+    actualCmr: redeemSign.actualCmr,
+    simplicityResult: redeemSign.simplicityResult,
+    referencePolicyResult: redeemSign.referencePolicyResult,
+    signed: true,
+  });
   redeem.psbt.signInput(1, bob);
   redeem.psbt.finalizeInput(1);
   const redeemHex = redeem.psbt.extractTransaction().toHex();
+  const redeemFin = validateFinalizedRedeemTransaction({
+    rawTxHex: redeemHex,
+    view,
+    network: "regtest",
+    guardianXOnly,
+    recoveryKeyXOnly: recoveryXOnly,
+    feeScript,
+  });
+  assert(redeemFin.ok, `finalized REDEEM revalidation failed: ${redeemFin.reason}`);
   const redeemAccept = await provider.testMempoolAccept(redeemHex);
   assert(redeemAccept.allowed === true, `redeem rejected: ${redeemAccept.rejectReason}`);
   const redeemTxid = await provider.broadcastTransaction(redeemHex);
@@ -449,10 +494,36 @@ async function main(): Promise<void> {
     feeScript,
     minerFeeSats: MINER_FEE,
   });
-  signVaultPath(mint2.psbt, 0, mint2.prevVault.mintLeaf, mint2.prevVault.mintControlBlock);
+  const rebuySign = validateAndSignMintTransition({
+    signer,
+    psbt: mint2.psbt,
+    view,
+    network: "regtest",
+    recoveryKeyXOnly: recoveryXOnly,
+    feeScript,
+    auditSink: consoleAuditSink,
+  });
+  assert(rebuySign.ok, `Guardian refused RE-BUY: ${rebuySign.ok ? "" : rebuySign.reason}`);
+  printSigningTrace({
+    operation: "MINT (RE-BUY)",
+    expectedCmr: rebuySign.expectedCmr,
+    actualCmr: rebuySign.actualCmr,
+    simplicityResult: rebuySign.simplicityResult,
+    referencePolicyResult: rebuySign.referencePolicyResult,
+    signed: true,
+  });
   mint2.psbt.signInput(1, alice);
   mint2.psbt.finalizeInput(1);
   const mint2Hex = mint2.psbt.extractTransaction().toHex();
+  const mint2Fin = validateFinalizedMintTransaction({
+    rawTxHex: mint2Hex,
+    view,
+    network: "regtest",
+    guardianXOnly,
+    recoveryKeyXOnly: recoveryXOnly,
+    feeScript,
+  });
+  assert(mint2Fin.ok, `finalized RE-BUY revalidation failed: ${mint2Fin.reason}`);
   const mint2Accept = await provider.testMempoolAccept(mint2Hex);
   assert(mint2Accept.allowed === true, `re-buy rejected: ${mint2Accept.rejectReason}`);
   const mint2Txid = await provider.broadcastTransaction(mint2Hex);
@@ -505,6 +576,8 @@ async function main(): Promise<void> {
   p2p.psbt.signInput(1, carol); // Carol's BTC funder
   p2p.psbt.finalizeAllInputs();
   const p2pHex = p2p.psbt.extractTransaction().toHex();
+  const p2pFin = validateFinalizedTransferTransaction({ rawTxHex: p2pHex, view });
+  assert(p2pFin.ok, `finalized P2P revalidation failed: ${p2pFin.reason}`);
   const p2pAccept = await provider.testMempoolAccept(p2pHex);
   assert(p2pAccept.allowed === true, `p2p rejected: ${p2pAccept.rejectReason}`);
   const p2pTxid = await provider.broadcastTransaction(p2pHex);

@@ -56,6 +56,7 @@ export {
   type RedeemV2Result,
 } from "./transitionV2.js";
 export { TOKEN_CARRIER_SATS, isCarrierValue } from "./carrier.js";
+export { RESERVE_ANCHOR_SATS } from "./anchor.js";
 export {
   CoveChainView,
   type CoveCanonicalView,

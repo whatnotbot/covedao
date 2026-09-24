@@ -3,6 +3,7 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { ECPairFactory } from "ecpair";
 import { CoveChainView } from "@crclaunch/cove-covenant";
+import { isSimplicityAvailable } from "@crclaunch/cove-simplicity";
 import { CHAIN_BITCOIN_REGTEST } from "@crclaunch/cove-wire";
 import type { VaultRecoveryProfile } from "@crclaunch/cove-vault";
 import { buildDeployPsbtV3, buildMintPsbtV3, RESERVE_ANCHOR_SATS } from "./builder.js";
@@ -79,7 +80,7 @@ function transportFor(view: CoveChainView): InProcessGuardianTransport {
 }
 
 describe("remote Guardian client (§24)", () => {
-  it("signs a MINT through the in-process transport and independently verifies", async () => {
+  it.skipIf(!isSimplicityAvailable())("signs a MINT through the in-process transport and independently verifies", async () => {
     const { psbt, view, tokenId } = mintFixture();
     const remote = new RemoteGuardianTransitionSigner(transportFor(view), PROFILE_HASH, guardianXOnlyHex);
     const out = await remote.signMint({ psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile: MAINNET1, feeScript, maxMinerFeeSats: 1_000n });
@@ -91,7 +92,7 @@ describe("remote Guardian client (§24)", () => {
     expect(psbt.data.inputs[0]!.finalScriptWitness).toBeDefined();
   });
 
-  it("rejects a spoofed service signature (independent verification)", async () => {
+  it.skipIf(!isSimplicityAvailable())("rejects a spoofed service signature (independent verification)", async () => {
     const { psbt, view } = mintFixture();
     const honest = transportFor(view);
     // A malicious transport that signs a DIFFERENT sighash with a DIFFERENT key.
@@ -123,7 +124,7 @@ describe("remote Guardian client (§24)", () => {
     if (!out.ok) expect(out.reason).toBe("RISK_POLICY_REJECTED");
   });
 
-  it("post-sign audit failure surfaces SIGNED_BUT_AUDIT_FINALIZATION_FAILED and keeps the journal reserved (§34)", async () => {
+  it.skipIf(!isSimplicityAvailable())("post-sign audit failure surfaces SIGNED_BUT_AUDIT_FINALIZATION_FAILED and keeps the journal reserved (§34)", async () => {
     const { psbt, view } = mintFixture();
     const journal = new InMemorySigningJournal();
     const failingAfter: DurableAuditSink = {

@@ -9,6 +9,10 @@ bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
  * Production Guardian signing primitive (§12/§13). This module is the ONLY place
  * that possesses/uses the Guardian signing key for a Cove backing-state spend.
  * It exposes no generic sign(key/hash/psbt) and no key export/WIF.
+ *
+ * The shared helpers (sighash / verify / witness commit) are reused by the
+ * custody-backend signing path (`custody.ts`), which signs the SAME sighash via
+ * a remote/hardware backend and independently verifies before committing.
  */
 
 export interface VaultLeafRef {
@@ -16,7 +20,7 @@ export interface VaultLeafRef {
   tapleafHash: Buffer;
 }
 
-function scriptWitness(items: Buffer[]): Buffer {
+export function scriptWitness(items: Buffer[]): Buffer {
   const varInt = (n: number): Buffer => {
     if (n < 0xfd) return Buffer.from([n]);
     if (n <= 0xffff) {
@@ -33,6 +37,64 @@ function scriptWitness(items: Buffer[]): Buffer {
   const parts: Buffer[] = [varInt(items.length)];
   for (const it of items) parts.push(varInt(it.length), it);
   return Buffer.concat(parts);
+}
+
+/** Recompute the exact BIP341 SIGHASH_DEFAULT sighash over a vault leaf. */
+export function computeVaultExecutionSighash(
+  psbt: bitcoin.Psbt,
+  inputIndex: number,
+  leaf: VaultLeafRef,
+): Buffer {
+  const tx = unsignedTransaction(psbt);
+  const prevOutScripts = psbt.data.inputs.map((i) => Buffer.from(i.witnessUtxo!.script));
+  const values = psbt.data.inputs.map((i) => i.witnessUtxo!.value);
+  return tx.hashForWitnessV1(inputIndex, prevOutScripts, values, 0x00, leaf.tapleafHash);
+}
+
+/** Independently verify a Schnorr signature over a vault leaf (throw on fail). */
+export function verifyVaultExecutionSignature(
+  psbt: bitcoin.Psbt,
+  inputIndex: number,
+  leaf: VaultLeafRef,
+  sig: Buffer,
+  xOnly: Buffer,
+): void {
+  const tx = unsignedTransaction(psbt);
+  let sig64 = sig;
+  let hashType = 0x00; // SIGHASH_DEFAULT
+  if (sig.length === 65) {
+    sig64 = sig.subarray(0, 64);
+    hashType = sig[sig.length - 1]!;
+  }
+  const prevOutScripts = psbt.data.inputs.map((i) => Buffer.from(i.witnessUtxo!.script));
+  const values = psbt.data.inputs.map((i) => i.witnessUtxo!.value);
+  const sighash = tx.hashForWitnessV1(
+    inputIndex,
+    prevOutScripts,
+    values,
+    hashType,
+    leaf.tapleafHash,
+  );
+  if (!ecc.verifySchnorr(sighash, xOnly, sig64)) {
+    throw new Error("SCHNORR_VERIFY_FAILED: signature failed independent verification");
+  }
+}
+
+/** Commit the final script witness for a signed vault execution leaf. */
+export function commitVaultExecutionWitness(
+  psbt: bitcoin.Psbt,
+  inputIndex: number,
+  leaf: VaultLeafRef,
+  controlBlock: Buffer,
+  sig: Buffer,
+): Buffer {
+  // The witness reveal is the policy identity hash (first 32 bytes of the
+  // execution leaf script `<policyIdentityHash> OP_EQUALVERIFY <guardian> CHECKSIG`).
+  const reveal = leaf.script.subarray(1, 33);
+  psbt.updateInput(inputIndex, {
+    finalScriptWitness: scriptWitness([sig, reveal, leaf.script, controlBlock]),
+  });
+  return sig;
 }
 
 export class GuardianV3Signer {
@@ -71,42 +133,8 @@ export class GuardianV3Signer {
     const sigFull = psbt.data.inputs[inputIndex]!.tapScriptSig![0]!.signature!;
     const sig = Buffer.from(sigFull);
 
-    this.independentSchnorrVerify(psbt, inputIndex, leaf, sig);
-
-    // The witness reveal is the policy identity hash (first 32 bytes of the
-    // execution leaf script `<policyIdentityHash> OP_EQUALVERIFY <guardian> CHECKSIG`).
-    const reveal = leaf.script.subarray(1, 33);
-    psbt.updateInput(inputIndex, {
-      finalScriptWitness: scriptWitness([sig, reveal, leaf.script, controlBlock]),
-    });
+    verifyVaultExecutionSignature(psbt, inputIndex, leaf, sig, this.xOnly);
+    commitVaultExecutionWitness(psbt, inputIndex, leaf, controlBlock, sig);
     return sig;
-  }
-
-  /** Recompute the BIP341 sighash and verify the produced Schnorr signature. */
-  private independentSchnorrVerify(
-    psbt: bitcoin.Psbt,
-    inputIndex: number,
-    leaf: VaultLeafRef,
-    sig: Buffer,
-  ): void {
-    const tx = unsignedTransaction(psbt);
-    let sig64 = sig;
-    let hashType = 0x00; // SIGHASH_DEFAULT
-    if (sig.length === 65) {
-      sig64 = sig.subarray(0, 64);
-      hashType = sig[sig.length - 1]!;
-    }
-    const prevOutScripts = psbt.data.inputs.map((i) => Buffer.from(i.witnessUtxo!.script));
-    const values = psbt.data.inputs.map((i) => i.witnessUtxo!.value);
-    const sighash = tx.hashForWitnessV1(
-      inputIndex,
-      prevOutScripts,
-      values,
-      hashType,
-      leaf.tapleafHash,
-    );
-    if (!ecc.verifySchnorr(sighash, this.xOnly, sig64)) {
-      throw new Error("SCHNORR_VERIFY_FAILED: produced signature failed independent verification");
-    }
   }
 }

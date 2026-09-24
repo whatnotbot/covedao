@@ -16,6 +16,17 @@ export { computeHealth, type IndexerHealth, type HealthReport } from "./health.j
 export { persistentWorker, reorgPersistentToTip } from "./persistent.js";
 export { reindexDb } from "./reindex.js";
 export {
+  regtestConfig,
+  regtestTokenId,
+  REGTEST_KEYS,
+  REGTEST_GUARDIAN_XONLY,
+  REGTEST_RECOVERY_XONLY,
+  REGTEST_FEE_SCRIPT,
+  REGTEST_NONCE,
+  REGTEST_TICKER,
+  REGTEST_CHAIN_IDENTITY,
+} from "./regtest-fixture.js";
+export {
   getTokenUtxosByScriptDb,
   getBalanceByScriptDb,
   getTokenHoldersDb,

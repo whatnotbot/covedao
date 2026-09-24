@@ -1,8 +1,9 @@
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
-import { ECPairFactory } from "ecpair";
+import type { ECPairInterface } from "ecpair";
 import { CoreRpcProvider } from "@crclaunch/bitcoin";
 import { CHAIN_BITCOIN_REGTEST } from "@crclaunch/cove-wire";
+import { REGTEST_KEYS, REGTEST_FEE_SCRIPT, REGTEST_NONCE, REGTEST_MINER_FEE, regtestConfig } from "./regtest-fixture.js";
 import { TOKEN_CARRIER_SATS } from "@crclaunch/cove-covenant";
 import {
   GuardianV3Signer,
@@ -31,7 +32,6 @@ import { reorgToTip } from "./reorg.js";
  * rollback/replay equality.
  */
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
-const ECPair = ECPairFactory(ecc);
 
 const RPC_URL = process.env.COVE_REGTEST_RPC_URL ?? "http://127.0.0.1:18443";
 const RPC_USER = process.env.COVE_REGTEST_RPC_USER ?? "user";
@@ -40,11 +40,11 @@ const RPC_PASSWORD = process.env.COVE_REGTEST_RPC_PASSWORD ?? "pass";
 const signer = GuardianV3Signer.fromPrivateKey(Buffer.alloc(32, 0x42));
 const guardianXOnly = signer.xOnlyPubkey();
 const recoveryXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x43), true)!.subarray(1));
-const NONCE = Buffer.alloc(32, 0xab);
+const NONCE = REGTEST_NONCE;
 const MINT_AMOUNT = 84_000_000n * 100_000_000n;
-const MINER_FEE = 1_000n;
+const MINER_FEE = REGTEST_MINER_FEE;
 
-type K = ReturnType<typeof ECPair.makeRandom>;
+type K = ECPairInterface;
 function p2wpkh(key: K): Buffer {
   return bitcoin.payments.p2wpkh({ pubkey: key.publicKey, network: bitcoin.networks.regtest }).output!;
 }
@@ -84,9 +84,8 @@ async function main() {
   const mineAddr = await rpc.getNewAddress();
   await rpc.generate(101, mineAddr);
 
-  const feeKey = ECPair.makeRandom({ network: bitcoin.networks.regtest });
-  const feeScript = p2wpkh(feeKey);
-  const config = { network: "regtest" as const, chainIdentity: CHAIN_BITCOIN_REGTEST, guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript, genesisHeight: 0n };
+  const feeScript = REGTEST_FEE_SCRIPT;
+  const config = regtestConfig();
   const state = new V3IndexerState(config);
   const dbUrl = process.env.COVE_DATABASE_URL ?? process.env.DATABASE_URL;
   const db = dbUrl ? createDb(dbUrl) : null;
@@ -123,9 +122,9 @@ async function main() {
     return { txid, vout, script, valueSats: BigInt(t.outs[vout]!.value) };
   }
 
-  const deployer = ECPair.makeRandom({ network: bitcoin.networks.regtest });
-  const alice = ECPair.makeRandom({ network: bitcoin.networks.regtest });
-  const bob = ECPair.makeRandom({ network: bitcoin.networks.regtest });
+  const deployer = REGTEST_KEYS.deployer;
+  const alice = REGTEST_KEYS.alice;
+  const bob = REGTEST_KEYS.bob;
 
   // ── DEPLOY ──
   const deployerUtxo = await fund(deployer, 1.0);

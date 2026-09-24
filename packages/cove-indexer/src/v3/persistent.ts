@@ -18,8 +18,10 @@ export async function persistentWorker(params: {
   state: V3IndexerState;
   provider: CoreRpcProvider;
   config: V3IndexerConfig;
+  opts?: { rebuilding?: boolean };
 }): Promise<{ indexed: number; finalHeight: bigint; stateRoot: string }> {
   const { db, store, state, provider } = params;
+  const rebuilding = params.opts?.rebuilding ?? false;
   const info = await provider.getBlockchainInfo();
   const tip = BigInt(info.blocks);
   let indexed = 0;
@@ -36,7 +38,7 @@ export async function persistentWorker(params: {
     const events = staged.events.filter((e) => e.blockHeight === h);
 
     await db.transaction(async (tx) => {
-      await store.persistBlock(tx, staged, input, events, undo);
+      await store.persistBlock(tx, staged, input, events, undo, { rebuilding });
     });
     state.adopt(staged); // only after DB commit
     indexed += 1;
@@ -86,7 +88,7 @@ export async function reorgPersistentToTip(params: {
     const events = staged.events.filter((e) => e.blockHeight === h);
 
     await db.transaction(async (tx) => {
-      await store.persistBlock(tx, staged, input, events, undo);
+      await store.persistBlock(tx, staged, input, events, undo, { rebuilding: false });
     });
     state.adopt(staged);
     replayed.push(h);

@@ -1,39 +1,26 @@
 import { CoreRpcProvider } from "@crclaunch/bitcoin";
 import { createDb } from "@crclaunch/db";
-import * as bitcoin from "bitcoinjs-lib";
-import * as ecc from "tiny-secp256k1";
-import { CHAIN_BITCOIN_REGTEST } from "@crclaunch/cove-wire";
+import { regtestConfig } from "./regtest-fixture.js";
 import { V3Store } from "./store.js";
 import { hydrateState } from "./hydrate.js";
 import { reindexDb } from "./reindex.js";
-
 import { computeHealth } from "./health.js";
 import { quickVerify, fullVerify } from "./verify.js";
 
 /**
- * Persistent V3 CLI (§13). STATUS / VERIFY / REINDEX operate on Postgres.
- * DATABASE_URL is REQUIRED for persistent commands.
+ * Persistent V3 CLI (§13). STATUS / VERIFY / REINDEX operate on Postgres using
+ * the single deterministic regtest fixture config. DATABASE_URL is REQUIRED.
  */
-bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
-
 const RPC_URL = process.env.COVE_REGTEST_RPC_URL ?? "http://127.0.0.1:18443";
 const RPC_USER = process.env.COVE_REGTEST_RPC_USER ?? "user";
 const RPC_PASSWORD = process.env.COVE_REGTEST_RPC_PASSWORD ?? "pass";
 const DB_URL = process.env.COVE_DATABASE_URL ?? process.env.DATABASE_URL;
 
-function config() {
-  const guardianXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x42), true)!.subarray(1));
-  const recoveryXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x43), true)!.subarray(1));
-  const feeKey = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x44), true)!.subarray(1));
-  const feeScript = bitcoin.payments.p2tr({ internalPubkey: feeKey, network: bitcoin.networks.regtest }).output!;
-  return { network: "regtest" as const, chainIdentity: CHAIN_BITCOIN_REGTEST, guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript, genesisHeight: 0n };
-}
-
 async function main() {
   if (!DB_URL) throw new Error("DATABASE_URL is required for persistent CLI commands");
   const db = createDb(DB_URL);
   const provider = new CoreRpcProvider({ url: RPC_URL, user: RPC_USER, password: RPC_PASSWORD });
-  const cfg = config();
+  const cfg = regtestConfig();
   const store = new V3Store("regtest");
   const cmd = process.argv[2] ?? "status";
 
@@ -85,7 +72,6 @@ async function main() {
       process.exitCode = 2;
   }
 }
-
 
 main().catch((e) => {
   console.error("v3 cli failed:", e instanceof Error ? e.message : String(e));

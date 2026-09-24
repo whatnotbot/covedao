@@ -22,6 +22,7 @@ export class V3Store {
     block: V3BlockInput,
     events: V3Event[],
     undo: BlockUndo,
+    opts: { rebuilding: boolean } = { rebuilding: false },
   ): Promise<void> {
     const n = this.network;
     await tx.insert(tables.coveV3Blocks).values({
@@ -57,7 +58,7 @@ export class V3Store {
     // apply forward deltas from the undo ops (in order)
     for (const op of undo.ops) await this.applyForward(tx, state, op, block);
 
-    // upsert cursor
+    // upsert cursor (rebuilding is caller-controlled; persistBlock never flips it to false on its own)
     await tx
       .insert(tables.coveV3Cursor)
       .values({
@@ -65,11 +66,11 @@ export class V3Store {
         height: block.height,
         blockHash: block.hash,
         stateRoot: state.stateRoot(),
-        rebuilding: false,
+        rebuilding: opts.rebuilding,
       })
       .onConflictDoUpdate({
         target: tables.coveV3Cursor.network,
-        set: { height: block.height, blockHash: block.hash, stateRoot: state.stateRoot() },
+        set: { height: block.height, blockHash: block.hash, stateRoot: state.stateRoot(), rebuilding: opts.rebuilding },
       });
   }
 

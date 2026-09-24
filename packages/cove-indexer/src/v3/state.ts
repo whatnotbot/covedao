@@ -141,6 +141,8 @@ export class V3IndexerState {
 
   /** Apply one canonical block; returns the events produced and stores undo. */
   applyBlock(block: V3BlockInput): V3Event[] {
+    // Activation height (§13/§48): Cove ops BELOW the activation height are ignored.
+    if (block.height < this.config.genesisHeight) return [];
     const ops: UndoOp[] = [];
     const events: V3Event[] = [];
     for (let txIndex = 0; txIndex < block.txs.length; txIndex++) {

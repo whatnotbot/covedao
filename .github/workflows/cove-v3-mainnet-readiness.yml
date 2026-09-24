@@ -8,9 +8,9 @@ on:
 
 jobs:
   readiness:
-    name: protocol freeze + recovery profile + fail-closed mainnet config + secret scan
+    name: protocol freeze + mainnet runtime wiring (profile + remote Guardian + Core quorum)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
 
     env:
       COVE_REGTEST_RPC_URL: http://127.0.0.1:18443
@@ -33,6 +33,20 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build cove-simplicity release binary + verify frozen V3 CMRs
+        working-directory: packages/cove-simplicity/rust
+        run: |
+          set -euo pipefail
+          cargo build --release
+          BIN=target/release/cove-simplicity
+          MINT_CMR=$("$BIN" build mint | python3 -c 'import sys,json; print(json.load(sys.stdin)["cmr"])')
+          REDEEM_CMR=$("$BIN" build redeem | python3 -c 'import sys,json; print(json.load(sys.stdin)["cmr"])')
+          test "$MINT_CMR" = "0b594eb3fadec17b45bb1d245ae18f8c512a1ba42751f820cd28351ced6c8377"
+          test "$REDEEM_CMR" = "37e681b3e70a34acc3b38680c06fbe4f1b2799bede2607c6c9ed7fcac8c95d56"
+          echo "compiled MINT CMR: $MINT_CMR"
 
       - name: Check dependency graph (no cycles, simplicity ⇏ guardian)
         run: node scripts/check-dependency-graph.mjs
@@ -80,6 +94,43 @@ jobs:
 
       - name: Run real Core recovery consensus matrix (2-of-3 threshold, before/after CSV)
         run: pnpm --filter @crclaunch/cove-recovery recovery-regtest
+
+      - name: Start secondary bitcoind -regtest (Core B, connected to Core A)
+        run: |
+          mkdir -p /tmp/btc-readiness-secondary
+          bitcoind -regtest -daemonwait \
+            -server=1 -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
+            -rpcport=18445 -port=18446 -connect=127.0.0.1:18444 \
+            -fallbackfee=0.0002 -datadir=/tmp/btc-readiness-secondary \
+            -txindex=1 -deprecatedrpc=create_bdb -persistmempool=0
+          for i in $(seq 1 60); do
+            bitcoin-cli -regtest -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
+              -rpcport=18445 getblockchaininfo >/dev/null 2>&1 && break
+            sleep 1
+          done
+          bitcoin-cli -regtest -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
+            -rpcport=18445 getblockchaininfo
+
+      - name: Run production-profile-regtest lifecycle (remote Guardian, MAINNET1, real Core)
+        run: pnpm --filter @crclaunch/cove-guardian v3-production-profile-lifecycle
+        env:
+          COVE_V3_MAINNET_PROFILE_PATH: test/fixtures/mainnet-profile.json
+
+      - name: Readiness --static (real public template → READY_EXCEPT_FOR_OPERATOR_CEREMONY)
+        run: |
+          OUT=$(COVE_V3_MAINNET_PROFILE_PATH=config/cove-v3-mainnet-profile.template.json pnpm cove:v3-mainnet-readiness --static)
+          echo "$OUT"
+          echo "$OUT" | grep -q "READY_EXCEPT_FOR_OPERATOR_CEREMONY"
+
+      - name: Readiness --runtime (fixture + Core A/B + fixture Guardian → READY_FOR_CONTROLLED_MAINNET_CANARY)
+        run: |
+          OUT=$(COVE_V3_MAINNET_PROFILE_PATH=test/fixtures/mainnet-profile.json \
+            COVE_BITCOIN_RPC_URL=http://127.0.0.1:18443 \
+            COVE_BITCOIN_RPC_URL_SECONDARY=http://127.0.0.1:18445 \
+            COVE_V3_FIXTURE_GUARDIAN=true \
+            pnpm cove:v3-mainnet-readiness --runtime)
+          echo "$OUT"
+          echo "$OUT" | grep -q "READY_FOR_CONTROLLED_MAINNET_CANARY"
 
       - name: Build
         run: pnpm build

@@ -207,4 +207,25 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
     expect(ev.reason).toBe("FORGED_TOKEN_INPUT");
     expect(state.tokenUtxos.size).toBe(0);
   });
+
+  it("ignores Cove ops below the activation height, indexes at/above it (§13/§48)", () => {
+    const state = new V3IndexerState({ ...config(), genesisHeight: 2n });
+    const tokenId = computeTokenId({ chainIdentity: CHAIN_BITCOIN_REGTEST, policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
+    const s0 = s0StateV2({ tokenId: tokenId.toString("hex") });
+    const deployWire = encodeDeployV2({ policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
+    const deployHex = tx(
+      [{ txid: "d0".repeat(32), vout: 0 }],
+      [
+        { script: opReturn(deployWire), value: 0n },
+        { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS },
+      ],
+    );
+    // Height 1 (< H=2) → ignored.
+    expect(state.applyBlock(block(1, [deployHex]))).toHaveLength(0);
+    expect(state.tokens.size).toBe(0);
+    // Height 2 (>= H) → indexed.
+    const events = state.applyBlock(block(2, [deployHex]));
+    expect(events.length).toBeGreaterThan(0);
+    expect(state.tokens.size).toBe(1);
+  });
 });

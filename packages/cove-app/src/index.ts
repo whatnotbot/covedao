@@ -42,6 +42,7 @@ export {
   type MainnetHealth,
 } from "./mainnet.js";
 export { PostgresSigningJournal } from "./journal.js";
+export { PostgresGuardianAudit } from "./audit.js";
 export { checkBackingInvariant, checkSupplyInvariant, type InvariantResult } from "./invariants.js";
 export { FixedWindowRateLimiter, type RateLimiter, type RateLimitKey, type RateLimitConfig, type RateLimitResult } from "./rate-limit.js";
 export { Metrics, type MetricName } from "./metrics.js";

@@ -1,14 +1,15 @@
 import "dotenv/config";
 import { createDb, type Database } from "@crclaunch/db";
 import { CoreRpcProvider } from "@crclaunch/bitcoin";
-import { GuardianV3Signer } from "@crclaunch/cove-guardian/v3";
-import { loadV3AppConfig, V3AppService, type V3AppConfig } from "@crclaunch/cove-app";
+import { GuardianV3Signer, LocalGuardianTransitionSigner, type GuardianTransitionSigner } from "@crclaunch/cove-guardian/v3";
+import { loadV3AppConfig, V3AppService, PostgresSigningJournal, PostgresGuardianAudit, type V3AppConfig } from "@crclaunch/cove-app";
 import { AppError } from "@crclaunch/cove-app";
 
 /**
- * Production V3 server runtime (§6/§7/§8). Real Core RPC + real Postgres + real
- * Guardian signer (server-side secret, regtest/staging ONLY). No PrecopCRCAdapter,
- * no MockChainNode, no mock Bitcoin provider.
+ * Production V3 server runtime (§6/§7/§8/§11/§12). Real Core RPC + real Postgres.
+ * Regtest/staging MAY use a local Guardian key; mainnet requires the remote
+ * transition signer (fail-closed). No PrecopCRCAdapter, no MockChainNode, no
+ * mock Bitcoin provider.
  */
 
 export interface V3Services {
@@ -16,6 +17,7 @@ export interface V3Services {
   db: Database;
   provider: CoreRpcProvider;
   signer: GuardianV3Signer | null;
+  transitionSigner: GuardianTransitionSigner | null;
   app: V3AppService;
 }
 
@@ -31,8 +33,21 @@ export function getV3Services(): V3Services {
     password: config.coreRpcPassword,
   });
   const signer = config.guardianPrivateKey ? GuardianV3Signer.fromPrivateKey(config.guardianPrivateKey) : null;
-  const app = new V3AppService(db, provider, config, signer);
-  const services: V3Services = { config, db, provider, signer, app };
+
+  // Durable-before-sign transition signer (journal + audit) for non-mainnet when a
+  // local Guardian key exists; mainnet requires a remote production signer (§15).
+  let transitionSigner: GuardianTransitionSigner | null = null;
+  if (signer) {
+    transitionSigner = new LocalGuardianTransitionSigner(
+      signer,
+      new PostgresSigningJournal(db),
+      new PostgresGuardianAudit(db, config.recoveryProfile?.profileVersion ?? "COVE_V3_VAULT_PROFILE_DEV1"),
+      { maxGrossSats: 1_000_000n, maxRedeemPayoutSats: 1_000_000n, maxBackingSats: 100_000_000_000_000n, maxMinerFeeSats: config.maxMinerFeeSats, allowedTokenIds: null },
+    );
+  }
+
+  const app = new V3AppService(db, provider, config, signer, transitionSigner);
+  const services: V3Services = { config, db, provider, signer, transitionSigner, app };
   globalForV3.__coveV3Services = services;
   return services;
 }

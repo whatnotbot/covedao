@@ -20,6 +20,8 @@ import {
   type GuardianV3Signer,
   type ValidatedCoveTransaction,
   type ResolvedInput,
+  type GuardianTransitionSigner,
+  type TransitionSignRequest,
 } from "@crclaunch/cove-guardian/v3";
 import { loadCanonicalViewSnapshotFromDb, computeHealth, getTokenUtxosByScriptDb } from "@crclaunch/cove-indexer/v3";
 import { grossBuy, grossRedeem, deterministicFee, COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
@@ -129,6 +131,7 @@ export class V3AppService {
     readonly provider: CoreRpcProvider,
     readonly config: V3AppConfig,
     readonly signer: GuardianV3Signer | null,
+    readonly transitionSigner: GuardianTransitionSigner | null = null,
   ) {
     this.market = new MarketService(
       db,
@@ -401,8 +404,12 @@ export class V3AppService {
       minerFeeSats: params.minerFeeSats,
     });
     const view = await this.loadView(params.tokenId);
-    const signed = validateAndSignMintTransition({ signer, psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
-      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript });
+    const req: TransitionSignRequest = { psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats };
+    const signed = this.transitionSigner
+      ? await this.transitionSigner.signMint(req)
+      : validateAndSignMintTransition({ signer, psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+          recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript });
     if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
     const psbtBase64 = result.psbt.toBase64();
     const digest = unsignedTxDigest(result.psbt);
@@ -532,8 +539,12 @@ export class V3AppService {
       minerFeeSats: params.minerFeeSats,
     });
     const view = await this.loadView(params.tokenId, selected.map((u) => ({ txid: u.txid, vout: u.vout })));
-    const signed = validateAndSignRedeemTransition({ signer, psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
-      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript });
+    const req: TransitionSignRequest = { psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats };
+    const signed = this.transitionSigner
+      ? await this.transitionSigner.signRedeem(req)
+      : validateAndSignRedeemTransition({ signer, psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+          recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript });
     if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
     const psbtBase64 = result.psbt.toBase64();
     const digest = unsignedTxDigest(result.psbt);

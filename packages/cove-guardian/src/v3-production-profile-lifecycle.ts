@@ -75,6 +75,8 @@ class RegtestRpc {
   async createWallet(name: string): Promise<void> {
     try { await this.call("createwallet", [name, false, false, "", false, false, false]); }
     catch (e) { if (!/already exists/i.test((e as Error).message)) throw e; }
+    try { await this.call("loadwallet", [name]); }
+    catch (e) { if (!/already loaded/i.test((e as Error).message)) throw e; }
   }
   getNewAddress(): Promise<string> { return this.call("getnewaddress"); }
   sendToAddress(addr: string, btc: number): Promise<string> { return this.call("sendtoaddress", [addr, btc]); }
@@ -121,7 +123,7 @@ async function main(): Promise<void> {
   assert(info.chain === "regtest", `expected regtest, got ${info.chain}`);
   const provider = new CoreRpcProvider({ url: RPC_URL, user: RPC_USER, password: RPC_PASSWORD });
 
-  await rpc.createWallet("cove43");
+  await rpc.createWallet("cove-recovery"); // reuse the recovery-matrix wallet (single loaded wallet)
   const mineAddr = await rpc.getNewAddress();
   await rpc.generateToAddress(101, mineAddr);
 

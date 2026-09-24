@@ -31,6 +31,10 @@ export interface V3AppConfig {
   canaryAllowedTokenIds?: string[];
   /** Canary wallet-script allowlist (hex); enforced at the app during canary. */
   canaryAllowedWalletScripts?: string[];
+  /** P2P fee bps (mainnet: from the profile). */
+  p2pFeeBps?: number;
+  /** Canary P2P settlement cap (mainnet: from the profile). */
+  maxP2pSettlementSats?: bigint;
   maxMinerFeeSats: bigint;
   maxListingBlocks: bigint;
   reservationTtlSeconds: number;
@@ -144,6 +148,8 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
       activationHeight: profile.activationHeight ?? 0n,
       canaryAllowedTokenIds: profile.canary.allowedTokenIds,
       canaryAllowedWalletScripts: profile.canary.allowedWalletScripts,
+      p2pFeeBps: profile.p2pFeeBps ?? undefined,
+      maxP2pSettlementSats: profile.canary.maxP2pSettlementSats ?? undefined,
       maxMinerFeeSats: 20_000n,
       maxListingBlocks: 21_000n,
       reservationTtlSeconds: 90,

@@ -30,6 +30,7 @@ import { canonicalTicker, computeTokenId } from "@crclaunch/cove-wire";
 import {
   MarketService,
   defaultMarketConfig,
+  mainnetMarketConfig,
   listingIdOf,
   listingMessageToSign,
   cancellationHashOf,
@@ -40,6 +41,7 @@ import {
 } from "@crclaunch/cove-market";
 import { AppError } from "./errors.js";
 import type { V3AppConfig, V3Network } from "./config.js";
+import { checkCoreAgreement } from "./readiness.js";
 import { unsignedTxDigest, parsePsbt, btcNetwork, validateInputSignature } from "./psbt.js";
 import { resolveFundingUtxos, type FundingCandidate } from "./funding.js";
 import { createTxSession, requireTxSession, updateTxSession } from "./tx-session.js";
@@ -132,11 +134,14 @@ export class V3AppService {
     readonly config: V3AppConfig,
     readonly signer: GuardianV3Signer | null,
     readonly transitionSigner: GuardianTransitionSigner | null = null,
+    readonly secondaryProvider: CoreRpcProvider | null = null,
   ) {
     this.market = new MarketService(
       db,
       provider,
-      defaultMarketConfig(config.network, config.feeScript),
+      config.network === "mainnet"
+        ? mainnetMarketConfig({ p2pFeeBps: config.p2pFeeBps ?? 50, feeScript: config.feeScript, maxP2pSettlementSats: config.maxP2pSettlementSats ?? 0n })
+        : defaultMarketConfig(config.network, config.feeScript),
     );
   }
 
@@ -180,6 +185,12 @@ export class V3AppService {
     if (health.health === "DIVERGED") throw new AppError("INDEXER_DIVERGED", "indexer diverged from Core tip");
     if (health.health === "CORE_UNREACHABLE") throw new AppError("CORE_UNAVAILABLE", "Bitcoin Core unreachable");
     if (health.health === "BEHIND") throw new AppError("INDEXER_UNHEALTHY", "indexer behind by " + health.lag);
+    // Two-Core quorum (§29/§38): if a secondary Core is configured, mutations
+    // fail closed unless the two nodes agree.
+    if (this.secondaryProvider) {
+      const agreement = await checkCoreAgreement(this.provider, this.secondaryProvider);
+      if (!agreement.agreed) throw new AppError("CORE_UNAVAILABLE", `Core disagreement: ${agreement.detail ?? "unknown"}`);
+    }
   }
 
   // ── reads ─────────────────────────────────────────────────────────────────

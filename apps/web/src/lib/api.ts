@@ -33,7 +33,7 @@ function codeOf(e: unknown): string {
 
 /** Map V3 errors to stable client codes + human copy (§71/§72). Never expose stacks. */
 export function handleError(e: unknown): Response {
-  console.error("[api] error:", e instanceof Error ? e.message : String(e));
+  console.error("[api] error:", e instanceof Error ? (e.stack ?? e.message) : String(e));
   const code = codeOf(e);
   const human = humanCopy(code);
   const retryable = ["CORE_UNAVAILABLE", "INDEXER_UNHEALTHY", "INDEXER_REBUILDING", "QUOTE_STALE", "STATE_CHANGED", "MEMPOOL_REJECTED", "BROADCAST_FAILED"].includes(code);

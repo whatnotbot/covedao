@@ -56,7 +56,8 @@ export async function reorgPersistentToTip(params: {
   const { db, store, state, provider } = params;
   const tipHeight = BigInt((await provider.getBlockchainInfo()).blocks);
 
-  let ancestor = state.cursor.height;
+  // the cursor may point past the (post-invalidate) Core tip; cap the ancestor walk
+  let ancestor = state.cursor.height > tipHeight ? tipHeight : state.cursor.height;
   while (ancestor > 0n) {
     const coreHash = await provider.getBlockHash(Number(ancestor));
     const local = state.undoByHeight.get(ancestor);

@@ -57,7 +57,7 @@ export interface P2PFillValidationParams {
   rawTxHex: string;
   terms: P2PFillTerms;
   view: CoveCanonicalView;
-  network: "regtest" | "signet" | "testnet";
+  network: "regtest" | "signet" | "testnet" | "mainnet";
 }
 
 function outpointKey(txid: string, vout: number): string {
@@ -198,7 +198,7 @@ export function validateFinalizedP2PFill(params: P2PFillValidationParams): Valid
 /** Hardened broadcast boundary: accepts ONLY an opaque ValidatedP2PFill. */
 export async function broadcastValidatedP2PFill(params: {
   validated: ValidatedP2PFill;
-  network: "regtest" | "signet" | "testnet";
+  network: "regtest" | "signet" | "testnet" | "mainnet";
   provider: CoreRpcProvider;
 }): Promise<{ txid: string }> {
   const res = await broadcastValidatedCoveTransaction({

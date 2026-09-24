@@ -6,7 +6,7 @@ import { COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
  */
 export interface MarketConfig {
   enabled: boolean;
-  network: "regtest" | "signet" | "testnet";
+  network: "regtest" | "signet" | "testnet" | "mainnet";
   p2pFeeBps: bigint;
   feeScript: Buffer;
   reservationTtlSeconds: number;

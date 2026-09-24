@@ -1,14 +1,14 @@
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { ECPairFactory } from "ecpair";
-import { CHAIN_BITCOIN_REGTEST, CHAIN_BITCOIN_SIGNET, CHAIN_BITCOIN_TESTNET } from "@crclaunch/cove-wire";
+import { CHAIN_BITCOIN_REGTEST, CHAIN_BITCOIN_SIGNET, CHAIN_BITCOIN_TESTNET, CHAIN_BITCOIN_MAINNET } from "@crclaunch/cove-wire";
 import { AppError } from "./errors.js";
 import type { VaultRecoveryProfile } from "@crclaunch/cove-vault";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 const ECPair = ECPairFactory(ecc);
 
-export type V3Network = "regtest" | "signet" | "testnet";
+export type V3Network = "regtest" | "signet" | "testnet" | "mainnet";
 
 export interface V3AppConfig {
   enabled: boolean;
@@ -51,8 +51,10 @@ function parseNetwork(raw: string): V3Network {
       return "signet";
     case "testnet":
       return "testnet";
+    case "mainnet":
+      return "mainnet";
     default:
-      throw new AppError("WRONG_NETWORK", `unsupported Cove V3 network "${raw}" (mainnet is disabled)`);
+      throw new AppError("WRONG_NETWORK", `unsupported Cove V3 network "${raw}"`);
   }
 }
 
@@ -64,6 +66,8 @@ function chainIdentityFor(network: V3Network): string {
       return CHAIN_BITCOIN_SIGNET;
     case "testnet":
       return CHAIN_BITCOIN_TESTNET;
+    case "mainnet":
+      return CHAIN_BITCOIN_MAINNET;
   }
 }
 

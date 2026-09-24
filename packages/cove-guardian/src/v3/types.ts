@@ -6,7 +6,7 @@ import type { SimplicityExecutionResult } from "@crclaunch/cove-simplicity";
  */
 
 /** Mainnet is DISABLED this phase — the signer will never produce a mainnet signature. */
-export type GuardianV3Network = "regtest" | "signet" | "testnet";
+export type GuardianV3Network = "regtest" | "signet" | "testnet" | "mainnet";
 
 export const MAINNET_DISABLED = true as const;
 
@@ -20,6 +20,7 @@ export type { CoveCanonicalView } from "@crclaunch/cove-covenant";
 /** Typed reasons the Guardian refuses to sign (fail-closed). */
 export type ValidationFailureCode =
   | "MAINNET_DISABLED"
+  | "MAINNET_PROFILE_REQUIRED"
   | "BAD_NETWORK"
   | "BAD_PSBT"
   | "NO_COVE_OP_RETURN"

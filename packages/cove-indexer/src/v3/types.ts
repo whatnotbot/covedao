@@ -67,7 +67,7 @@ export interface V3BlockInput {
 }
 
 export interface V3IndexerConfig {
-  network: "regtest" | "signet" | "testnet";
+  network: "regtest" | "signet" | "testnet" | "mainnet";
   chainIdentity: string;
   guardianXOnly: Buffer;
   recoveryKeyXOnly: Buffer;

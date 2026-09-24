@@ -43,6 +43,8 @@ function bitcoinNetwork(network: GuardianV3Network): bitcoin.networks.Network {
   switch (network) {
     case "regtest":
       return bitcoin.networks.regtest;
+    case "mainnet":
+      return bitcoin.networks.bitcoin;
     case "testnet":
       return bitcoin.networks.testnet;
     case "signet":
@@ -70,6 +72,11 @@ export interface ValidateParams {
 
 export function validateMintTransitionV3(params: ValidateParams): ValidationResult {
   const maxMinerFee = params.maxMinerFeeSats ?? 20_000n;
+
+  // Mainnet requires the MAINNET1 recovery profile (fail closed; §36).
+  if (params.network === "mainnet" && params.recoveryProfile?.profileVersion !== "COVE_V3_VAULT_PROFILE_MAINNET1") {
+    return reject("MAINNET_PROFILE_REQUIRED", "mainnet requires the MAINNET1 recovery profile");
+  }
 
   let analysis: MintAnalysis;
   try {
@@ -205,6 +212,11 @@ export function validateMintTransitionV3(params: ValidateParams): ValidationResu
 
 export function validateRedeemTransitionV3(params: ValidateParams): ValidationResult {
   const maxMinerFee = params.maxMinerFeeSats ?? 20_000n;
+
+  // Mainnet requires the MAINNET1 recovery profile (fail closed; §36).
+  if (params.network === "mainnet" && params.recoveryProfile?.profileVersion !== "COVE_V3_VAULT_PROFILE_MAINNET1") {
+    return reject("MAINNET_PROFILE_REQUIRED", "mainnet requires the MAINNET1 recovery profile");
+  }
 
   let analysis: RedeemAnalysis;
   try {

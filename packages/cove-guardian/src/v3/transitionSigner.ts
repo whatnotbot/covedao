@@ -188,7 +188,7 @@ export class LocalGuardianTransitionSigner implements GuardianTransitionSigner {
       guardianXOnly,
       recoveryKeyXOnly: req.recoveryKeyXOnly,
       recoveryProfile: req.recoveryProfile,
-      network: req.network === "regtest" ? bitcoin.networks.regtest : bitcoin.networks.testnet,
+      network: req.network === "regtest" ? bitcoin.networks.regtest : req.network === "mainnet" ? bitcoin.networks.bitcoin : bitcoin.networks.testnet,
     });
     const leaf = op === "MINT" ? prevVault.mintLeaf : prevVault.redeemLeaf;
     const control = op === "MINT" ? prevVault.mintControlBlock : prevVault.redeemControlBlock;

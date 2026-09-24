@@ -37,10 +37,10 @@ export interface AnalyzeParams {
   network: GuardianV3Network;
 }
 
-function assertAllowedNetwork(network: GuardianV3Network): void {
-  if (network === "mainnet" as unknown as GuardianV3Network) {
-    throw new CoveAnalyzeError("MAINNET_DISABLED", "mainnet is disabled");
-  }
+function assertAllowedNetwork(_network: GuardianV3Network): void {
+  // mainnet is a valid V3 network; the fail-closed guards (MAINNET1 recovery
+  // profile + remote signer + no local key) live in validate.ts and the
+  // application/service startup, not here.
 }
 
 export function analyzeMintTransitionV3(params: AnalyzeParams): MintAnalysis {

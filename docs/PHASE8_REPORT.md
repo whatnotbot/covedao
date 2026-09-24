@@ -106,16 +106,20 @@ validateAndSignMint/RedeemTransition) — all accept an optional `recoveryProfil
 (default DEV1). New test proves a full MINT builds + validates + signs against a
 2-of-3 MAINNET1 vault (§137 core).
 
+## Metrics wiring (done this round)
+
+`Metrics` collector now emitted by the V3 worker on every reconcile tick
+(market confirmations/broadcasts, active-listing gauge), closing §62.
+
 ## Honest status — NOT_READY for canary
 
 All autonomously-deliverable code + CI is complete and green. Phase 8A is **not
-fully complete** — the following remain and require execution/human action:
+fully complete** — the remaining items require execution/human action:
 
-1. Full production-profile E2E (deploy→mint→transfer→redeem→rebuy→P2P under
-   MAINNET1 + remote signer + risk caps) — MINT/REDEEM path proven, full journey
-   not run end-to-end.
+1. Full production-profile E2E journey (deploy→mint→transfer→redeem→rebuy→P2P
+   under MAINNET1 + remote signer + risk caps) — MINT/REDEEM path proven, full
+   journey not run end-to-end.
 2. Backup/restore + reindex drills executed (commands documented, not run in CI).
-3. Metrics wiring into worker/Guardian (collector exists, not emitting yet).
-4. Operator ceremony + committed public mainnet profile values (owner decisions).
+3. Operator ceremony + committed public mainnet profile values (owner decisions).
 
 Final readiness: **NOT_READY**.

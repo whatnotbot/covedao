@@ -55,19 +55,27 @@ feeScript, buy/redeem/p2pFeeBps, canary allowlist + caps.
 - `recovery-regtest.ts`: real Core consensus matrix — before-CSV reject, 1/3
   reject, malformed-witness reject, 2/3 accept after maturity. CI green.
 
+## Durable audit + signing journal (done this round)
+
+- `cove-guardian/src/v3/journal.ts`: tamper-evident audit hash chain
+  (`Cove/GuardianAudit/v1`, endian-frozen canonical serialization) + a durable
+  per-backing-outpoint signing journal. Conflicting digest → CONFLICT (never
+  sign); same digest → IDEMPOTENT. `PostgresSigningJournal` (cove-app) uses a
+  unique outpoint index so reservation is atomic and survives restart.
+- Double-sign race test: 20 concurrent distinct digests → exactly one RESERVED,
+  19 CONFLICT (green).
+
 ## Honest status — NOT_READY for canary
 
 Phase 8A code readiness is **NOT complete**. The following remain as code/tooling
 (not owner ceremony) blockers, and this report must not be read as
 READY_FOR_CONTROLLED_MAINNET_CANARY:
 
-1. **Durable-before-sign Guardian audit + hash chain** and the **per-backing
-   signing journal** (double-sign protection) — not implemented.
-2. **Separate Guardian service boundary** (remote `GuardianTransitionSigner`,
-   no local key on mainnet web/worker) — not implemented; only the fail-closed
-   config guard exists.
-3. Risk-policy caps enforced at the signer, backup/restore + reindex drills,
-   monitoring/alerts, rate limits, release manifest, full runbook suite,
-   readiness CLI.
+1. **Separate Guardian service boundary** (remote `GuardianTransitionSigner`,
+   no local key on mainnet web/worker, durable-before-sign wired into the async
+   signing entry points) — not implemented; only the fail-closed config guard
+   + journal/audit primitives exist.
+2. Risk-policy caps enforced at the signer, backup/restore + reindex drills,
+   monitoring/alerts, rate limits, release manifest, readiness CLI.
 
 Final readiness: **NOT_READY**.

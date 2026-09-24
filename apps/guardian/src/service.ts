@@ -1,0 +1,92 @@
+import * as bitcoin from "bitcoinjs-lib";
+import { createDb } from "@crclaunch/db";
+import {
+  loadMainnetProfile,
+  hashMainnetProfile,
+  type MainnetProfile,
+} from "@crclaunch/cove-mainnet";
+import type { VaultRecoveryProfile } from "@crclaunch/cove-vault";
+import {
+  LocalGuardianTransitionSigner,
+  custodySigningBackend,
+  InProcessGuardianTransport,
+  type GuardianCustodyBackend,
+  type GuardianSigningBackend,
+  type GuardianRiskPolicy,
+} from "@crclaunch/cove-guardian/v3";
+import { loadCanonicalViewSnapshotFromDb } from "@crclaunch/cove-indexer/v3";
+import { PostgresSigningJournal, PostgresGuardianAudit } from "@crclaunch/cove-app";
+import type { Database } from "@crclaunch/db";
+
+/**
+ * Guardian SERVICE bootstrap (Phase 8.1 §18-§20). Loads the canonical public
+ * profile, builds the custody signing backend + durable audit/journal + risk
+ * policy, and wraps them in an in-process transport that reconstructs the
+ * canonical view from the Guardian's OWN Postgres DB (never trusting the app).
+ */
+
+export interface GuardianServiceConfig {
+  profilePath: string;
+  databaseUrl: string;
+  network: "regtest" | "signet" | "testnet" | "mainnet";
+  custodyBackend: GuardianCustodyBackend;
+  riskPolicy: GuardianRiskPolicy;
+  maxMinerFeeSats: bigint;
+}
+
+export interface BuiltGuardianService {
+  transport: InProcessGuardianTransport;
+  profile: MainnetProfile;
+  profileHash: string;
+  guardianXOnly: string;
+}
+
+export function recoveryProfileFromMainnet(profile: MainnetProfile): VaultRecoveryProfile {
+  if (profile.recovery.pubkeys.length !== 3 || profile.recovery.csvBlocks == null) {
+    throw new Error("mainnet profile recovery is incomplete");
+  }
+  return {
+    profileVersion: "COVE_V3_VAULT_PROFILE_MAINNET1",
+    recoveryCsvBlocks: profile.recovery.csvBlocks,
+    recoveryThreshold: profile.recovery.threshold,
+    recoveryPubkeys: profile.recovery.pubkeys.map((k) => Buffer.from(k, "hex")),
+  };
+}
+
+export function buildGuardianService(config: GuardianServiceConfig): BuiltGuardianService {
+  const { profile, validation } = loadMainnetProfile(config.profilePath);
+  if (!validation.ok) {
+    throw new Error(`invalid mainnet profile: ${validation.errors.join("; ")}`);
+  }
+  if (profile.guardianXOnly == null || profile.feeScript == null) {
+    throw new Error("mainnet profile is missing guardianXOnly/feeScript");
+  }
+  const profileHash = hashMainnetProfile(profile);
+  const guardianXOnly = profile.guardianXOnly;
+  const recoveryProfile = recoveryProfileFromMainnet(profile);
+  const recoveryKeyXOnly = recoveryProfile.recoveryPubkeys[0]!; // unused for MAINNET1 (2-of-3)
+  const feeScript = Buffer.from(profile.feeScript, "hex");
+
+  const db: Database = createDb(config.databaseUrl);
+  const signingBackend: GuardianSigningBackend = custodySigningBackend(config.custodyBackend);
+  const signer = new LocalGuardianTransitionSigner(
+    signingBackend,
+    new PostgresSigningJournal(db),
+    new PostgresGuardianAudit(db, "COVE_V3_VAULT_PROFILE_MAINNET1"),
+    config.riskPolicy,
+  );
+
+  const transport = new InProcessGuardianTransport({
+    signer,
+    profileHash,
+    guardianXOnly,
+    decode: (psbtBase64) => ({ psbt: bitcoin.Psbt.fromBase64(psbtBase64) }),
+    loadView: async (tokenId) => loadCanonicalViewSnapshotFromDb({ db, network: config.network, tokenId }),
+    recoveryKeyXOnly,
+    recoveryProfile,
+    feeScript,
+    maxMinerFeeSats: config.maxMinerFeeSats,
+  });
+
+  return { transport, profile, profileHash, guardianXOnly };
+}

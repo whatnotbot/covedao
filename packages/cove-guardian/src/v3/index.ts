@@ -109,6 +109,7 @@ export {
 } from "./transitionSigner.js";
 export {
   InProcessGuardianTransport,
+  HttpGuardianTransport,
   stringifyBigint,
   parseBigint,
   extractWitnessSig,

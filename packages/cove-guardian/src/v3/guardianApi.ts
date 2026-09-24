@@ -157,3 +157,35 @@ export class InProcessGuardianTransport implements GuardianTransport {
     };
   }
 }
+
+/**
+ * Production HTTP transport: calls the Guardian service over HTTP(S) with a
+ * bearer token (mTLS/operator-auth terminates in front of the service in
+ * production). Enforces a timeout and throws on non-2xx.
+ */
+export class HttpGuardianTransport implements GuardianTransport {
+  constructor(
+    private readonly endpoint: string,
+    private readonly authToken: string,
+    private readonly timeoutMs = 10_000,
+  ) {}
+  async health(): Promise<GuardianHealthWire> {
+    return (await this.request("GET", "/health")) as GuardianHealthWire;
+  }
+  async sign(req: GuardianSignRequestWire): Promise<GuardianSignResponseWire> {
+    return (await this.request("POST", "/sign", req)) as GuardianSignResponseWire;
+  }
+  private async request(method: "GET" | "POST", path: string, body?: unknown): Promise<unknown> {
+    const res = await fetch(`${this.endpoint}${path}`, {
+      method,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${this.authToken}`,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    if (!res.ok) throw new Error(`guardian ${method} ${path}: HTTP ${res.status}`);
+    return res.json();
+  }
+}

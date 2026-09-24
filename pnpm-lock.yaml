@@ -33,6 +33,43 @@ importers:
         specifier: ^8.18.0
         version: 8.70.1(eslint@9.39.5(jiti@1.21.7))(typescript@5.9.3)
 
+  apps/guardian:
+    dependencies:
+      '@crclaunch/bitcoin':
+        specifier: workspace:*
+        version: link:../../packages/bitcoin
+      '@crclaunch/cove-app':
+        specifier: workspace:*
+        version: link:../../packages/cove-app
+      '@crclaunch/cove-guardian':
+        specifier: workspace:*
+        version: link:../../packages/cove-guardian
+      '@crclaunch/cove-indexer':
+        specifier: workspace:*
+        version: link:../../packages/cove-indexer
+      '@crclaunch/cove-mainnet':
+        specifier: workspace:*
+        version: link:../../packages/cove-mainnet
+      '@crclaunch/cove-vault':
+        specifier: workspace:*
+        version: link:../../packages/cove-vault
+      '@crclaunch/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      bitcoinjs-lib:
+        specifier: ^6.1.7
+        version: 6.1.8
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.4
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.15
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   apps/mock-crc-service:
     dependencies:
       '@crclaunch/curve':

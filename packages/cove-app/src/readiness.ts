@@ -157,3 +157,16 @@ export function computeMainnetReadiness(input: MainnetReadinessInput): MainnetRe
     mutationsEnabled: stage === "CANARY_ACTIVE",
   };
 }
+
+/** Top-level readiness state (§9/§50). */
+export type ReadinessState =
+  | "NOT_READY"
+  | "READY_EXCEPT_FOR_OPERATOR_CEREMONY"
+  | "READY_FOR_CONTROLLED_MAINNET_CANARY";
+
+/** Map the aggregator result to the top-level readiness state (§9). */
+export function deriveReadinessState(r: MainnetReadiness): ReadinessState {
+  if (!r.staticProfileReady) return "READY_EXCEPT_FOR_OPERATOR_CEREMONY";
+  if (r.stage === "CANARY_READY" || r.stage === "CANARY_ACTIVE") return "READY_FOR_CONTROLLED_MAINNET_CANARY";
+  return "NOT_READY";
+}

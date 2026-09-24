@@ -44,10 +44,12 @@ export {
   computeMainnetReadiness,
   checkCoreAgreement,
   verifyMainnetGenesis,
+  deriveReadinessState,
   BITCOIN_MAINNET_GENESIS_HASH,
   type CoreAgreementResult,
   type MainnetReadiness,
   type MainnetReadinessInput,
+  type ReadinessState,
 } from "./readiness.js";
 export { PostgresSigningJournal } from "./journal.js";
 export { PostgresGuardianAudit } from "./audit.js";

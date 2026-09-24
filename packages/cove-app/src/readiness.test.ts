@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CoreRpcProvider } from "@crclaunch/bitcoin";
 import type { MainnetProfile } from "@crclaunch/cove-mainnet";
-import { checkCoreAgreement, computeMainnetReadiness, type MainnetReadinessInput } from "./readiness.js";
+import { checkCoreAgreement, computeMainnetReadiness, deriveReadinessState, type MainnetReadinessInput } from "./readiness.js";
 
 function mockCore(chain: string, blocks: number, hashes: Map<number, string>): CoreRpcProvider {
   return {
@@ -100,5 +100,14 @@ describe("core quorum + readiness aggregator (§27-§30)", () => {
   it("mutations are only enabled at CANARY_ACTIVE", () => {
     expect(computeMainnetReadiness(readyInput({ canaryActive: true })).mutationsEnabled).toBe(true);
     expect(computeMainnetReadiness(readyInput({ canaryActive: false })).mutationsEnabled).toBe(false);
+  });
+
+  it("derives the top-level readiness state (§9/§50)", () => {
+    expect(deriveReadinessState(computeMainnetReadiness(readyInput({ canaryActive: false })))).toBe("READY_FOR_CONTROLLED_MAINNET_CANARY");
+    // incomplete profile (missing a canary cap) => READY_EXCEPT_FOR_OPERATOR_CEREMONY
+    const incomplete = { ...profile, canary: { ...profile.canary, maxBackingSats: null } };
+    expect(deriveReadinessState(computeMainnetReadiness(readyInput({ profile: incomplete })))).toBe("READY_EXCEPT_FOR_OPERATOR_CEREMONY");
+    // complete profile but secondary Core down => NOT_READY
+    expect(deriveReadinessState(computeMainnetReadiness(readyInput({ secondaryCoreHealthy: false })))).toBe("NOT_READY");
   });
 });

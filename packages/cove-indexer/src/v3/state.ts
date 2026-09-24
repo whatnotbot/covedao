@@ -271,6 +271,7 @@ export class V3IndexerState {
       btcValue: RESERVE_ANCHOR_SATS,
       updatedTxid: txid,
       updatedHeight: block.height,
+      updatedBlockHash: block.hash,
     };
     this.tokens.set(tokenIdHex, meta);
     this.backing.set(tokenIdHex, backing);
@@ -342,6 +343,7 @@ export class V3IndexerState {
       btcValue: RESERVE_ANCHOR_SATS + nextState.backingSats,
       updatedTxid: txid,
       updatedHeight: block.height,
+      updatedBlockHash: block.hash,
     };
     const createdUtxo: V3TokenUtxo = {
       txid,
@@ -423,7 +425,7 @@ export class V3IndexerState {
       valid: true,
       reason: null,
       tokenId: tokenIdHex,
-      undo: { kind: "TRANSFER", spentUtxos, createdUtxos },
+      undo: { kind: "TRANSFER", spendingTxid: txid, spentUtxos, createdUtxos },
     };
   }
 
@@ -523,6 +525,7 @@ export class V3IndexerState {
       btcValue: RESERVE_ANCHOR_SATS + nextState.backingSats,
       updatedTxid: txid,
       updatedHeight: block.height,
+      updatedBlockHash: block.hash,
     };
     for (const u of spentUtxos) this.tokenUtxos.delete(outpointKey(u.txid, u.vout));
     for (const u of createdUtxos) this.tokenUtxos.set(outpointKey(u.txid, u.vout), u);
@@ -532,7 +535,7 @@ export class V3IndexerState {
       valid: true,
       reason: null,
       tokenId: tokenIdHex,
-      undo: { kind: "REDEEM", tokenId: tokenIdHex, priorBacking, spentUtxos, createdUtxos },
+      undo: { kind: "REDEEM", tokenId: tokenIdHex, spendingTxid: txid, priorBacking, spentUtxos, createdUtxos },
     };
   }
 }

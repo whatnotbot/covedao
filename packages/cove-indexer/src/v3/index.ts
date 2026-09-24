@@ -9,6 +9,19 @@ export { parseCoveTx, txidOf, type ParsedCoveTx } from "./parser.js";
 export { computeStateRoot, V3_STATE_ROOT_DOMAIN } from "./root.js";
 export { V3Store } from "./store.js";
 export { loadCanonicalViewSnapshot, type CanonicalViewSnapshot } from "./canonical-view.js";
+export { encodeUndo, decodeUndo } from "./undo.js";
+export { hydrateState, computeStateRootFromDb } from "./hydrate.js";
+export { loadCanonicalViewSnapshotFromDb, type DbCanonicalViewSnapshot } from "./snapshot.js";
+export { computeHealth, type IndexerHealth, type HealthReport } from "./health.js";
+export { persistentWorker, reorgPersistentToTip } from "./persistent.js";
+export {
+  getTokenUtxosByScriptDb,
+  getBalanceByScriptDb,
+  getTokenHoldersDb,
+  getCurrentBackingDb,
+  getTokenDetailDb,
+  getTokenActivityDb,
+} from "./read-models-db.js";
 export {
   balanceByScript,
   tokenHolders,

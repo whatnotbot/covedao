@@ -25,6 +25,7 @@ export interface V3Backing {
   btcValue: bigint;
   updatedTxid: string;
   updatedHeight: bigint;
+  updatedBlockHash: string;
 }
 
 export interface V3TokenUtxo {
@@ -84,5 +85,19 @@ export interface BlockUndo {
 export type UndoOp =
   | { kind: "DEPLOY"; tokenId: string }
   | { kind: "MINT"; tokenId: string; priorBacking: V3Backing; createdUtxo: V3TokenUtxo }
-  | { kind: "REDEEM"; tokenId: string; priorBacking: V3Backing; spentUtxos: V3TokenUtxo[]; createdUtxos: V3TokenUtxo[] }
-  | { kind: "TRANSFER"; spentUtxos: V3TokenUtxo[]; createdUtxos: V3TokenUtxo[] };
+  | {
+      kind: "REDEEM";
+      tokenId: string;
+      /** the actual txid that spent the seller token UTXOs (full REDEEM creates none). */
+      spendingTxid: string;
+      priorBacking: V3Backing;
+      spentUtxos: V3TokenUtxo[];
+      createdUtxos: V3TokenUtxo[];
+    }
+  | {
+      kind: "TRANSFER";
+      /** the actual txid that spent the input token UTXOs. */
+      spendingTxid: string;
+      spentUtxos: V3TokenUtxo[];
+      createdUtxos: V3TokenUtxo[];
+    };

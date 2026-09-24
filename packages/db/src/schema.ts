@@ -601,7 +601,7 @@ export const coveV3Undo = pgTable(
     height: atoms("height").notNull(),
     blockHash: text("block_hash").notNull(),
     /** JSON-encoded inverse ops sufficient to reverse this block exactly. */
-    undoJson: jsonb("undo_json").notNull(),
+    undoJson: text("undo_json").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("cove_v3_undo_height_uq").on(t.network, t.height)],

@@ -56,9 +56,10 @@ describe.skipIf(!URL)("V3Store persistence (Postgres, atomic block + undo)", () 
     expect(cursor.length).toBe(1);
     expect(cursor[0]!.height).toBe(1n);
 
-    // roll back atomically
+    // roll back atomically (cursor moves back to genesis)
+    state.undoBlock(1n);
     await db.transaction(async (tx) => {
-      await store.rollback(tx, undo);
+      await store.rollback(tx, undo, state.cursor);
     });
     const tokensAfter = await db.select().from(schema.coveV3Tokens);
     expect(tokensAfter.length).toBe(0);

@@ -1,7 +1,8 @@
 import { schema, type DbTransaction } from "@crclaunch/db";
 import { eq, and } from "drizzle-orm";
 import type { V3IndexerState } from "./state.js";
-import type { BlockUndo, UndoOp, V3BlockInput, V3Event } from "./types.js";
+import type { BlockUndo, UndoOp, V3BlockInput, V3Cursor, V3Event } from "./types.js";
+import { encodeUndo } from "./undo.js";
 
 /**
  * Persistent V3 indexer store (§15/§16). Every block is written in ONE DB
@@ -11,12 +12,6 @@ import type { BlockUndo, UndoOp, V3BlockInput, V3Event } from "./types.js";
  */
 
 const tables = schema;
-
-function jsonUndo(undo: BlockUndo): unknown {
-  return JSON.parse(
-    JSON.stringify(undo, (_k, v) => (typeof v === "bigint" ? { __bigint: v.toString() } : v)),
-  );
-}
 
 export class V3Store {
   constructor(readonly network: string) {}
@@ -56,7 +51,7 @@ export class V3Store {
       network: n,
       height: block.height,
       blockHash: block.hash,
-      undoJson: jsonUndo(undo),
+      undoJson: encodeUndo(undo),
     });
 
     // apply forward deltas from the undo ops (in order)
@@ -110,7 +105,7 @@ export class V3Store {
       case "TRANSFER": {
         for (const u of op.spentUtxos) {
           await tx.update(tables.coveV3TokenUtxos)
-            .set({ spentByTxid: null, spentHeight: block.height, spentBlockHash: block.hash })
+            .set({ spentByTxid: op.spendingTxid, spentHeight: block.height, spentBlockHash: block.hash })
             .where(and(eq(tables.coveV3TokenUtxos.network, n), eq(tables.coveV3TokenUtxos.txid, u.txid), eq(tables.coveV3TokenUtxos.vout, u.vout)));
         }
         for (const u of op.createdUtxos) await tx.insert(tables.coveV3TokenUtxos).values(this.utxoRow(u));
@@ -124,7 +119,7 @@ export class V3Store {
         });
         for (const u of op.spentUtxos) {
           await tx.update(tables.coveV3TokenUtxos)
-            .set({ spentByTxid: null, spentHeight: block.height, spentBlockHash: block.hash })
+            .set({ spentByTxid: op.spendingTxid, spentHeight: block.height, spentBlockHash: block.hash })
             .where(and(eq(tables.coveV3TokenUtxos.network, n), eq(tables.coveV3TokenUtxos.txid, u.txid), eq(tables.coveV3TokenUtxos.vout, u.vout)));
         }
         for (const u of op.createdUtxos) await tx.insert(tables.coveV3TokenUtxos).values(this.utxoRow(u));
@@ -133,7 +128,7 @@ export class V3Store {
     }
   }
 
-  async rollback(tx: DbTransaction, undo: BlockUndo): Promise<void> {
+  async rollback(tx: DbTransaction, undo: BlockUndo, newCursor: V3Cursor): Promise<void> {
     const n = this.network;
     for (const op of [...undo.ops].reverse()) {
       switch (op.kind) {
@@ -179,6 +174,11 @@ export class V3Store {
     await tx.delete(tables.coveV3Undo).where(and(eq(tables.coveV3Undo.network, n), eq(tables.coveV3Undo.height, undo.height)));
     await tx.delete(tables.coveV3Blocks).where(and(eq(tables.coveV3Blocks.network, n), eq(tables.coveV3Blocks.height, undo.height)));
     await tx.delete(tables.coveV3Events).where(and(eq(tables.coveV3Events.network, n), eq(tables.coveV3Events.blockHeight, undo.height)));
+    // cursor moves backward to the previous canonical block (or genesis)
+    await tx
+      .insert(tables.coveV3Cursor)
+      .values({ network: n, height: newCursor.height, blockHash: newCursor.blockHash, stateRoot: newCursor.stateRoot, rebuilding: false })
+      .onConflictDoUpdate({ target: tables.coveV3Cursor.network, set: { height: newCursor.height, blockHash: newCursor.blockHash, stateRoot: newCursor.stateRoot } });
   }
 
   private backingRow(b: NonNullable<ReturnType<V3IndexerState["backing"]["get"]>>) {
@@ -196,7 +196,7 @@ export class V3Store {
       scriptPubKey: b.scriptPubKey,
       btcValue: b.btcValue,
       blockHeight: b.updatedHeight,
-      blockHash: "",
+      blockHash: b.updatedBlockHash,
       canonical: true,
     };
   }

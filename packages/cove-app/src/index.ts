@@ -42,3 +42,4 @@ export {
   type MainnetHealth,
 } from "./mainnet.js";
 export { PostgresSigningJournal } from "./journal.js";
+export { checkBackingInvariant, checkSupplyInvariant, type InvariantResult } from "./invariants.js";

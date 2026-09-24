@@ -363,7 +363,7 @@ export class V3AppService {
     network: string;
     tokenId: string;
     amountAtoms: bigint;
-    quote: BackingQuote;
+    quoteBinding: { stateHash: string; backingOutpoint: { txid: string; vout: number }; expiresAtHeight: bigint | null };
     walletScript: string;
     walletAddress: string | null;
     funding: FundingCandidate[];
@@ -375,7 +375,7 @@ export class V3AppService {
     const signer = this.requireSigner();
     if (params.minerFeeSats > this.config.maxMinerFeeSats) throw new AppError("TOKEN_AMOUNT_INVALID", "miner fee exceeds cap");
     const backing = await this.loadBacking(params.tokenId);
-    if (backing.stateHash !== params.quote.stateHash || backing.input.txid !== params.quote.backingOutpoint.txid || backing.input.vout !== params.quote.backingOutpoint.vout) {
+    if (backing.stateHash !== params.quoteBinding.stateHash || backing.input.txid !== params.quoteBinding.backingOutpoint.txid || backing.input.vout !== params.quoteBinding.backingOutpoint.vout) {
       throw new AppError("QUOTE_STALE", "backing state changed since quote");
     }
     const resolved = await resolveFundingUtxos(this.provider, params.funding);
@@ -414,7 +414,7 @@ export class V3AppService {
       unsignedTxDigest: digest,
       psbtBase64,
       status: "BUILT",
-      expiresAtHeight: params.quote.expiresAtHeight,
+      expiresAtHeight: params.quoteBinding.expiresAtHeight,
       idempotencyKey: params.idempotencyKey,
     });
     return {
@@ -815,6 +815,10 @@ export class V3AppService {
   }
   getFill(fillId: string) {
     return this.db.select().from(schema.coveV3MarketFills).where(eq(schema.coveV3MarketFills.id, fillId));
+  }
+  async finalizeAndBroadcastFill(fillId: string): Promise<{ txid: string }> {
+    const validated = await this.market.finalizeP2PFill(fillId);
+    return this.market.broadcastP2PFill(validated);
   }
   getBuyRoutes(tokenId: string, amountAtoms: bigint) {
     return getBuyRoutes(this.db, this.config.network, tokenId, amountAtoms);

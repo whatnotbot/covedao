@@ -151,9 +151,21 @@ importers:
 
   apps/worker:
     dependencies:
+      '@crclaunch/bitcoin':
+        specifier: workspace:*
+        version: link:../../packages/bitcoin
       '@crclaunch/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@crclaunch/cove-app':
+        specifier: workspace:*
+        version: link:../../packages/cove-app
+      '@crclaunch/cove-guardian':
+        specifier: workspace:*
+        version: link:../../packages/cove-guardian
+      '@crclaunch/cove-indexer':
+        specifier: workspace:*
+        version: link:../../packages/cove-indexer
       '@crclaunch/curve':
         specifier: workspace:*
         version: link:../../packages/curve
@@ -172,7 +184,13 @@ importers:
       ioredis:
         specifier: ^5.4.2
         version: 5.11.1
+      pg:
+        specifier: ^8.13.1
+        version: 8.23.0
     devDependencies:
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.23.1
       tsx:
         specifier: ^4.19.2
         version: 4.23.15

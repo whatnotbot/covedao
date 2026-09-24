@@ -1,27 +1,14 @@
-import { execSync, spawn, type ChildProcess } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fund, mine, IDENTITIES } from "./v3-rpc";
 
-const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
-
-let worker: ChildProcess | null = null;
-
+/**
+ * E2E global setup: fund deterministic Alice/Bob/Carol regtest wallets with
+ * real BTC, then mine 101 blocks (coinbase maturity). Token creation happens
+ * through real Cove transactions in the specs — never seeded rows.
+ */
 export default async function globalSetup() {
-  // Ensure the database is migrated from zero.
-  execSync("pnpm --filter @crclaunch/db db:migrate", { cwd: ROOT, stdio: "inherit" });
-
-  // Start the indexer worker so mock blocks are mined and events indexed.
-  worker = spawn(
-    "pnpm",
-    ["--filter", "@crclaunch/worker", "start"],
-    {
-      cwd: ROOT,
-      env: { ...process.env, MOCK_BLOCK_INTERVAL_MS: "500" },
-      stdio: "inherit",
-    },
-  );
-
-  // Wait for the worker to seed the mock chain.
-  await new Promise((r) => setTimeout(r, 3000));
-
-  (globalThis as unknown as { __worker: ChildProcess | null }).__worker = worker;
+  const wallets = [IDENTITIES.alice, IDENTITIES.bob, IDENTITIES.carol];
+  for (const w of wallets) {
+    await fund(w.address, 5);
+  }
+  await mine(101);
 }

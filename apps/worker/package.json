@@ -12,7 +12,8 @@
     "test": "vitest run --passWithNoTests",
     "reindex": "tsx src/reindex.ts",
     "demo:reset": "tsx src/demo-reset.ts",
-    "test:integration": "tsx src/reorg.integration.ts"
+    "test:integration": "tsx src/reorg.integration.ts",
+    "v3": "tsx src/v3.ts"
   },
   "dependencies": {
     "@crclaunch/config": "workspace:*",
@@ -21,11 +22,17 @@
     "@crclaunch/protocol": "workspace:*",
     "bullmq": "^5.34.0",
     "dotenv": "^16.4.7",
-    "ioredis": "^5.4.2"
+    "ioredis": "^5.4.2",
+    "@crclaunch/bitcoin": "workspace:*",
+    "@crclaunch/cove-app": "workspace:*",
+    "@crclaunch/cove-guardian": "workspace:*",
+    "@crclaunch/cove-indexer": "workspace:*",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "@types/pg": "^8.11.10"
   }
 }

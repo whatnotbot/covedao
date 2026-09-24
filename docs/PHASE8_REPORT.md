@@ -111,15 +111,20 @@ validateAndSignMint/RedeemTransition) — all accept an optional `recoveryProfil
 `Metrics` collector now emitted by the V3 worker on every reconcile tick
 (market confirmations/broadcasts, active-listing gauge), closing §62.
 
+## App profile threading (done this round)
+
+`V3AppConfig.recoveryProfile` + `V3AppService` now thread the recovery profile
+through the full backing-buy/redeem/launch path, so the product can run under
+MAINNET1 (defaults DEV1). The production-profile path is end-to-end wired.
+
 ## Honest status — NOT_READY for canary
 
-All autonomously-deliverable code + CI is complete and green. Phase 8A is **not
+All autonomously-deliverable code + CI is complete and green; the production-profile
+path is threaded end-to-end and the MINT/REDEEM path is proven. Phase 8A is **not
 fully complete** — the remaining items require execution/human action:
 
-1. Full production-profile E2E journey (deploy→mint→transfer→redeem→rebuy→P2P
-   under MAINNET1 + remote signer + risk caps) — MINT/REDEEM path proven, full
-   journey not run end-to-end.
+1. Full production-profile E2E journey executed (code-ready, not run end-to-end).
 2. Backup/restore + reindex drills executed (commands documented, not run in CI).
 3. Operator ceremony + committed public mainnet profile values (owner decisions).
 
-Final readiness: **NOT_READY**.
+Final readiness: **NOT_READY** (code/CI gates green; execution + ceremony remain).

@@ -1,3 +1,4 @@
+import { inArray, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -605,4 +606,160 @@ export const coveV3Undo = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("cove_v3_undo_height_uq").on(t.network, t.height)],
+);
+
+// ── Cove V3 P2P marketplace (OFF-CHAIN application state) ──────────────────
+// These tables are NOT part of the Cove/IndexerState/v3 state root. They are
+// application-layer order/coordination state that MUST survive an indexer
+// reindex (the indexer truncates + rebuilds only the cove_v3_* canonical tables
+// above, never these). Inventory is ALWAYS resolved from cove_v3_token_utxos +
+// Core; these rows never become token authority.
+
+/** A canonical signed fixed-price listing (V1: exactly one source token UTXO). */
+export const coveV3MarketListings = pgTable(
+  "cove_v3_market_listings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    listingId: text("listing_id").notNull(),
+    network: text("network").notNull(),
+    chainIdentity: text("chain_identity").notNull(),
+    tokenId: text("token_id").notNull(),
+    orderVersion: integer("order_version").notNull(),
+    sellerTokenScript: text("seller_token_script").notNull(),
+    sellerPayoutScript: text("seller_payout_script").notNull(),
+    sellerTokenChangeScript: text("seller_token_change_script").notNull(),
+    sourceTxid: text("source_txid").notNull(),
+    sourceVout: integer("source_vout").notNull(),
+    sourceAmountAtoms: atoms("source_amount_atoms").notNull(),
+    amountAtoms: atoms("amount_atoms").notNull(),
+    totalPriceSats: atoms("total_price_sats").notNull(),
+    creationHeight: atoms("creation_height").notNull(),
+    expiryHeight: atoms("expiry_height").notNull(),
+    nonce: text("nonce").notNull(),
+    signatureB64: text("signature_b64").notNull(),
+    status: text("status").notNull().default("ACTIVE"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("cove_v3_market_listings_id_uq").on(t.listingId),
+    index("cove_v3_market_listings_token_status_idx").on(t.network, t.tokenId, t.status),
+    index("cove_v3_market_listings_status_created_idx").on(t.network, t.status, t.createdAt),
+    // One ACTIVE/RESERVED/BROADCAST listing per source outpoint (double-list guard).
+    uniqueIndex("cove_v3_market_listings_source_active_uq")
+      .on(t.network, t.sourceTxid, t.sourceVout)
+      .where(inArray(t.status, ["ACTIVE", "RESERVED", "BROADCAST"])),
+  ],
+);
+
+/** Source token input rows for a listing (V1: exactly one). */
+export const coveV3MarketListingInputs = pgTable(
+  "cove_v3_market_listing_inputs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    listingId: text("listing_id").notNull(),
+    sourceTxid: text("source_txid").notNull(),
+    sourceVout: integer("source_vout").notNull(),
+    amountAtoms: atoms("amount_atoms").notNull(),
+    scriptPubKey: text("script_pub_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("cove_v3_market_listing_inputs_listing_idx").on(t.listingId),
+    uniqueIndex("cove_v3_market_listing_inputs_outpoint_uq").on(t.listingId, t.sourceTxid, t.sourceVout),
+  ],
+);
+
+/** A buyer reservation + atomic P2P fill lifecycle. */
+export const coveV3MarketFills = pgTable(
+  "cove_v3_market_fills",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    listingId: text("listing_id").notNull(),
+    network: text("network").notNull(),
+    tokenId: text("token_id").notNull(),
+    buyerTokenScript: text("buyer_token_script").notNull(),
+    buyerChangeScript: text("buyer_change_script").notNull(),
+    /** Buyer BTC inputs (jsonb): [{txid, vout, script, valueSats}] captured at reserve. */
+    buyerFundInputs: jsonb("buyer_fund_inputs").notNull(),
+    amountAtoms: atoms("amount_atoms").notNull(),
+    totalPriceSats: atoms("total_price_sats").notNull(),
+    marketFeeSats: atoms("market_fee_sats").notNull(),
+    extraCarrierSats: atoms("extra_carrier_sats").notNull(),
+    minerFeeSats: atoms("miner_fee_sats").notNull(),
+    /** sha256 of the unsigned tx bytes — must be identical across signing stages. */
+    unsignedTxDigest: text("unsigned_tx_digest"),
+    /** Base64 PSBT for crash/restart resume across signing stages. */
+    psbtBase64: text("psbt_base64"),
+    status: text("status").notNull().default("RESERVED"),
+    txid: text("txid"),
+    blockHeight: atoms("block_height"),
+    blockHash: text("block_hash"),
+    canonical: boolean("canonical").notNull().default(true),
+    failureReason: text("failure_reason"),
+    reservationExpiresAt: timestamp("reservation_expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("cove_v3_market_fills_listing_idx").on(t.listingId),
+    index("cove_v3_market_fills_status_idx").on(t.network, t.status),
+    uniqueIndex("cove_v3_market_fills_txid_uq").on(t.network, t.txid).where(sql`${t.txid} IS NOT NULL`),
+  ],
+);
+
+/** Signed listing cancellations (BIP-322 over the cancel hash). */
+export const coveV3MarketCancellations = pgTable(
+  "cove_v3_market_cancellations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    listingId: text("listing_id").notNull(),
+    cancelHash: text("cancel_hash").notNull(),
+    cancelNonce: text("cancel_nonce").notNull(),
+    signatureB64: text("signature_b64").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("cove_v3_market_cancellations_hash_uq").on(t.listingId, t.cancelHash)],
+);
+
+/** Indexer-CONFIRMED trades (never marked at broadcast). */
+export const coveV3MarketTrades = pgTable(
+  "cove_v3_market_trades",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    network: text("network").notNull(),
+    tokenId: text("token_id").notNull(),
+    listingId: text("listing_id").notNull(),
+    fillId: text("fill_id").notNull(),
+    sellerTokenScript: text("seller_token_script").notNull(),
+    buyerTokenScript: text("buyer_token_script").notNull(),
+    amountAtoms: atoms("amount_atoms").notNull(),
+    totalPriceSats: atoms("total_price_sats").notNull(),
+    marketFeeSats: atoms("market_fee_sats").notNull(),
+    minerFeeSats: atoms("miner_fee_sats").notNull(),
+    txid: text("txid").notNull(),
+    blockHeight: atoms("block_height").notNull(),
+    blockHash: text("block_hash"),
+    canonical: boolean("canonical").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("cove_v3_market_trades_txid_uq").on(t.network, t.txid),
+    index("cove_v3_market_trades_token_idx").on(t.network, t.tokenId, t.blockHeight),
+  ],
+);
+
+/** Immutable market audit/event log (reconciliation trail). */
+export const coveV3MarketEvents = pgTable(
+  "cove_v3_market_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    network: text("network").notNull(),
+    listingId: text("listing_id"),
+    fillId: text("fill_id"),
+    eventType: text("event_type").notNull(),
+    payloadJson: jsonb("payload_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("cove_v3_market_events_listing_idx").on(t.listingId, t.createdAt)],
 );

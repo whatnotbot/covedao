@@ -24,3 +24,26 @@ export {
 } from "./order/signature.js";
 export { validateListingShape } from "./order/validate.js";
 export { defaultMarketConfig, type MarketConfig } from "./config.js";
+export {
+  unsignedTxDigest,
+  sighashTypeOf,
+  isSighashAll,
+  partialSigOfInput,
+  validateP2wpkhPartialSig,
+  parsePsbt,
+} from "./psbt.js";
+export {
+  validateFinalizedP2PFill,
+  broadcastValidatedP2PFill,
+  isP2PFillValidated,
+  type ValidatedP2PFill,
+  type P2PFillTerms,
+} from "./finalize.js";
+export {
+  MarketService,
+  type BuyerFundInput,
+  type CreateListingInput,
+  type ReserveListingInput,
+} from "./service.js";
+export { getBuyRoutes, getSellOptions, type BuyRoute, type SellOption } from "./best-execution.js";
+export { assertMarketReady, assertMarketEnabled, healthErrorFor, marketEnabledFlag } from "./health.js";

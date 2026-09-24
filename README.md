@@ -13,6 +13,13 @@ value-moving transaction is signed by the user's own Bitcoin wallet.
 > disabled by default. See [docs/PROTOCOL_VERIFICATION.md](docs/PROTOCOL_VERIFICATION.md).
 > The product is fully functional end-to-end in **mock mode**.
 
+> 🔑 **Test keys are burners — never fund them.** The WIF
+> `cPoVxi18CnxHUQjYNpjRM3RYUVFA61wuTNQez7BtRKkfp9Fw6RTW` and the `0x42`×32 /
+> `0x43`/`0x44`/`0x45`… deterministic private keys that appear in
+> `packages/cove-guardian/src/tx.test.ts`, `regtest-proof.ts`, and the regtest
+> fixtures are **public test fixtures**. They are intended for REGTEST only and
+> must **never** be funded with real BTC or used as production keys.
+
 ---
 
 ## Architecture

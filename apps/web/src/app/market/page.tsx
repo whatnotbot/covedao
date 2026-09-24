@@ -16,7 +16,7 @@ interface Listing {
 }
 
 export default function MarketPage() {
-  const { connected, script, signPsbt, getUtxos } = useWallet();
+  const { connected, script, connect, signPsbt, getUtxos } = useWallet();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [buying, setBuying] = useState<string | null>(null);
@@ -107,7 +107,13 @@ export default function MarketPage() {
           ))}
         </div>
       )}
-      {!connected && <p className="text-sm text-gray-400">Connect a wallet to buy a listing.</p>}
+      {!connected && (
+        <div className="text-center">
+          <button onClick={() => void connect()} className="rounded-xl bg-brand px-6 py-3 font-semibold text-white hover:bg-brand-bright">
+            Connect wallet
+          </button>
+        </div>
+      )}
       {msg && <p className="text-sm text-success">{msg}</p>}
       {err && <p className="text-sm text-danger">{err}</p>}
     </div>

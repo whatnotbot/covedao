@@ -132,14 +132,17 @@ jobs:
           export PGPASSWORD=cove
           LIVE="postgres://cove:cove@127.0.0.1:5432/cove"
           RESTORE="postgres://cove:cove@127.0.0.1:5432/cove_restore_check"
-          ROOT_BEFORE=$(COVE_DATABASE_URL="$LIVE" pnpm --filter @crclaunch/cove-indexer v3:status | python3 -c 'import sys,json; print(json.load(sys.stdin)["stateRoot"])')
+          # Extract the stateRoot from `v3:status` (tolerates the pnpm banner).
+          root() { COVE_DATABASE_URL="$1" pnpm --filter @crclaunch/cove-indexer v3:status | grep -o '"stateRoot": *"[0-9a-f]*"' | head -1 | cut -d'"' -f4; }
+          ROOT_BEFORE=$(root "$LIVE")
           TOKENS_BEFORE=$(psql -h 127.0.0.1 -U cove -d cove -tAc 'SELECT COUNT(*) FROM cove_v3_tokens;')
           pg_dump -h 127.0.0.1 -U cove --no-owner --format=custom --file=/tmp/cove.dump cove
           dropdb -h 127.0.0.1 -U cove --if-exists cove_restore_check
           createdb -h 127.0.0.1 -U cove cove_restore_check
           pg_restore -h 127.0.0.1 -U cove --no-owner --dbname=cove_restore_check /tmp/cove.dump
-          ROOT_AFTER=$(COVE_DATABASE_URL="$RESTORE" pnpm --filter @crclaunch/cove-indexer v3:status | python3 -c 'import sys,json; print(json.load(sys.stdin)["stateRoot"])')
+          ROOT_AFTER=$(root "$RESTORE")
           TOKENS_AFTER=$(psql -h 127.0.0.1 -U cove -d cove_restore_check -tAc 'SELECT COUNT(*) FROM cove_v3_tokens;')
+          test -n "$ROOT_BEFORE" && test -n "$ROOT_AFTER"
           test "$ROOT_BEFORE" = "$ROOT_AFTER"
           test "$TOKENS_BEFORE" = "$TOKENS_AFTER"
           test "$TOKENS_AFTER" -ge 1

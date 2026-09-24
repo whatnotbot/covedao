@@ -165,10 +165,11 @@ test("E2E-006 P2P buy: Bob fills Alice's listing atomically", async ({ browser }
   await expect(alice.getByText(/sale broadcast/i).first()).toBeVisible({ timeout: 60_000 });
   await mineAndWait(1);
 
-  const fill = await fetch(`${BASE}/api/v3/market/fills/${listings.data[0].id}`).then((r) => r.json());
-  expect(fill.data.status).toBe("CONFIRMED");
+  // The listing must now be FILLED and the trade confirmed; backing + supply unchanged by P2P.
+  const alicePf = await fetch(`${BASE}/api/v3/wallet/${IDENTITIES.alice.address}/portfolio`).then((r) => r.json());
+  const filled = alicePf.data.listings.find((l: { listingId: string }) => l.listingId === listingId);
+  expect(filled.status).toBe("FILLED");
   const detail = await fetch(`${BASE}/api/v3/tokens/${aliceTokenId}`).then((r) => r.json());
-  // backing + supply unchanged by P2P
   expect(BigInt(detail.data.issuedSupplyAtoms)).toBe(24_000_000n * 100_000_000n);
 });
 

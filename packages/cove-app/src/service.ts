@@ -159,6 +159,16 @@ export class V3AppService {
     return n;
   }
 
+  /** Canary wallet/token allowlist enforcement (§45/§46) — fail closed when set. */
+  private assertCanaryAllowed(params: { tokenId?: string; walletScript?: string }): void {
+    if (this.config.canaryAllowedTokenIds && params.tokenId && !this.config.canaryAllowedTokenIds.includes(params.tokenId)) {
+      throw new AppError("CANARY_TOKEN_NOT_ALLOWED", `token ${params.tokenId} is not in the canary allowlist`);
+    }
+    if (this.config.canaryAllowedWalletScripts && params.walletScript && !this.config.canaryAllowedWalletScripts.includes(params.walletScript.toLowerCase())) {
+      throw new AppError("CANARY_WALLET_NOT_ALLOWED", "wallet script is not in the canary allowlist");
+    }
+  }
+
   private requireSigner(): GuardianV3Signer {
     if (!this.signer) throw new AppError("GUARDIAN_UNAVAILABLE", "Guardian signer is not configured");
     return this.signer;
@@ -258,6 +268,7 @@ export class V3AppService {
     this.assertMutating(params.network);
     await this.requireHealthy();
     const tokenId = computeTokenId({ chainIdentity: this.config.chainIdentity, policyVersion: 3, ticker: canonicalTicker(params.ticker), tokenNonce: Buffer.from(params.nonceHex, "hex") }).toString("hex");
+    this.assertCanaryAllowed({ tokenId, walletScript: params.walletScript });
     const resolved = await resolveFundingUtxos(this.provider, params.funding);
     for (const f of resolved) {
       if (f.script.toString("hex") !== params.walletScript) throw new AppError("FUNDING_INPUT_INVALID", "funding input script does not match wallet");
@@ -377,6 +388,7 @@ export class V3AppService {
   }): Promise<{ sessionId: string; psbtBase64: string; intent: IntentV3 }> {
     this.assertMutating(params.network);
     await this.requireHealthy();
+    this.assertCanaryAllowed({ tokenId: params.tokenId, walletScript: params.walletScript });
     const signer = this.requireSigner();
     if (params.minerFeeSats > this.config.maxMinerFeeSats) throw new AppError("TOKEN_AMOUNT_INVALID", "miner fee exceeds cap");
     const backing = await this.loadBacking(params.tokenId);
@@ -509,6 +521,7 @@ export class V3AppService {
   }): Promise<{ sessionId: string; psbtBase64: string; intent: IntentV3 }> {
     this.assertMutating(params.network);
     await this.requireHealthy();
+    this.assertCanaryAllowed({ tokenId: params.tokenId, walletScript: params.walletScript });
     const signer = this.requireSigner();
     const backing = await this.loadBacking(params.tokenId);
     const tokenUtxos = await getTokenUtxosByScriptDb(this.db, this.config.network, params.walletScript);

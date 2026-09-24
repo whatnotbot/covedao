@@ -27,6 +27,10 @@ export interface V3AppConfig {
   guardianPrivateKey: Buffer | null;
   /** Absolute activation height (0 = genesis); Cove ops below this are ignored. */
   activationHeight: bigint;
+  /** Canary token allowlist (hex); enforced at the app/signer during canary. */
+  canaryAllowedTokenIds?: string[];
+  /** Canary wallet-script allowlist (hex); enforced at the app during canary. */
+  canaryAllowedWalletScripts?: string[];
   maxMinerFeeSats: bigint;
   maxListingBlocks: bigint;
   reservationTtlSeconds: number;
@@ -138,6 +142,8 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
       recoveryProfile,
       guardianPrivateKey: null,
       activationHeight: profile.activationHeight ?? 0n,
+      canaryAllowedTokenIds: profile.canary.allowedTokenIds,
+      canaryAllowedWalletScripts: profile.canary.allowedWalletScripts,
       maxMinerFeeSats: 20_000n,
       maxListingBlocks: 21_000n,
       reservationTtlSeconds: 90,

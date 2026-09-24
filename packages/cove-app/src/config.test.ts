@@ -14,6 +14,8 @@ describe("loadV3AppConfig mainnet path (§15)", () => {
     expect(cfg.recoveryProfile?.recoveryThreshold).toBe(2);
     expect(cfg.recoveryProfile?.recoveryPubkeys).toHaveLength(3);
     expect(cfg.feeScript.toString("hex")).toBe("0014cc1b07838e387deacd0e5232e1e8b49f4c29e484");
+    expect(cfg.canaryAllowedTokenIds).toContain("4710488a0ab304fb2316e0174360a41937e1f0a81f2b26dee5a38ef79fb2d252");
+    expect(cfg.canaryAllowedWalletScripts).toHaveLength(2);
   });
 
   it("fails closed if any local private-key env var is present on mainnet", () => {

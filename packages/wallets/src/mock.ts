@@ -1,8 +1,9 @@
-import type { WalletAdapter, WalletAddresses, WalletConnection } from "./types.js";
+import type { WalletAdapter, WalletAddresses, WalletCapabilities, WalletConnection } from "./types.js";
 
 /**
- * Deterministic mock wallet for dev/tests. It does not hold any key material —
- * it only mints a fake address and appends a mock signature to a PSBT.
+ * DEMO-ONLY mock wallet. Holds no key material, produces a fake address and
+ * appends a mock signature marker. It MUST never auto-connect in production and
+ * must never be used to authorize a real Cove transaction.
  */
 export class MockWalletAdapter implements WalletAdapter {
   readonly id = "mock";
@@ -10,18 +11,22 @@ export class MockWalletAdapter implements WalletAdapter {
   private readonly address: string;
 
   constructor(address?: string) {
-    // Deterministic, clearly-fake bech32-like address for mock mode.
-    this.address =
-      address ?? `bc1qm0ckwallet${Math.random().toString(16).slice(2, 10)}00000000`;
+    this.address = address ?? `bc1qm0ckwallet${Math.random().toString(16).slice(2, 10)}00000000`;
+  }
+
+  detect(): boolean {
+    return true;
   }
 
   async connect(): Promise<WalletConnection> {
     this.connected = true;
     return {
       adapterId: this.id,
-      address: this.address,
-      network: "mock",
+      paymentAddress: this.address,
+      paymentScript: "",
+      network: "regtest",
       publicKey: `mock-pub-${this.address.slice(0, 8)}`,
+      capabilities: { psbt: false, bip322Simple: false, p2wpkh: false, p2tr: false, utxoDiscovery: false },
     };
   }
 
@@ -31,16 +36,15 @@ export class MockWalletAdapter implements WalletAdapter {
 
   async getAddresses(): Promise<WalletAddresses> {
     if (!this.connected) await this.connect();
-    return { payment: this.address, ordinals: this.address };
+    return { payment: this.address, paymentScript: "" };
   }
 
-  async signPsbt(psbt: string): Promise<string> {
+  async getCapabilities(): Promise<WalletCapabilities> {
+    return { psbt: false, bip322Simple: false, p2wpkh: false, p2tr: false, utxoDiscovery: false };
+  }
+
+  async signPsbt(params: { psbtBase64: string }): Promise<string> {
     if (!this.connected) await this.connect();
-    // Mock signature: append a signed envelope marker. Never real crypto.
-    return `${psbt}\nMOCK-SIGNED-BY:${this.address}`;
-  }
-
-  async signMessage(message: string): Promise<string> {
-    return `mock-signature:${Buffer.from(message).toString("base64")}:${this.address}`;
+    return `${params.psbtBase64}\nMOCK-SIGNED-BY:${this.address}`;
   }
 }

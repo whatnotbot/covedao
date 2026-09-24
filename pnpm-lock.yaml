@@ -573,6 +573,15 @@ importers:
       '@crclaunch/config':
         specifier: workspace:*
         version: link:../config
+      bitcoinjs-lib:
+        specifier: ^6.1.7
+        version: 6.1.8
+      ecpair:
+        specifier: ^2.1.0
+        version: 2.1.0
+      tiny-secp256k1:
+        specifier: ^2.2.3
+        version: 2.2.4
     devDependencies:
       typescript:
         specifier: ^5.7.2

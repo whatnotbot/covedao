@@ -15,7 +15,10 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@crclaunch/config": "workspace:*"
+    "@crclaunch/config": "workspace:*",
+    "bitcoinjs-lib": "^6.1.7",
+    "tiny-secp256k1": "^2.2.3",
+    "ecpair": "^2.1.0"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

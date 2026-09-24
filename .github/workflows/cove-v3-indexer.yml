@@ -123,6 +123,28 @@ jobs:
       - name: Post-reindex full verify
         run: pnpm --filter @crclaunch/cove-indexer v3:verify -- --full
 
+      - name: Install postgresql-client (backup/restore drill)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Backup/restore drill (pg_dump → separate DB → same state root + rows survive)
+        run: |
+          set -euo pipefail
+          export PGPASSWORD=cove
+          LIVE="postgres://cove:cove@127.0.0.1:5432/cove"
+          RESTORE="postgres://cove:cove@127.0.0.1:5432/cove_restore_check"
+          ROOT_BEFORE=$(COVE_DATABASE_URL="$LIVE" pnpm --filter @crclaunch/cove-indexer v3:status | python3 -c 'import sys,json; print(json.load(sys.stdin)["stateRoot"])')
+          TOKENS_BEFORE=$(psql -h 127.0.0.1 -U cove -d cove -tAc 'SELECT COUNT(*) FROM cove_v3_tokens;')
+          pg_dump -h 127.0.0.1 -U cove --no-owner --format=custom --file=/tmp/cove.dump cove
+          dropdb -h 127.0.0.1 -U cove --if-exists cove_restore_check
+          createdb -h 127.0.0.1 -U cove cove_restore_check
+          pg_restore -h 127.0.0.1 -U cove --no-owner --dbname=cove_restore_check /tmp/cove.dump
+          ROOT_AFTER=$(COVE_DATABASE_URL="$RESTORE" pnpm --filter @crclaunch/cove-indexer v3:status | python3 -c 'import sys,json; print(json.load(sys.stdin)["stateRoot"])')
+          TOKENS_AFTER=$(psql -h 127.0.0.1 -U cove -d cove_restore_check -tAc 'SELECT COUNT(*) FROM cove_v3_tokens;')
+          test "$ROOT_BEFORE" = "$ROOT_AFTER"
+          test "$TOKENS_BEFORE" = "$TOKENS_AFTER"
+          test "$TOKENS_AFTER" -ge 1
+          echo "backup/restore drill PASSED — state root $ROOT_AFTER, token rows $TOKENS_AFTER"
+
       - name: Dump bitcoind debug log (on failure)
         if: failure()
         run: tail -80 /tmp/btc-v3/regtest/debug.log

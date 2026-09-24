@@ -138,7 +138,7 @@ test("E2E-005 list P2P: Alice lists part of a token UTXO", async ({ browser }) =
   await page.getByRole("button", { name: /connect wallet/i }).click();
   await page.getByRole("button", { name: /list for sale/i }).click();
   await page.getByPlaceholder("Listed amount (atoms)").fill((1_000_000n * 100_000_000n).toString());
-  await page.getByPlaceholder("Total asking price (sats)").fill("50000");
+  await page.getByPlaceholder("Total asking price (sats)").fill("100000");
   await page.getByRole("button", { name: /sign & create listing/i }).click();
   await expect(page.getByText(/listing created/i).first()).toBeVisible({ timeout: 60_000 });
 
@@ -178,7 +178,7 @@ test("E2E-008 cancel: Alice cancels a second listing", async ({ browser }) => {
   await page.getByRole("button", { name: /connect wallet/i }).click();
   await page.getByRole("button", { name: /list for sale/i }).click();
   await page.getByPlaceholder("Listed amount (atoms)").fill((1_000_000n * 100_000_000n).toString());
-  await page.getByPlaceholder("Total asking price (sats)").fill("60000");
+  await page.getByPlaceholder("Total asking price (sats)").fill("100000");
   await page.getByRole("button", { name: /sign & create listing/i }).click();
   await expect(page.getByText(/listing created/i).first()).toBeVisible({ timeout: 60_000 });
 

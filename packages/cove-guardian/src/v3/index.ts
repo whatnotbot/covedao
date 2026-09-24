@@ -107,3 +107,19 @@ export {
   type GuardianTransitionSigner,
   type GuardianRiskPolicy,
 } from "./transitionSigner.js";
+export {
+  InProcessGuardianTransport,
+  stringifyBigint,
+  parseBigint,
+  extractWitnessSig,
+  type GuardianTransport,
+  type GuardianSignRequestWire,
+  type GuardianSignResponseWire,
+  type GuardianSignSuccess,
+  type GuardianSignFailure,
+  type GuardianHealthWire,
+  type GuardianSigningService,
+  type GuardianSignServiceRequest,
+  type GuardianSignServiceOutcome,
+  type InProcessGuardianTransportOptions,
+} from "./guardianApi.js";

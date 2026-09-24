@@ -1,12 +1,15 @@
 import * as bitcoin from "bitcoinjs-lib";
 import { randomUUID } from "node:crypto";
 import { stateHashV2, type CoveCanonicalView } from "@crclaunch/cove-covenant";
-import { buildBackingVaultV3, type VaultRecoveryProfile } from "@crclaunch/cove-vault";
+import { buildBackingVaultV3, tapleafHash, type VaultRecoveryProfile } from "@crclaunch/cove-vault";
 import { COVE_POLICY_V3 } from "@crclaunch/cove-wire";
 import { validateMintTransitionV3, validateRedeemTransitionV3 } from "./validate.js";
-import { unsignedTxDigest } from "./resolve.js";
+import { unsignedTxDigest, decodeCoveOpReturn } from "./resolve.js";
+import { verifyVaultExecutionSignature } from "./signer.js";
 import type { GuardianSigningBackend } from "./custody.js";
 import type { SigningJournalStore } from "./journal.js";
+import type { GuardianTransport, GuardianSignRequestWire } from "./guardianApi.js";
+import { parseBigint } from "./guardianApi.js";
 import type {
   AuditRecord,
   GuardianV3Network,
@@ -213,16 +216,108 @@ export class LocalGuardianTransitionSigner implements GuardianTransitionSigner {
   }
 }
 
-/** Production remote signer stub: mainnet requires a real custody backend. */
+/**
+ * Production remote signer: a functional client over a `GuardianTransport`
+ * (HTTP in production, in-process in tests). It authenticates via the transport,
+ * enforces a timeout, parses the typed result, verifies the service profile hash
+ * + Guardian x-only key, INDEPENDENTLY verifies the returned signature against
+ * the client's own PSBT, then applies the committed witness. No local fallback.
+ */
 export class RemoteGuardianTransitionSigner implements GuardianTransitionSigner {
-  constructor(private readonly endpoint: string) {}
-  async signMint(_req: TransitionSignRequest): Promise<TransitionSignOutcome> {
-    throw new Error("MAINNET_SIGNER_NOT_READY: no production custody backend configured");
+  constructor(
+    private readonly transport: GuardianTransport,
+    private readonly expectedProfileHash: string,
+    private readonly expectedGuardianXOnly: string,
+    private readonly timeoutMs = 10_000,
+  ) {}
+
+  async signMint(req: TransitionSignRequest): Promise<TransitionSignOutcome> {
+    return this.sign(req, "MINT");
   }
-  async signRedeem(_req: TransitionSignRequest): Promise<TransitionSignOutcome> {
-    throw new Error("MAINNET_SIGNER_NOT_READY: no production custody backend configured");
+  async signRedeem(req: TransitionSignRequest): Promise<TransitionSignOutcome> {
+    return this.sign(req, "REDEEM");
   }
-  async health(): Promise<{ reachable: boolean; reason: string }> {
-    return { reachable: false, reason: `no production custody backend at ${this.endpoint}` };
+  async health(): Promise<{ reachable: boolean; reason?: string }> {
+    try {
+      const h = await this.transport.health();
+      if (!h.reachable) return { reachable: false, reason: "guardian unreachable" };
+      if (h.profileHash !== this.expectedProfileHash) return { reachable: false, reason: `GUARDIAN_PROFILE_MISMATCH: ${h.profileHash.slice(0, 8)}…` };
+      if (h.guardianXOnly.toLowerCase() !== this.expectedGuardianXOnly.toLowerCase()) return { reachable: false, reason: "GUARDIAN_KEY_MISMATCH" };
+      return { reachable: true };
+    } catch (e) {
+      return { reachable: false, reason: (e as Error).message };
+    }
+  }
+
+  private async sign(req: TransitionSignRequest, op: "MINT" | "REDEEM"): Promise<TransitionSignOutcome> {
+    const envelope = decodeCoveOpReturn(req.psbt);
+    if (!("tokenId" in envelope)) {
+      return { ok: false, reason: "BAD_PSBT", detail: "PSBT envelope is not a MINT/REDEEM", audit: null };
+    }
+    const tokenId = Buffer.from(envelope.tokenId).toString("hex");
+    const wire: GuardianSignRequestWire = {
+      requestId: randomUUID(),
+      operation: op,
+      network: req.network,
+      psbtBase64: req.psbt.toBase64(),
+      tokenId,
+    };
+
+    let response;
+    try {
+      response = await this.withTimeout(this.transport.sign(wire), this.timeoutMs);
+    } catch (e) {
+      const code = (e as Error).name === "TimeoutError" || (e as Error).message.includes("timeout")
+        ? "GUARDIAN_TIMEOUT"
+        : "REMOTE_GUARDIAN_UNAVAILABLE";
+      return { ok: false, reason: code, detail: (e as Error).message, audit: null };
+    }
+
+    if (!response.ok) {
+      return { ok: false, reason: response.reason, detail: response.detail, audit: null };
+    }
+
+    // Verify the service identity + profile, then independently verify the signature.
+    if (response.profileHash !== this.expectedProfileHash) {
+      return { ok: false, reason: "GUARDIAN_PROFILE_MISMATCH", detail: "service profile hash differs from the committed profile", audit: null };
+    }
+    if (response.guardianXOnly.toLowerCase() !== this.expectedGuardianXOnly.toLowerCase()) {
+      return { ok: false, reason: "GUARDIAN_KEY_MISMATCH", detail: "service Guardian key differs from the committed profile", audit: null };
+    }
+
+    const sig = Buffer.from(response.sigHex, "hex");
+    try {
+      this.independentlyVerifySignature(req.psbt, sig);
+    } catch (e) {
+      return { ok: false, reason: "SIGNATURE_VERIFICATION_FAILED", detail: (e as Error).message, audit: null };
+    }
+
+    // Apply the committed witness to the client's own PSBT (input 0).
+    const signedPsbt = bitcoin.Psbt.fromBase64(response.signedPsbtBase64);
+    const witness = signedPsbt.data.inputs[0]!.finalScriptWitness;
+    if (!witness) return { ok: false, reason: "SIGNATURE_VERIFICATION_FAILED", detail: "service returned no final witness", audit: null };
+    req.psbt.updateInput(0, { finalScriptWitness: witness });
+
+    return parseBigint<SignedTransitionResult>(response.resultJson);
+  }
+
+  /** Recompute the sighash over the client's OWN PSBT and verify the signature. */
+  private independentlyVerifySignature(psbt: bitcoin.Psbt, sig: Buffer): void {
+    const tapLeaf = psbt.data.inputs[0]!.tapLeafScript?.[0];
+    if (!tapLeaf) throw new Error("SIGNATURE_VERIFICATION_FAILED: no tap leaf script on input 0");
+    const leaf = { script: tapLeaf.script, tapleafHash: tapleafHash(tapLeaf.script, tapLeaf.leafVersion) };
+    verifyVaultExecutionSignature(psbt, 0, leaf, sig, Buffer.from(this.expectedGuardianXOnly, "hex"));
+  }
+
+  private async withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("guardian request timeout")), ms);
+    });
+    try {
+      return await Promise.race([p, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 }

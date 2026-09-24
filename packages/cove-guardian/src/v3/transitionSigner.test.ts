@@ -5,6 +5,7 @@ import { LocalGuardianTransitionSigner, RemoteGuardianTransitionSigner, type Gua
 import { InMemorySigningJournal } from "./journal.js";
 import { GuardianV3Signer } from "./signer.js";
 import { localSigningBackend } from "./custody.js";
+import type { GuardianTransport } from "./guardianApi.js";
 import type { AuditRecord } from "./types.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
@@ -21,11 +22,36 @@ function failingAudit(): { writeBeforeSign(record: AuditRecord): Promise<{ audit
 const riskPolicy: GuardianRiskPolicy = { maxGrossSats: 1_000_000n, maxRedeemPayoutSats: 1_000_000n, maxBackingSats: 100_000_000n, maxMinerFeeSats: 20_000n, allowedTokenIds: null };
 
 describe("Guardian transition signer boundary (§12-§17, §80, §81)", () => {
-  it("remote signer fails closed (MAINNET_SIGNER_NOT_READY)", async () => {
-    const remote = new RemoteGuardianTransitionSigner("https://guardian.internal");
+  it("remote signer fails closed when the transport is unavailable", async () => {
+    const transport: GuardianTransport = {
+      health: async () => { throw new Error("connection refused"); },
+      sign: async () => { throw new Error("connection refused"); },
+    };
+    const remote = new RemoteGuardianTransitionSigner(transport, "ab".repeat(32), "cd".repeat(32));
     const health = await remote.health();
     expect(health.reachable).toBe(false);
-    await expect(remote.signMint({ psbt: new bitcoin.Psbt({ network: bitcoin.networks.regtest }), view: {} as never, network: "regtest", recoveryKeyXOnly: Buffer.alloc(32), feeScript: Buffer.alloc(22) })).rejects.toThrow(/MAINNET_SIGNER_NOT_READY/);
+  });
+
+  it("remote signer rejects a profile-hash mismatch", async () => {
+    const transport: GuardianTransport = {
+      health: async () => ({ reachable: true, releaseId: "x", profileHash: "11".repeat(32), guardianXOnly: "cd".repeat(32), auditHeadHash: "0".repeat(64), auditHealthy: true, signingJournalHealthy: true, custodyBackendReady: true, signingEnabled: true }),
+      sign: async () => ({ ok: false, reason: "n/a", detail: "n/a" }),
+    };
+    const remote = new RemoteGuardianTransitionSigner(transport, "ab".repeat(32), "cd".repeat(32));
+    const health = await remote.health();
+    expect(health.reachable).toBe(false);
+    expect(health.reason).toContain("GUARDIAN_PROFILE_MISMATCH");
+  });
+
+  it("remote signer rejects a Guardian key mismatch", async () => {
+    const transport: GuardianTransport = {
+      health: async () => ({ reachable: true, releaseId: "x", profileHash: "ab".repeat(32), guardianXOnly: "00".repeat(32), auditHeadHash: "0".repeat(64), auditHealthy: true, signingJournalHealthy: true, custodyBackendReady: true, signingEnabled: true }),
+      sign: async () => ({ ok: false, reason: "n/a", detail: "n/a" }),
+    };
+    const remote = new RemoteGuardianTransitionSigner(transport, "ab".repeat(32), "cd".repeat(32));
+    const health = await remote.health();
+    expect(health.reachable).toBe(false);
+    expect(health.reason).toContain("GUARDIAN_KEY_MISMATCH");
   });
 
   it("local signer rejects an invalid PSBT without signing (fail closed)", async () => {

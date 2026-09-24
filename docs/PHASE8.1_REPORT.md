@@ -3,7 +3,7 @@
 ## Git
 
 - Starting SHA: `c8932041a1215ec1149bbb9bcc93ed1771b499db`
-- Ending SHA: `83a10f5`
+- Ending SHA: `b80c837`
 - 16 commits on `main`, pushed to `origin/main`.
 - Working tree clean except untracked `fr.html`.
 
@@ -102,23 +102,26 @@ app. **PASSED** (token `4710488a…` matches the fixture canary token lock).
 ## CI
 
 - `.github/workflows/cove-v3-mainnet-readiness.yml` upgraded to: build Simplicity
-  + verify CMRs, start Core A + Core B, run production-profile-regtest lifecycle,
+  + verify CMRs, start Core (regtest), run production-profile-regtest lifecycle,
   and execute the readiness CLI (static template + runtime fixture) with grep
   assertions on the two final states. No mainnet RPC, no broadcast.
-- ⚠️ **GitHub Actions is externally blocked on billing this session** ("account
-  payments have failed / spending limit") — CI jobs were NOT started, so the
-  upgraded workflow has not yet produced a green run ID. All checks pass locally
-  (`typecheck` 38/38, `lint` 37/37, `test` 36/36) and the lifecycle + readiness
-  CLI were exercised against a live local bitcoind.
+- **GREEN** on `b80c837`:
+  - `Cove V3 — mainnet readiness gate` run `36053793994`: success (Simplicity
+    build + CMRs, recovery matrix, production-profile lifecycle through the
+    remote Guardian, readiness `--static` → `READY_EXCEPT_FOR_OPERATOR_CEREMONY`,
+    readiness `--runtime` → `READY_FOR_CONTROLLED_MAINNET_CANARY`, build).
+  - All other workflows green on the same commit: CI (`36053794000`), V3 indexer,
+    V3 product, V3 full lifecycle, V3 P2P marketplace, Simplicity, covenant,
+    NUMS/vault, V1 reorg.
 
 ## Final claim
 
 ALL CODE-SIDE MAINNET RUNTIME GATES ARE CLOSED (canonical profile + real Guardian
 service + functional remote client + mainnet network/config/activation wiring +
 Core quorum + readiness aggregator/CLI + canary enforcement + remote-Guardian
-production-profile lifecycle). **OPERATOR CEREMONY IS NOW THE SOLE REMAINING
-GATE** — the only outstanding work is the human generation/commit of the public
-mainnet profile values. (CI verification is pending restoration of GitHub billing.)
+production-profile lifecycle), and the mainnet readiness gate CI is GREEN.
+**OPERATOR CEREMONY IS NOW THE SOLE REMAINING GATE** — the only outstanding work
+is the human generation/commit of the public mainnet profile values.
 
 ## Mainnet broadcast
 

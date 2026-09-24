@@ -45,6 +45,10 @@ export {
   noopAuditSink,
   type AuditSink,
 } from "./audit.js";
+export {
+  validateAndBroadcastCoveTransaction,
+  type BroadcastResult,
+} from "./broadcast.js";
 export type {
   CoveCanonicalView,
   GuardianV3Network,

@@ -43,6 +43,7 @@ import {
   consoleAuditSink,
   validateAndSignMintTransition,
   validateAndSignRedeemTransition,
+  validateAndBroadcastCoveTransaction,
   validateFinalizedMintTransaction,
   validateFinalizedRedeemTransaction,
   validateFinalizedTransferTransaction,
@@ -233,6 +234,11 @@ async function main(): Promise<void> {
     results.push({ op, txid, height });
   };
 
+  // Hardened broadcast boundary (§20): mainnet ALWAYS refused + testmempoolaccept.
+  const broadcast = async (rawHex: string): Promise<string> => {
+    return (await validateAndBroadcastCoveTransaction({ rawTxHex: rawHex, network: "regtest", provider })).txid;
+  };
+
   // ── DEPLOY ──
   console.log(line);
   console.log("STEP 1/6 — DEPLOY");
@@ -254,9 +260,7 @@ async function main(): Promise<void> {
   deploy.psbt.signInput(0, deployer);
   deploy.psbt.finalizeAllInputs();
   const deployHex = deploy.psbt.extractTransaction().toHex();
-  const deployAccept = await provider.testMempoolAccept(deployHex);
-  assert(deployAccept.allowed === true, `deploy rejected: ${deployAccept.rejectReason}`);
-  const deployTxid = await provider.broadcastTransaction(deployHex);
+  const deployTxid = await broadcast(deployHex);
   rawTxs.push(deployHex);
   await confirm(deployTxid, "DEPLOY");
   const deployRaw = await provider.getRawTransaction(deployTxid);
@@ -335,9 +339,7 @@ async function main(): Promise<void> {
     feeScript,
   });
   assert(mint1Fin.ok, `finalized MINT revalidation failed: ${mint1Fin.reason}`);
-  const mint1Accept = await provider.testMempoolAccept(mint1Hex);
-  assert(mint1Accept.allowed === true, `mint rejected: ${mint1Accept.rejectReason}`);
-  const mint1Txid = await provider.broadcastTransaction(mint1Hex);
+  const mint1Txid = await broadcast(mint1Hex);
   rawTxs.push(mint1Hex);
   await confirm(mint1Txid, "MINT");
   assert(mint1.grossSats === 49_350n, `mint gross ${mint1.grossSats}`);
@@ -377,9 +379,7 @@ async function main(): Promise<void> {
   const transferHex = transfer.psbt.extractTransaction().toHex();
   const transferFin = validateFinalizedTransferTransaction({ rawTxHex: transferHex, view });
   assert(transferFin.ok, `finalized TRANSFER revalidation failed: ${transferFin.reason}`);
-  const transferAccept = await provider.testMempoolAccept(transferHex);
-  assert(transferAccept.allowed === true, `transfer rejected: ${transferAccept.rejectReason}`);
-  const transferTxid = await provider.broadcastTransaction(transferHex);
+  const transferTxid = await broadcast(transferHex);
   rawTxs.push(transferHex);
   await confirm(transferTxid, "TRANSFER");
   const bobCarrier: OutPoint = { txid: transferTxid, vout: 1 };
@@ -448,9 +448,7 @@ async function main(): Promise<void> {
     feeScript,
   });
   assert(redeemFin.ok, `finalized REDEEM revalidation failed: ${redeemFin.reason}`);
-  const redeemAccept = await provider.testMempoolAccept(redeemHex);
-  assert(redeemAccept.allowed === true, `redeem rejected: ${redeemAccept.rejectReason}`);
-  const redeemTxid = await provider.broadcastTransaction(redeemHex);
+  const redeemTxid = await broadcast(redeemHex);
   rawTxs.push(redeemHex);
   await confirm(redeemTxid, "REDEEM");
   assert(redeem.grossSats === 49_350n, `redeem gross ${redeem.grossSats}`);
@@ -524,9 +522,7 @@ async function main(): Promise<void> {
     feeScript,
   });
   assert(mint2Fin.ok, `finalized RE-BUY revalidation failed: ${mint2Fin.reason}`);
-  const mint2Accept = await provider.testMempoolAccept(mint2Hex);
-  assert(mint2Accept.allowed === true, `re-buy rejected: ${mint2Accept.rejectReason}`);
-  const mint2Txid = await provider.broadcastTransaction(mint2Hex);
+  const mint2Txid = await broadcast(mint2Hex);
   rawTxs.push(mint2Hex);
   await confirm(mint2Txid, "RE-BUY");
   const aliceCarrier2: OutPoint = { txid: mint2Txid, vout: 2 };
@@ -578,9 +574,7 @@ async function main(): Promise<void> {
   const p2pHex = p2p.psbt.extractTransaction().toHex();
   const p2pFin = validateFinalizedTransferTransaction({ rawTxHex: p2pHex, view });
   assert(p2pFin.ok, `finalized P2P revalidation failed: ${p2pFin.reason}`);
-  const p2pAccept = await provider.testMempoolAccept(p2pHex);
-  assert(p2pAccept.allowed === true, `p2p rejected: ${p2pAccept.rejectReason}`);
-  const p2pTxid = await provider.broadcastTransaction(p2pHex);
+  const p2pTxid = await broadcast(p2pHex);
   rawTxs.push(p2pHex);
   await confirm(p2pTxid, "P2P");
   const carolCarrier: OutPoint = { txid: p2pTxid, vout: 1 };

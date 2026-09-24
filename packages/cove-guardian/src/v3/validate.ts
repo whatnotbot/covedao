@@ -2,6 +2,7 @@ import * as bitcoin from "bitcoinjs-lib";
 import { TOKEN_CARRIER_SATS } from "@crclaunch/cove-covenant";
 import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
 import { executeMintV3, executeRedeemV3 } from "@crclaunch/cove-simplicity";
+import { COVE_FEE_CONFIG, checkFeeSettlement } from "@crclaunch/cove-economics";
 import { RESERVE_ANCHOR_SATS } from "./builder.js";
 import {
   analyzeMintTransitionV3,
@@ -154,6 +155,20 @@ export function validateMintTransitionV3(params: ValidateParams): ValidationResu
     return reject("FEE_DESTINATION_MISMATCH", "fee output script is not the configured fee destination");
   }
 
+  // ── explicit fee-dust settlement (never a nonstandard fee output) ──
+  const settlement = checkFeeSettlement(
+    analysis.protocolFeeSats,
+    params.feeScript,
+    COVE_FEE_CONFIG.buyFeeBps,
+  );
+  if (!settlement.isStandard) {
+    return reject(
+      "PROTOCOL_FEE_DUST",
+      `fee ${analysis.protocolFeeSats} < dust ${settlement.dustThresholdSats}; ` +
+        `minimum gross ${settlement.minimumGrossForStandardFeeOutput}`,
+    );
+  }
+
   // ── no unexpected outputs (0..4: OP_RETURN, vault, carrier, fee, change) ──
   if (outputs.length > 5) return reject("UNEXPECTED_OUTPUT", `too many outputs (${outputs.length})`);
 
@@ -281,6 +296,20 @@ export function validateRedeemTransitionV3(params: ValidateParams): ValidationRe
   }
   if (!feeOut.script.equals(params.feeScript)) {
     return reject("FEE_DESTINATION_MISMATCH", "fee output script is not the configured fee destination");
+  }
+
+  // ── explicit fee-dust settlement ──
+  const settlement = checkFeeSettlement(
+    analysis.protocolFeeSats,
+    params.feeScript,
+    COVE_FEE_CONFIG.redeemFeeBps,
+  );
+  if (!settlement.isStandard) {
+    return reject(
+      "PROTOCOL_FEE_DUST",
+      `fee ${analysis.protocolFeeSats} < dust ${settlement.dustThresholdSats}; ` +
+        `minimum gross ${settlement.minimumGrossForStandardFeeOutput}`,
+    );
   }
 
   // ── change carrier (vout 4, only on partial redeem) ──

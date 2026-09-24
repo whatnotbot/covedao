@@ -1,0 +1,342 @@
+import { describe, expect, it } from "vitest";
+import * as bitcoin from "bitcoinjs-lib";
+import * as ecc from "tiny-secp256k1";
+import { ECPairFactory } from "ecpair";
+import {
+  CoveChainView,
+  TOKEN_CARRIER_SATS,
+} from "@crclaunch/cove-covenant";
+import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
+import { CHAIN_BITCOIN_REGTEST, encodeMintV2 } from "@crclaunch/cove-wire";
+import { isSimplicityAvailable } from "@crclaunch/cove-simplicity";
+import {
+  buildDeployPsbtV3,
+  buildMintPsbtV3,
+  buildRedeemPsbtV3,
+  RESERVE_ANCHOR_SATS,
+} from "./builder.js";
+import { GuardianV3Signer } from "./signer.js";
+import { validateAndSignMintTransition, validateAndSignRedeemTransition } from "./guardian.js";
+
+bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
+const ECPair = ECPairFactory(ecc);
+
+const signer = GuardianV3Signer.fromPrivateKey(Buffer.alloc(32, 0x42));
+const guardianXOnly = signer.xOnlyPubkey();
+const recoveryXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x43), true)!.subarray(1));
+const NONCE = Buffer.alloc(32, 0xab);
+const feeScript = Buffer.from("0014" + "f".repeat(40), "hex"); // valid P2WPKH
+const MINT_AMOUNT = 84_000_000n * 100_000_000n;
+
+type K = ReturnType<typeof ECPair.makeRandom>;
+function p2wpkh(key: K): Buffer {
+  return bitcoin.payments.p2wpkh({ pubkey: key.publicKey, network: bitcoin.networks.regtest })
+    .output!;
+}
+function opReturn(wire: Buffer): Buffer {
+  return Buffer.concat([Buffer.from([0x6a, wire.length]), wire]);
+}
+function input0HasSignature(psbt: bitcoin.Psbt): boolean {
+  return psbt.data.inputs[0]!.finalScriptWitness !== undefined;
+}
+
+// bitcoinjs exposes no public "set output value/script" API, so mutation tests
+// rewrite the cached unsigned-tx outputs directly (test-only).
+function setOutputValue(psbt: bitcoin.Psbt, vout: number, value: number): void {
+  (psbt as any).__CACHE.__TX.outs[vout].value = value;
+}
+function setOutputScript(psbt: bitcoin.Psbt, vout: number, script: Buffer): void {
+  (psbt as any).__CACHE.__TX.outs[vout].script = script;
+}
+
+const DEPLOY_TXID = "aa".repeat(32);
+
+function mintSetup(overrides: Partial<Parameters<typeof buildMintPsbtV3>[0]> = {}) {
+  const deploy = buildDeployPsbtV3({
+    network: bitcoin.networks.regtest,
+    identity: {
+      chainIdentity: CHAIN_BITCOIN_REGTEST,
+      policyVersion: 3,
+      ticker: "FROG",
+      tokenNonce: NONCE,
+    },
+    guardianXOnly,
+    recoveryKeyXOnly: recoveryXOnly,
+    deployerInputs: [{ txid: "dd".repeat(32), vout: 0, script: p2wpkh(ECPair.makeRandom()), valueSats: 1_000_000n }],
+    deployerChangeScript: p2wpkh(ECPair.makeRandom()),
+    minerFeeSats: 1_000n,
+  });
+  const view = new CoveChainView();
+  view.deploy(
+    { tokenId: deploy.tokenId, ticker: "FROG", policyVersion: 3, deployTxid: DEPLOY_TXID, tokenNonce: NONCE },
+    { txid: DEPLOY_TXID, vout: 1 },
+    deploy.s0,
+  );
+  const alice = ECPair.makeRandom({ network: bitcoin.networks.regtest });
+  const mint = buildMintPsbtV3({
+    network: bitcoin.networks.regtest,
+    tokenId: deploy.tokenId,
+    prevState: deploy.s0,
+    prevBacking: {
+      txid: DEPLOY_TXID,
+      vout: 1,
+      script: deploy.vault.scriptPubKey,
+      valueSats: RESERVE_ANCHOR_SATS,
+    },
+    mintAmountAtoms: MINT_AMOUNT,
+    guardianXOnly,
+    recoveryKeyXOnly: recoveryXOnly,
+    buyerInputs: [{ txid: "ee".repeat(32), vout: 0, script: p2wpkh(alice), valueSats: 1_000_000n }],
+    buyerCarrierScript: p2wpkh(alice),
+    buyerChangeScript: p2wpkh(alice),
+    feeScript,
+    minerFeeSats: 1_000n,
+    ...overrides,
+  });
+  return { deploy, view, mint, alice };
+}
+
+function signMint(psbt: bitcoin.Psbt, view: CoveChainView) {
+  return validateAndSignMintTransition({
+    signer,
+    psbt,
+    view,
+    network: "regtest",
+    recoveryKeyXOnly: recoveryXOnly,
+    feeScript,
+  });
+}
+
+describe("Production Guardian V3 — validateAndSignMintTransition", () => {
+  it.skipIf(!isSimplicityAvailable())("valid MINT: Simplicity PASS + reference PASS + signs", () => {
+    const { view, mint } = mintSetup();
+    const r = signMint(mint.psbt, view);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.expectedCmr).toBe(r.actualCmr);
+      expect(r.simplicityResult).toBe("PASS");
+      expect(r.referencePolicyResult).toBe("PASS");
+      expect(input0HasSignature(mint.psbt)).toBe(true);
+    }
+  });
+
+  it("wrong backing outpoint → refused, zero signatures", () => {
+    const { view, deploy } = mintSetup();
+    const bad = mintSetup({
+      prevBacking: { txid: "bb".repeat(32), vout: 1, script: deploy.vault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS },
+    });
+    const r = signMint(bad.mint.psbt, view);
+    expect(r.ok).toBe(false);
+    expect(input0HasSignature(bad.mint.psbt)).toBe(false);
+  });
+
+  it("wrong backing value → refused, zero signatures", () => {
+    const { view, deploy } = mintSetup();
+    const bad = mintSetup({
+      prevBacking: { txid: DEPLOY_TXID, vout: 1, script: deploy.vault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS + 1n },
+    });
+    const r = signMint(bad.mint.psbt, view);
+    expect(r.ok).toBe(false);
+    expect(input0HasSignature(bad.mint.psbt)).toBe(false);
+  });
+
+  it("mutated amount (wire) → refused, zero signatures", () => {
+    const { view, mint, deploy } = mintSetup();
+    const wire = encodeMintV2({ tokenId: deploy.tokenId, amount: MINT_AMOUNT + 100_000_000n, recipientVout: 2 });
+    setOutputScript(mint.psbt, 0, opReturn(wire));
+    const r = signMint(mint.psbt, view);
+    expect(r.ok).toBe(false);
+    expect(input0HasSignature(mint.psbt)).toBe(false);
+  });
+
+  it("successor backing +1 sat → refused, zero signatures", () => {
+    const { view, mint } = mintSetup();
+    setOutputValue(mint.psbt, 1, Number(RESERVE_ANCHOR_SATS + 49_350n + 1n));
+    const r = signMint(mint.psbt, view);
+    expect(r.ok).toBe(false);
+    expect(input0HasSignature(mint.psbt)).toBe(false);
+  });
+
+  it("protocol fee +1 sat → refused, zero signatures", () => {
+    const { view, mint } = mintSetup();
+    setOutputValue(mint.psbt, 3, 495);
+    const r = signMint(mint.psbt, view);
+    expect(r.ok).toBe(false);
+    expect(input0HasSignature(mint.psbt)).toBe(false);
+  });
+
+  it("fee destination mutated → refused, zero signatures", () => {
+    const { view, mint } = mintSetup();
+    setOutputScript(mint.psbt, 3, Buffer.from("0014" + "e".repeat(20), "hex"));
+    const r = signMint(mint.psbt, view);
+    expect(r.ok).toBe(false);
+    expect(input0HasSignature(mint.psbt)).toBe(false);
+  });
+
+  it("carrier value +1 sat → refused, zero signatures", () => {
+    const { view, mint } = mintSetup();
+    setOutputValue(mint.psbt, 2, Number(TOKEN_CARRIER_SATS + 1n));
+    const r = signMint(mint.psbt, view);
+    expect(r.ok).toBe(false);
+    expect(input0HasSignature(mint.psbt)).toBe(false);
+  });
+
+  it("wrong tap leaf (REDEEM leaf) → refused, zero signatures", () => {
+    const { view, mint, deploy } = mintSetup();
+    const prevVault = buildBackingVaultV3({
+      state: deploy.s0,
+      guardianXOnly,
+      recoveryKeyXOnly: recoveryXOnly,
+      network: bitcoin.networks.regtest,
+    });
+    // Directly swap the execution leaf (test-only mutation of the PSBT data).
+    const leaf = mint.psbt.data.inputs[0]!.tapLeafScript![0]!;
+    leaf.script = prevVault.redeemLeaf.script;
+    leaf.controlBlock = prevVault.redeemControlBlock;
+    const r = signMint(mint.psbt, view);
+    expect(r.ok).toBe(false);
+    expect(input0HasSignature(mint.psbt)).toBe(false);
+  });
+
+  it("excessive miner fee → refused, zero signatures", () => {
+    const { view } = mintSetup();
+    const bad = mintSetup({ minerFeeSats: 25_000n });
+    const r = signMint(bad.mint.psbt, view);
+    expect(r.ok).toBe(false);
+    expect(input0HasSignature(bad.mint.psbt)).toBe(false);
+  });
+
+  it("extra output → refused, zero signatures", () => {
+    const { view, mint } = mintSetup();
+    mint.psbt.addOutput({ script: p2wpkh(ECPair.makeRandom()), value: 1_000 });
+    const r = signMint(mint.psbt, view);
+    expect(r.ok).toBe(false);
+    expect(input0HasSignature(mint.psbt)).toBe(false);
+  });
+
+  it("mainnet → refused (MAINNET_DISABLED), zero signatures", () => {
+    const { view, mint } = mintSetup();
+    const r = validateAndSignMintTransition({
+      signer,
+      psbt: mint.psbt,
+      view,
+      network: "mainnet" as never,
+      recoveryKeyXOnly: recoveryXOnly,
+      feeScript,
+    });
+    expect(r.ok).toBe(false);
+    expect(input0HasSignature(mint.psbt)).toBe(false);
+  });
+});
+
+describe("Production Guardian V3 — validateAndSignRedeemTransition", () => {
+  function redeemSetup(): { view: CoveChainView; redeem: ReturnType<typeof buildRedeemPsbtV3>; tokenId: Buffer } {
+    const { view, mint, deploy } = mintSetup();
+    const mintTxid = "ff".repeat(32);
+    // Advance the view to post-mint state and give Bob the token carrier.
+    view.mint({
+      tokenId: deploy.tokenId,
+      nextState: mint.nextState,
+      prevBackingOutpoint: { txid: DEPLOY_TXID, vout: 1 },
+      nextBackingOutpoint: { txid: mintTxid, vout: 1 },
+      recipientOutpoint: { txid: mintTxid, vout: 2 },
+      recipientScript: p2wpkh(ECPair.makeRandom()),
+      amountAtoms: MINT_AMOUNT,
+    });
+    const bob = ECPair.makeRandom({ network: bitcoin.networks.regtest });
+    const redeem = buildRedeemPsbtV3({
+      network: bitcoin.networks.regtest,
+      tokenId: deploy.tokenId,
+      prevState: mint.nextState,
+      prevBacking: {
+        txid: mintTxid,
+        vout: 1,
+        script: mint.nextVault.scriptPubKey,
+        valueSats: RESERVE_ANCHOR_SATS + mint.nextState.backingSats,
+      },
+      redeemAmountAtoms: MINT_AMOUNT,
+      tokenInputs: [{ txid: mintTxid, vout: 2, script: p2wpkh(bob), valueSats: TOKEN_CARRIER_SATS }],
+      tokenInputTotalAtoms: MINT_AMOUNT,
+      guardianXOnly,
+      recoveryKeyXOnly: recoveryXOnly,
+      sellerPayoutScript: p2wpkh(bob),
+      sellerChangeScript: p2wpkh(bob),
+      feeScript,
+      minerFeeSats: 1_000n,
+    });
+    return { view, redeem, tokenId: deploy.tokenId };
+  }
+
+  it.skipIf(!isSimplicityAvailable())("valid REDEEM: Simplicity PASS + reference PASS + signs", () => {
+    const { view, redeem } = redeemSetup();
+    const r = validateAndSignRedeemTransition({
+      signer,
+      psbt: redeem.psbt,
+      view,
+      network: "regtest",
+      recoveryKeyXOnly: recoveryXOnly,
+      feeScript,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.expectedCmr).toBe(r.actualCmr);
+      expect(r.simplicityResult).toBe("PASS");
+      expect(input0HasSignature(redeem.psbt)).toBe(true);
+    }
+  });
+
+  it("seller payout +1 sat → refused, zero signatures", () => {
+    const { view, redeem } = redeemSetup();
+    setOutputValue(redeem.psbt, 2, Number(48_856n + 1n));
+    const r = validateAndSignRedeemTransition({
+      signer,
+      psbt: redeem.psbt,
+      view,
+      network: "regtest",
+      recoveryKeyXOnly: recoveryXOnly,
+      feeScript,
+    });
+    expect(r.ok).toBe(false);
+    expect(input0HasSignature(redeem.psbt)).toBe(false);
+  });
+
+  it("forged token input (wrong outpoint) → refused, zero signatures", () => {
+    const { view, mint, deploy } = mintSetup();
+    const mintTxid = "ff".repeat(32);
+    view.mint({
+      tokenId: deploy.tokenId,
+      nextState: mint.nextState,
+      prevBackingOutpoint: { txid: DEPLOY_TXID, vout: 1 },
+      nextBackingOutpoint: { txid: mintTxid, vout: 1 },
+      recipientOutpoint: { txid: mintTxid, vout: 2 },
+      recipientScript: p2wpkh(ECPair.makeRandom()),
+      amountAtoms: MINT_AMOUNT,
+    });
+    // Token input spends an outpoint that is NOT a canonical token UTXO.
+    const forged = buildRedeemPsbtV3({
+      network: bitcoin.networks.regtest,
+      tokenId: deploy.tokenId,
+      prevState: mint.nextState,
+      prevBacking: { txid: mintTxid, vout: 1, script: mint.nextVault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS + mint.nextState.backingSats },
+      redeemAmountAtoms: MINT_AMOUNT,
+      tokenInputs: [{ txid: "12".repeat(32), vout: 0, script: p2wpkh(ECPair.makeRandom()), valueSats: TOKEN_CARRIER_SATS }],
+      tokenInputTotalAtoms: MINT_AMOUNT,
+      guardianXOnly,
+      recoveryKeyXOnly: recoveryXOnly,
+      sellerPayoutScript: p2wpkh(ECPair.makeRandom()),
+      sellerChangeScript: p2wpkh(ECPair.makeRandom()),
+      feeScript,
+      minerFeeSats: 1_000n,
+    });
+    const r = validateAndSignRedeemTransition({
+      signer,
+      psbt: forged.psbt,
+      view,
+      network: "regtest",
+      recoveryKeyXOnly: recoveryXOnly,
+      feeScript,
+    });
+    expect(r.ok).toBe(false);
+    expect(input0HasSignature(forged.psbt)).toBe(false);
+  });
+});

@@ -88,3 +88,11 @@ export {
   type SigningJournalStore,
   type SigningReservation,
 } from "./journal.js";
+export {
+  LocalGuardianTransitionSigner,
+  RemoteGuardianTransitionSigner,
+  type DurableAuditSink,
+  type TransitionSignRequest,
+  type TransitionSignOutcome,
+  type GuardianTransitionSigner,
+} from "./transitionSigner.js";

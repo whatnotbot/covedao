@@ -25,7 +25,7 @@ export interface GuardianAuditDigestFields {
   expectedCmr: string;
   actualCmr: string;
   unsignedTxDigest: string;
-  decision: "VALIDATED_TO_SIGN" | "REJECTED";
+  decision: "VALID_TO_SIGN" | "REJECTED";
   rejectionReason: string | null;
 }
 

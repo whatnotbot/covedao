@@ -22,7 +22,7 @@ function fields(overrides: Partial<GuardianAuditDigestFields> = {}): GuardianAud
     expectedCmr: "0b594eb3fadec17b45bb1d245ae18f8c512a1ba42751f820cd28351ced6c8377",
     actualCmr: "0b594eb3fadec17b45bb1d245ae18f8c512a1ba42751f820cd28351ced6c8377",
     unsignedTxDigest: "ee".repeat(32),
-    decision: "VALIDATED_TO_SIGN",
+    decision: "VALID_TO_SIGN",
     rejectionReason: null,
     ...overrides,
   };

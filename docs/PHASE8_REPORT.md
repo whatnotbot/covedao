@@ -97,15 +97,25 @@ feeScript, buy/redeem/p2pFeeBps, canary allowlist + caps.
 - `docs/runbooks/BACKUP_RESTORE.md`: durable-vs-rebuildable table + encrypted
   backup/restore drill + chain-projection rebuild drill commands.
 
+## Production-profile path (done this round)
+
+Threaded the vault recovery profile through the entire MINT/REDEEM path
+(buildDeployPsbtV3 / buildMintPsbtV3 / buildRedeemPsbtV3 /
+validateMint/RedeemTransitionV3 / validateFinalizedMint/RedeemTransaction /
+validateAndSignMint/RedeemTransition) — all accept an optional `recoveryProfile`
+(default DEV1). New test proves a full MINT builds + validates + signs against a
+2-of-3 MAINNET1 vault (§137 core).
+
 ## Honest status — NOT_READY for canary
 
 All autonomously-deliverable code + CI is complete and green. Phase 8A is **not
 fully complete** — the following remain and require execution/human action:
 
-1. **Production-profile full regtest lifecycle** (§137): run the full Phase-7
-   journey under the MAINNET1 vault profile + remote signer + risk caps — not run.
-2. **Backup/restore + reindex drills** executed (commands documented, not run in CI).
-3. **Metrics wiring** into worker/Guardian (collector exists, not emitting yet).
+1. Full production-profile E2E (deploy→mint→transfer→redeem→rebuy→P2P under
+   MAINNET1 + remote signer + risk caps) — MINT/REDEEM path proven, full journey
+   not run end-to-end.
+2. Backup/restore + reindex drills executed (commands documented, not run in CI).
+3. Metrics wiring into worker/Guardian (collector exists, not emitting yet).
 4. Operator ceremony + committed public mainnet profile values (owner decisions).
 
 Final readiness: **NOT_READY**.

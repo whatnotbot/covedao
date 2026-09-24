@@ -204,6 +204,8 @@ export class V3Store {
   private backingSet(b: NonNullable<ReturnType<V3IndexerState["backing"]["get"]>>) {
     return {
       stateHash: b.stateHash,
+      stateVersion: b.state.stateVersion,
+      policyVersion: b.state.policyVersion,
       issuedSupplyAtoms: b.state.issuedPublicSupplyAtoms,
       backingSats: b.state.backingSats,
       curveStage: b.state.curveStage,
@@ -212,6 +214,7 @@ export class V3Store {
       scriptPubKey: b.scriptPubKey,
       btcValue: b.btcValue,
       blockHeight: b.updatedHeight,
+      blockHash: b.updatedBlockHash,
     };
   }
 

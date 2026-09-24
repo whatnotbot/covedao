@@ -73,6 +73,33 @@ export class V3IndexerState {
     return computeStateRoot({ tokens: this.tokens, backing: this.backing, tokenUtxos: this.tokenUtxos });
   }
 
+  /** Deep-clone the derived state (for staged persistence + atomic swap). */
+  clone(): V3IndexerState {
+    const c = new V3IndexerState(this.config);
+    for (const [k, v] of this.tokens) c.tokens.set(k, { ...v });
+    for (const [k, v] of this.backing) c.backing.set(k, { ...v, state: { ...v.state }, outpoint: { ...v.outpoint } });
+    for (const [k, v] of this.tokenUtxos) c.tokenUtxos.set(k, { ...v });
+    c.events.push(...this.events.map((e) => ({ ...e })));
+    for (const [k, v] of this.undoByHeight) c.undoByHeight.set(k, v);
+    c.cursor = { ...this.cursor };
+    return c;
+  }
+
+  /** Replace this state's contents with a staged clone (only after DB commit). */
+  adopt(other: V3IndexerState): void {
+    this.tokens.clear();
+    this.backing.clear();
+    this.tokenUtxos.clear();
+    this.events.length = 0;
+    this.undoByHeight.clear();
+    for (const [k, v] of other.tokens) this.tokens.set(k, { ...v });
+    for (const [k, v] of other.backing) this.backing.set(k, { ...v, state: { ...v.state }, outpoint: { ...v.outpoint } });
+    for (const [k, v] of other.tokenUtxos) this.tokenUtxos.set(k, { ...v });
+    this.events.push(...other.events.map((e) => ({ ...e })));
+    for (const [k, v] of other.undoByHeight) this.undoByHeight.set(k, v);
+    this.cursor = { ...other.cursor };
+  }
+
   // ── CoveCanonicalView (§23): the Guardian validates against this pure view ──
   getBackingStateByOutpoint(o: OutPoint): CoveStateV2 | null {
     for (const b of this.backing.values()) {

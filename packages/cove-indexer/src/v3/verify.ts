@@ -11,20 +11,36 @@ export interface VerifyResult {
 }
 
 /**
- * QUICK verify (§21): cursor block hash matches Core; each backing outpoint's
- * script matches its current state and its BTC value equals anchor + R(supply);
- * token-UTXO invariants hold.
+ * QUICK verify (§7). Checks the persisted/hydrated state against Bitcoin Core:
+ * cursor hash at cursor height, every backing outpoint exists + is unspent +
+ * matches the derived V3 vault (script + anchor+R(supply) value), and token-UTXO
+ * structural invariants.
  */
 export async function quickVerify(
   state: V3IndexerState,
   provider: CoreRpcProvider,
 ): Promise<VerifyResult> {
-  const cursorHash = await provider.getBlockHash(Number(state.cursor.height));
-  if (cursorHash !== state.cursor.blockHash) {
-    return { ok: false, reason: `cursor hash mismatch: db=${state.cursor.blockHash} core=${cursorHash}` };
+  // Genesis/activation cursor (height 0): nothing indexed yet — no Core hash to compare.
+  if (state.cursor.height > 0n) {
+    const coreHash = await provider.getBlockHash(Number(state.cursor.height));
+    if (coreHash !== state.cursor.blockHash) {
+      return { ok: false, reason: `cursor hash mismatch: db=${state.cursor.blockHash} core=${coreHash}` };
+    }
   }
+
   const btcNet = state.config.network === "regtest" ? bitcoin.networks.regtest : bitcoin.networks.testnet;
   for (const b of state.backing.values()) {
+    // Bitcoin Core: outpoint must exist and be unspent.
+    const prevout = await provider.getPrevout(b.outpoint.txid, b.outpoint.vout);
+    if (!prevout) {
+      return { ok: false, reason: `backing outpoint not unspent: ${b.outpoint.txid}:${b.outpoint.vout}` };
+    }
+    if (prevout.valueSats !== b.btcValue) {
+      return { ok: false, reason: `backing value mismatch for ${b.tokenId}: core=${prevout.valueSats} db=${b.btcValue}` };
+    }
+    if (prevout.scriptPubKeyHex !== b.scriptPubKey) {
+      return { ok: false, reason: `backing script mismatch for ${b.tokenId}` };
+    }
     const vault = buildBackingVaultV3({
       state: b.state,
       guardianXOnly: state.config.guardianXOnly,
@@ -32,34 +48,62 @@ export async function quickVerify(
       network: btcNet,
     });
     if (vault.scriptPubKey.toString("hex") !== b.scriptPubKey) {
-      return { ok: false, reason: `backing script mismatch for ${b.tokenId}` };
+      return { ok: false, reason: `backing script != derived V3 vault for ${b.tokenId}` };
     }
     if (b.btcValue !== RESERVE_ANCHOR_SATS + b.state.backingSats) {
-      return { ok: false, reason: `backing value mismatch for ${b.tokenId}` };
+      return { ok: false, reason: `backing value != anchor + R(supply) for ${b.tokenId}` };
     }
   }
-  // state root is self-consistent by construction (recomputed from maps)
+
+  // persisted cursor root must equal the recomputed projection root
+  if (state.cursor.height > 0n && state.stateRoot() !== state.cursor.stateRoot) {
+    return { ok: false, reason: `db root ${state.stateRoot()} != cursor root ${state.cursor.stateRoot}` };
+  }
+
+  // token-UTXO structural invariants
+  const seen = new Set<string>();
+  for (const u of state.tokenUtxos.values()) {
+    if (u.amountAtoms <= 0n) return { ok: false, reason: `non-positive token amount ${u.txid}:${u.vout}` };
+    if (!state.tokens.has(u.tokenId)) return { ok: false, reason: `utxo for unknown token ${u.tokenId}` };
+    const key = `${u.txid}:${u.vout}`;
+    if (seen.has(key)) return { ok: false, reason: `duplicate outpoint ${key}` };
+    seen.add(key);
+  }
+
   return { ok: true };
 }
 
 /**
- * FULL verify (§21): replay the canonical chain into a clean in-memory state
- * and compare the deterministic root against the persisted projection.
+ * FULL verify (§8). Replays canonical Bitcoin from activation to the DB cursor
+ * into a fresh in-memory state and compares its root to the DB projection root.
+ * No DB mutation, no auto-repair.
  */
 export async function fullVerify(
   state: V3IndexerState,
   provider: CoreRpcProvider,
   config: V3IndexerConfig,
 ): Promise<VerifyResult> {
+  if (state.cursor.height > 0n) {
+    const coreHash = await provider.getBlockHash(Number(state.cursor.height));
+    if (coreHash !== state.cursor.blockHash) {
+      return { ok: false, reason: `cursor hash mismatch at ${state.cursor.height}` };
+    }
+  }
+
   const fresh = new V3IndexerState(config);
-  for (let h = config.genesisHeight; h <= state.cursor.height; h++) {
-    if (h === 0n) continue; // genesis activation height boundary
+  for (let h = 1n; h <= state.cursor.height; h++) {
     const hash = await provider.getBlockHash(Number(h));
     const block = await provider.getBlock(hash);
-    fresh.applyBlock({ height: BigInt(h), hash: block.hash, parentHash: block.previousBlockHash, txs: block.rawTxs });
+    fresh.applyBlock({ height: h, hash: block.hash, parentHash: block.previousBlockHash, txs: block.rawTxs });
   }
-  if (fresh.stateRoot() !== state.stateRoot()) {
-    return { ok: false, reason: `root mismatch: replay=${fresh.stateRoot()} db=${state.stateRoot()}` };
+
+  const replayRoot = fresh.stateRoot();
+  const dbRoot = state.stateRoot();
+  if (dbRoot !== state.cursor.stateRoot) {
+    return { ok: false, reason: `db root ${dbRoot} != cursor root ${state.cursor.stateRoot}` };
+  }
+  if (replayRoot !== dbRoot) {
+    return { ok: false, reason: `replay root ${replayRoot} != db root ${dbRoot}` };
   }
   return { ok: true };
 }

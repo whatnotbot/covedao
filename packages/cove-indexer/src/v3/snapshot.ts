@@ -26,27 +26,27 @@ export async function loadCanonicalViewSnapshotFromDb(params: {
   tokenId: string;
   relevantOutpoints?: OutPoint[];
 }): Promise<DbCanonicalViewSnapshot> {
-  const { db, network, tokenId, relevantOutpoints = [] } = params;
+  const { db, network, tokenId: snapshotTokenId, relevantOutpoints = [] } = params;
 
   const rows = await db.transaction(async (tx) => {
     const cursor = await tx.select().from(schema.coveV3Cursor).where(eq(schema.coveV3Cursor.network, network));
     const backing = await tx
       .select()
       .from(schema.coveV3BackingStates)
-      .where(and(eq(schema.coveV3BackingStates.network, network), eq(schema.coveV3BackingStates.tokenId, tokenId), eq(schema.coveV3BackingStates.canonical, true)));
+      .where(and(eq(schema.coveV3BackingStates.network, network), eq(schema.coveV3BackingStates.tokenId, snapshotTokenId), eq(schema.coveV3BackingStates.canonical, true)));
     const utxos = await tx
       .select()
       .from(schema.coveV3TokenUtxos)
       .where(
         and(
           eq(schema.coveV3TokenUtxos.network, network),
-          eq(schema.coveV3TokenUtxos.tokenId, tokenId),
+          eq(schema.coveV3TokenUtxos.tokenId, snapshotTokenId),
           eq(schema.coveV3TokenUtxos.canonical, true),
           isNull(schema.coveV3TokenUtxos.spentByTxid),
         ),
       );
     return { cursor, backing, utxos };
-  });
+  }, { isolationLevel: "repeatable read" });
 
   const cur = rows.cursor[0];
   const cursorHeight = cur?.height ?? 0n;
@@ -90,12 +90,17 @@ export async function loadCanonicalViewSnapshotFromDb(params: {
     stateRoot,
     rebuilding,
     getBackingStateByOutpoint(o: OutPoint) {
-      return backingByOutpoint.get(opKey(o)) ?? null;
+      // Only the snapshot's own token's backing is visible by outpoint.
+      const st = backingByOutpoint.get(opKey(o));
+      if (!st || !currentBacking || st.tokenId !== snapshotTokenId) return null;
+      return st;
     },
-    getCurrentBackingState(_tokenId: Buffer) {
+    getCurrentBackingState(tokenId: Buffer) {
+      if (tokenId.toString("hex") !== snapshotTokenId) return null;
       return currentBacking;
     },
-    getBackingOutpoint(_tokenId: Buffer) {
+    getBackingOutpoint(tokenId: Buffer) {
+      if (tokenId.toString("hex") !== snapshotTokenId) return null;
       return currentOutpoint;
     },
     getTokenUtxo(o: OutPoint) {

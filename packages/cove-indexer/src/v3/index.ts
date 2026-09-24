@@ -14,6 +14,7 @@ export { hydrateState, computeStateRootFromDb } from "./hydrate.js";
 export { loadCanonicalViewSnapshotFromDb, type DbCanonicalViewSnapshot } from "./snapshot.js";
 export { computeHealth, type IndexerHealth, type HealthReport } from "./health.js";
 export { persistentWorker, reorgPersistentToTip } from "./persistent.js";
+export { reindexDb } from "./reindex.js";
 export {
   getTokenUtxosByScriptDb,
   getBalanceByScriptDb,

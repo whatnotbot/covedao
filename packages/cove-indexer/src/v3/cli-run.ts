@@ -5,7 +5,8 @@ import * as ecc from "tiny-secp256k1";
 import { CHAIN_BITCOIN_REGTEST } from "@crclaunch/cove-wire";
 import { V3Store } from "./store.js";
 import { hydrateState } from "./hydrate.js";
-import { persistentWorker } from "./persistent.js";
+import { reindexDb } from "./reindex.js";
+
 import { computeHealth } from "./health.js";
 import { quickVerify, fullVerify } from "./verify.js";
 
@@ -75,9 +76,8 @@ async function main() {
       return;
     }
     case "reindex": {
-      const state = await hydrateState(db, "regtest", cfg);
-      const progress = await persistentWorker({ db, store, state, provider, config: cfg });
-      console.log(`reindexed to height ${progress.finalHeight} (${progress.indexed} blocks), root=${progress.stateRoot}`);
+      const result = await reindexDb({ db, store, provider, config: cfg, network: "regtest" });
+      console.log(`reindexed to height ${result.finalHeight}, root=${result.stateRoot}`);
       return;
     }
     default:

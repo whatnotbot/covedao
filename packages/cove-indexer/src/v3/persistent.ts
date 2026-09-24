@@ -6,10 +6,10 @@ import type { V3IndexerState } from "./state.js";
 import type { V3IndexerConfig } from "./types.js";
 
 /**
- * Persistent worker + persistent reorg (§6/§7). Both start from the canonical
- * persisted state, mutate the in-memory state in lock-step with the DB, and
- * guarantee the cursor advances LAST inside the same transaction. A persistence
- * failure reverts the in-memory state so it never runs ahead of the DB.
+ * Persistent worker + persistent reorg (§6/§7). Memory and DB stay in LOCKSTEP:
+ * every block is applied to a STAGED clone, persisted, and only on commit is the
+ * staged state swapped into the active state. A DB failure therefore never
+ * leaves the active in-memory state ahead of (or behind) the DB.
  */
 
 export async function persistentWorker(params: {
@@ -19,31 +19,28 @@ export async function persistentWorker(params: {
   provider: CoreRpcProvider;
   config: V3IndexerConfig;
 }): Promise<{ indexed: number; finalHeight: bigint; stateRoot: string }> {
-  const { db, store, state, provider, config } = params;
+  const { db, store, state, provider } = params;
   const info = await provider.getBlockchainInfo();
   const tip = BigInt(info.blocks);
   let indexed = 0;
 
   for (let h = state.cursor.height + 1n; h <= tip; h++) {
     const hash = await provider.getBlockHash(Number(h));
-    const existing = state.undoByHeight.get(h);
-    if (existing && existing.blockHash === hash) continue; // idempotent
+    if (state.undoByHeight.get(h)?.blockHash === hash) continue; // idempotent
     const block = await provider.getBlock(hash);
     const input = { height: h, hash: block.hash, parentHash: block.previousBlockHash, txs: block.rawTxs };
-    state.applyBlock(input);
-    const undo = state.undoByHeight.get(h)!;
-    const events = state.events.filter((e) => e.blockHeight === h);
-    try {
-      await db.transaction(async (tx) => {
-        await store.persistBlock(tx, state, input, events, undo);
-      });
-    } catch (e) {
-      state.undoBlock(h); // never leave in-memory ahead of DB
-      throw e;
-    }
+
+    const staged = state.clone();
+    staged.applyBlock(input);
+    const undo = staged.undoByHeight.get(h)!;
+    const events = staged.events.filter((e) => e.blockHeight === h);
+
+    await db.transaction(async (tx) => {
+      await store.persistBlock(tx, staged, input, events, undo);
+    });
+    state.adopt(staged); // only after DB commit
     indexed += 1;
   }
-  void config;
   return { indexed, finalHeight: state.cursor.height, stateRoot: state.stateRoot() };
 }
 
@@ -68,10 +65,12 @@ export async function reorgPersistentToTip(params: {
   const orphaned: bigint[] = [];
   for (let h = state.cursor.height; h > ancestor; h--) {
     const undo = state.undoByHeight.get(h)!;
-    state.undoBlock(h);
+    const staged = state.clone();
+    staged.undoBlock(h);
     await db.transaction(async (tx) => {
-      await store.rollback(tx, undo, state.cursor);
+      await store.rollback(tx, undo, staged.cursor);
     });
+    state.adopt(staged); // only after DB commit
     orphaned.push(h);
   }
 
@@ -80,12 +79,16 @@ export async function reorgPersistentToTip(params: {
     const hash = await provider.getBlockHash(Number(h));
     const block = await provider.getBlock(hash);
     const input = { height: h, hash: block.hash, parentHash: block.previousBlockHash, txs: block.rawTxs };
-    state.applyBlock(input);
-    const undo = state.undoByHeight.get(h)!;
-    const events = state.events.filter((e) => e.blockHeight === h);
+
+    const staged = state.clone();
+    staged.applyBlock(input);
+    const undo = staged.undoByHeight.get(h)!;
+    const events = staged.events.filter((e) => e.blockHeight === h);
+
     await db.transaction(async (tx) => {
-      await store.persistBlock(tx, state, input, events, undo);
+      await store.persistBlock(tx, staged, input, events, undo);
     });
+    state.adopt(staged);
     replayed.push(h);
   }
 

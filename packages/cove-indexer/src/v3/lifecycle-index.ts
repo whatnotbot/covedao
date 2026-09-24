@@ -21,6 +21,8 @@ import {
   type ValidatedCoveTransaction,
 } from "@crclaunch/cove-guardian/v3";
 import { V3IndexerState } from "./state.js";
+import { V3Store } from "./store.js";
+import { createDb } from "@crclaunch/db";
 import { reorgToTip } from "./reorg.js";
 
 /**
@@ -86,12 +88,22 @@ async function main() {
   const feeScript = p2wpkh(feeKey);
   const config = { network: "regtest" as const, chainIdentity: CHAIN_BITCOIN_REGTEST, guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript, genesisHeight: 0n };
   const state = new V3IndexerState(config);
+  const dbUrl = process.env.COVE_DATABASE_URL ?? process.env.DATABASE_URL;
+  const db = dbUrl ? createDb(dbUrl) : null;
+  const store = db ? new V3Store("regtest") : null;
 
   async function mineIndex(): Promise<void> {
     await rpc.generate(1, mineAddr);
     const hash = await rpc.getBestBlockHash();
     const block = await provider.getBlock(hash);
-    state.applyBlock({ height: BigInt(block.height), hash: block.hash, parentHash: block.previousBlockHash, txs: block.rawTxs });
+    const input = { height: BigInt(block.height), hash: block.hash, parentHash: block.previousBlockHash, txs: block.rawTxs };
+    state.applyBlock(input);
+    if (db && store) {
+      const undo = state.undoByHeight.get(input.height)!;
+      await db.transaction(async (tx) => {
+        await store.persistBlock(tx, state, input, state.events.filter((e) => e.blockHeight === input.height), undo);
+      });
+    }
   }
   async function broadcastValidated(validated: ValidatedCoveTransaction): Promise<string> {
     return (await broadcastValidatedCoveTransaction({ validated, network: "regtest", provider })).txid;

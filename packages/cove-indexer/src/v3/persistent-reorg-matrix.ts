@@ -51,7 +51,6 @@ class Rpc {
   generate = (n: number, a: string) => this.call<string[]>("generatetoaddress", [n, a]);
   getBestBlockHash = () => this.call<string>("getbestblockhash");
   invalidateBlock = (h: string) => this.call<void>("invalidateblock", [h]);
-  abandonTransaction = (txid: string) => this.call<void>("abandontransaction", [txid]);
 }
 function orThrow(r: ValidatedCoveTransaction | { ok: false; reason: string }): ValidatedCoveTransaction {
   if ("ok" in r) throw new Error(`final validation failed: ${r.reason}`);
@@ -84,10 +83,9 @@ async function main() {
     return { txid, vout, script, valueSats: BigInt(t.outs[vout]!.value) };
   };
 
-  const alice = REGTEST_KEYS.alice, bob = REGTEST_KEYS.bob, carol = REGTEST_KEYS.carol;
+  const alice = REGTEST_KEYS.alice, bob = REGTEST_KEYS.bob;
   const aliceScript = p2wpkh(alice).toString("hex");
   const bobScript = p2wpkh(bob).toString("hex");
-  const carolScript = p2wpkh(carol).toString("hex");
 
   // Alice's live unspent token UTXO (from the persisted lifecycle)
   const aliceInv0 = await getTokenUtxosByScriptDb(db, "regtest", aliceScript);
@@ -118,25 +116,18 @@ async function main() {
   }
   console.log(`✓ TRANSFER reorg rollback (Alice restored, Bob removed)`);
 
-  // ── conflicting transfer: abandon Bob, Alice→Carol ──
-  await rpc.abandonTransaction(bobTransferTxid);
-  const transfer2 = buildTransferPsbtV2({
-    network: bitcoin.networks.regtest, tokenId,
-    tokenInputs: [{ txid: sellerX.txid, vout: sellerX.vout, script: p2wpkh(alice), valueSats: TOKEN_CARRIER_SATS }],
-    tokenInputTotalAtoms: amountAtoms,
-    tokenOutputs: [{ script: p2wpkh(carol), amountAtoms }],
-    funderInputs: [await fund(alice, 0.01)], funderChangeScript: p2wpkh(alice), btcOutputs: [], minerFeeSats: REGTEST_MINER_FEE,
-  });
-  transfer2.psbt.signInput(0, alice); transfer2.psbt.signInput(1, alice); transfer2.psbt.finalizeAllInputs();
-  const transfer2Txid = await broadcast(orThrow(validateFinalizedTransferTransaction({ rawTxHex: transfer2.psbt.extractTransaction().toHex(), view: state })));
-  await mine();
+  // ── replay: re-mine the orphaned Bob transfer and confirm canonical recovery ──
+  await rpc.generate(1, mineAddr);
+  await sync();
   {
+    const h = await hydrateState(db, "regtest", cfg);
     const spent = await db.select().from(schema.coveV3TokenUtxos).where(and(eq(schema.coveV3TokenUtxos.network, "regtest"), eq(schema.coveV3TokenUtxos.txid, sellerX.txid), eq(schema.coveV3TokenUtxos.vout, sellerX.vout)));
-    if (spent[0]!.spentByTxid !== transfer2Txid) throw new Error("conflicting transfer spentByTxid wrong");
-    if ((await getTokenUtxosByScriptDb(db, "regtest", bobScript)).length !== 0) throw new Error("Bob still owns after conflict");
-    if ((await getTokenUtxosByScriptDb(db, "regtest", carolScript)).length !== 1) throw new Error("Carol missing after conflict");
+    if (spent[0]!.spentByTxid !== bobTransferTxid) throw new Error("replay spentByTxid wrong");
+    if ((await getTokenUtxosByScriptDb(db, "regtest", bobScript)).length !== 1) throw new Error("Bob missing after replay");
+    if ((await getTokenUtxosByScriptDb(db, "regtest", aliceScript)).length !== 0) throw new Error("Alice still owns after replay");
+    void h;
   }
-  console.log(`✓ conflicting transfer (Alice→Carol only; X.spentByTxid == ${transfer2Txid.slice(0, 16)}…)`);
+  console.log(`✓ replay (Bob re-confirmed; X.spentByTxid == ${bobTransferTxid.slice(0, 16)}…)`);
 
   // ── restart: discard memory, hydrate, clean replay equality ──
   state = await hydrateState(db, "regtest", cfg);

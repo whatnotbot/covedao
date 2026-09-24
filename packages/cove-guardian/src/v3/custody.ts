@@ -2,6 +2,7 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { ECPairFactory, type ECPairInterface } from "ecpair";
 import {
+  type GuardianV3Signer,
   computeVaultExecutionSighash,
   verifyVaultExecutionSignature,
   commitVaultExecutionWitness,
@@ -72,4 +73,29 @@ export async function signVaultExecutionLeafWithCustody(
   verifyVaultExecutionSignature(psbt, inputIndex, leaf, sig, xOnly);
   commitVaultExecutionWitness(psbt, inputIndex, leaf, controlBlock, sig);
   return sig;
+}
+
+/**
+ * The pluggable signing primitive used by the transition signer. The LOCAL path
+ * uses `GuardianV3Signer`; the Guardian SERVICE path uses a custody backend.
+ */
+export interface GuardianSigningBackend {
+  xOnlyPubkey(): Promise<Buffer>;
+  signVaultExecutionLeaf(psbt: bitcoin.Psbt, inputIndex: number, leaf: VaultLeafRef, controlBlock: Buffer): Promise<Buffer>;
+}
+
+/** Wrap the in-process local signer as an async signing backend. */
+export function localSigningBackend(signer: GuardianV3Signer): GuardianSigningBackend {
+  return {
+    xOnlyPubkey: async () => signer.xOnlyPubkey(),
+    signVaultExecutionLeaf: async (psbt, inputIndex, leaf, controlBlock) => signer.signVaultExecutionLeaf(psbt, inputIndex, leaf, controlBlock),
+  };
+}
+
+/** Wrap a custody backend as an async signing backend (independent verify). */
+export function custodySigningBackend(backend: GuardianCustodyBackend): GuardianSigningBackend {
+  return {
+    xOnlyPubkey: () => backend.xOnlyPubkey(),
+    signVaultExecutionLeaf: (psbt, inputIndex, leaf, controlBlock) => signVaultExecutionLeafWithCustody(psbt, inputIndex, leaf, controlBlock, backend),
+  };
 }

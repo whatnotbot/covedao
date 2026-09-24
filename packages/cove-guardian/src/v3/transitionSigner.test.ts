@@ -4,6 +4,7 @@ import * as ecc from "tiny-secp256k1";
 import { LocalGuardianTransitionSigner, RemoteGuardianTransitionSigner, type GuardianRiskPolicy } from "./transitionSigner.js";
 import { InMemorySigningJournal } from "./journal.js";
 import { GuardianV3Signer } from "./signer.js";
+import { localSigningBackend } from "./custody.js";
 import type { AuditRecord } from "./types.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
@@ -29,7 +30,7 @@ describe("Guardian transition signer boundary (§12-§17, §80, §81)", () => {
 
   it("local signer rejects an invalid PSBT without signing (fail closed)", async () => {
     const signer = GuardianV3Signer.fromPrivateKey(Buffer.alloc(32, 0x42));
-    const local = new LocalGuardianTransitionSigner(signer, new InMemorySigningJournal(), failingAudit(), riskPolicy);
+    const local = new LocalGuardianTransitionSigner(localSigningBackend(signer), new InMemorySigningJournal(), failingAudit(), riskPolicy);
     const empty = new bitcoin.Psbt({ network: bitcoin.networks.regtest });
     const out = await local.signMint({ psbt: empty, view: {} as never, network: "regtest", recoveryKeyXOnly: Buffer.alloc(32), feeScript: Buffer.alloc(22) });
     expect(out.ok).toBe(false);
@@ -49,7 +50,7 @@ describe("Guardian transition signer boundary (§12-§17, §80, §81)", () => {
       async writeAfterSign() {},
     };
     const signer = GuardianV3Signer.fromPrivateKey(Buffer.alloc(32, 0x42));
-    const local = new LocalGuardianTransitionSigner(signer, new InMemorySigningJournal(), audit, riskPolicy);
+    const local = new LocalGuardianTransitionSigner(localSigningBackend(signer), new InMemorySigningJournal(), audit, riskPolicy);
     const empty = new bitcoin.Psbt({ network: bitcoin.networks.regtest });
     // invalid PSBT fails at validation before audit; to exercise the audit path we
     // simply assert the sink is only invoked on validated transitions.

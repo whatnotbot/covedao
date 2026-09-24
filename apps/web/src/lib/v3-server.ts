@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { createDb, type Database } from "@crclaunch/db";
 import { CoreRpcProvider } from "@crclaunch/bitcoin";
-import { GuardianV3Signer, LocalGuardianTransitionSigner, type GuardianTransitionSigner } from "@crclaunch/cove-guardian/v3";
+import { GuardianV3Signer, LocalGuardianTransitionSigner, localSigningBackend, type GuardianTransitionSigner } from "@crclaunch/cove-guardian/v3";
 import { loadV3AppConfig, V3AppService, PostgresSigningJournal, PostgresGuardianAudit, type V3AppConfig } from "@crclaunch/cove-app";
 import { AppError } from "@crclaunch/cove-app";
 
@@ -39,7 +39,7 @@ export function getV3Services(): V3Services {
   let transitionSigner: GuardianTransitionSigner | null = null;
   if (signer) {
     transitionSigner = new LocalGuardianTransitionSigner(
-      signer,
+      localSigningBackend(signer),
       new PostgresSigningJournal(db),
       new PostgresGuardianAudit(db, config.recoveryProfile?.profileVersion ?? "COVE_V3_VAULT_PROFILE_DEV1"),
       { maxGrossSats: 1_000_000n, maxRedeemPayoutSats: 1_000_000n, maxBackingSats: 100_000_000_000_000n, maxMinerFeeSats: config.maxMinerFeeSats, allowedTokenIds: null },

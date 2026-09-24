@@ -13,9 +13,12 @@ export {
 } from "./signer.js";
 export {
   signVaultExecutionLeafWithCustody,
+  localSigningBackend,
+  custodySigningBackend,
   TestGuardianCustodyBackend,
   UnconfiguredGuardianCustodyBackend,
   type GuardianCustodyBackend,
+  type GuardianSigningBackend,
 } from "./custody.js";
 export {
   validateAndSignMintTransition,

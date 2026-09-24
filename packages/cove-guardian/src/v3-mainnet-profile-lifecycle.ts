@@ -8,6 +8,7 @@ import type { VaultRecoveryProfile } from "@crclaunch/cove-vault";
 import {
   GuardianV3Signer,
   LocalGuardianTransitionSigner,
+  localSigningBackend,
   InMemorySigningJournal,
   computeGuardianAuditHash,
   buildDeployPsbtV3,
@@ -184,7 +185,7 @@ async function main(): Promise<void> {
     maxMinerFeeSats: 20_000n,
     allowedTokenIds: null,
   };
-  const transitionSigner = new LocalGuardianTransitionSigner(signer, journal, audit, riskPolicy);
+  const transitionSigner = new LocalGuardianTransitionSigner(localSigningBackend(signer), journal, audit, riskPolicy);
 
   const view = new CoveChainView();
 

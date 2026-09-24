@@ -5,7 +5,7 @@ import { buildBackingVaultV3, type VaultRecoveryProfile } from "@crclaunch/cove-
 import { COVE_POLICY_V3 } from "@crclaunch/cove-wire";
 import { validateMintTransitionV3, validateRedeemTransitionV3 } from "./validate.js";
 import { unsignedTxDigest } from "./resolve.js";
-import type { GuardianV3Signer } from "./signer.js";
+import type { GuardianSigningBackend } from "./custody.js";
 import type { SigningJournalStore } from "./journal.js";
 import type {
   AuditRecord,
@@ -119,7 +119,7 @@ function buildAuditRecord(params: {
 /** Local (non-mainnet) signer: durable-before-sign audit + journal + sign. */
 export class LocalGuardianTransitionSigner implements GuardianTransitionSigner {
   constructor(
-    private readonly signer: GuardianV3Signer,
+    private readonly signer: GuardianSigningBackend,
     private readonly journal: SigningJournalStore,
     private readonly audit: DurableAuditSink,
     private readonly riskPolicy: GuardianRiskPolicy,
@@ -136,9 +136,10 @@ export class LocalGuardianTransitionSigner implements GuardianTransitionSigner {
   }
 
   private async sign(req: TransitionSignRequest, op: "MINT" | "REDEEM"): Promise<TransitionSignOutcome> {
+    const guardianXOnly = await this.signer.xOnlyPubkey();
     const validate = op === "MINT"
-      ? validateMintTransitionV3({ ...req, guardianXOnly: this.signer.xOnlyPubkey() })
-      : validateRedeemTransitionV3({ ...req, guardianXOnly: this.signer.xOnlyPubkey() });
+      ? validateMintTransitionV3({ ...req, guardianXOnly })
+      : validateRedeemTransitionV3({ ...req, guardianXOnly });
     if (!validate.ok) {
       return { ok: false, reason: validate.reason, detail: validate.detail, audit: null };
     }
@@ -182,7 +183,6 @@ export class LocalGuardianTransitionSigner implements GuardianTransitionSigner {
     }
 
     // 3. Sign (script-path execution leaf).
-    const guardianXOnly = this.signer.xOnlyPubkey();
     const prevVault = buildBackingVaultV3({
       state: analysis.currentState,
       guardianXOnly,
@@ -192,7 +192,7 @@ export class LocalGuardianTransitionSigner implements GuardianTransitionSigner {
     });
     const leaf = op === "MINT" ? prevVault.mintLeaf : prevVault.redeemLeaf;
     const control = op === "MINT" ? prevVault.mintControlBlock : prevVault.redeemControlBlock;
-    this.signer.signVaultExecutionLeaf(req.psbt, 0, leaf, control);
+    await this.signer.signVaultExecutionLeaf(req.psbt, 0, leaf, control);
 
     await this.audit.writeAfterSign(record, receipt.auditHash).catch(() => {});
 

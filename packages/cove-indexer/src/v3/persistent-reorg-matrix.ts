@@ -116,8 +116,8 @@ async function main() {
   }
   console.log(`✓ TRANSFER reorg rollback (Alice restored, Bob removed)`);
 
-  // ── replay: re-mine the orphaned Bob transfer and confirm canonical recovery ──
-  await rpc.generate(1, mineAddr);
+  // ── replay: re-mine the orphaned Bob transfer (fresh coinbase addr → new block hash) ──
+  await rpc.generate(1, await rpc.getNewAddress());
   await sync();
   {
     const h = await hydrateState(db, "regtest", cfg);

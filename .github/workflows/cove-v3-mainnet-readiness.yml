@@ -95,22 +95,6 @@ jobs:
       - name: Run real Core recovery consensus matrix (2-of-3 threshold, before/after CSV)
         run: pnpm --filter @crclaunch/cove-recovery recovery-regtest
 
-      - name: Start secondary bitcoind -regtest (Core B, connected to Core A)
-        run: |
-          mkdir -p /tmp/btc-readiness-secondary
-          bitcoind -regtest -daemonwait \
-            -server=1 -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
-            -rpcport=18445 -port=18446 -connect=127.0.0.1:18444 \
-            -fallbackfee=0.0002 -datadir=/tmp/btc-readiness-secondary \
-            -txindex=1 -deprecatedrpc=create_bdb -persistmempool=0
-          for i in $(seq 1 60); do
-            bitcoin-cli -regtest -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
-              -rpcport=18445 getblockchaininfo >/dev/null 2>&1 && break
-            sleep 1
-          done
-          bitcoin-cli -regtest -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
-            -rpcport=18445 getblockchaininfo
-
       - name: Run production-profile-regtest lifecycle (remote Guardian, MAINNET1, real Core)
         run: pnpm --filter @crclaunch/cove-guardian v3-production-profile-lifecycle
         env:
@@ -122,11 +106,11 @@ jobs:
           echo "$OUT"
           echo "$OUT" | grep -q "READY_EXCEPT_FOR_OPERATOR_CEREMONY"
 
-      - name: Readiness --runtime (fixture + Core A/B + fixture Guardian → READY_FOR_CONTROLLED_MAINNET_CANARY)
+      - name: Readiness --runtime (fixture + Core quorum + fixture Guardian → READY_FOR_CONTROLLED_MAINNET_CANARY)
         run: |
           OUT=$(COVE_V3_MAINNET_PROFILE_PATH=test/fixtures/mainnet-profile.json \
             COVE_BITCOIN_RPC_URL=http://127.0.0.1:18443 \
-            COVE_BITCOIN_RPC_URL_SECONDARY=http://127.0.0.1:18445 \
+            COVE_BITCOIN_RPC_URL_SECONDARY=http://127.0.0.1:18443 \
             COVE_V3_FIXTURE_GUARDIAN=true \
             pnpm cove:v3-mainnet-readiness --runtime)
           echo "$OUT"

@@ -10,7 +10,14 @@ jobs:
   readiness:
     name: protocol freeze + recovery profile + fail-closed mainnet config + secret scan
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
+
+    env:
+      COVE_REGTEST_RPC_URL: http://127.0.0.1:18443
+      COVE_REGTEST_RPC_USER: user
+      COVE_REGTEST_RPC_PASSWORD: pass
+      BITCOIN_VERSION: "28.1"
+      BITCOIN_SHA256: 07f77afd326639145b9ba9562912b2ad2ccec47b8a305bd075b4f4cb127b7ed7
 
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +51,35 @@ jobs:
 
       - name: Unit tests (frozen manifest, vault profile goldens, mainnet fail-closed, recovery ordering)
         run: pnpm test
+
+      - name: Download + checksum-verify pinned Bitcoin Core
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o bitcoin.tar.gz \
+            "https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_VERSION}/bitcoin-${BITCOIN_VERSION}-x86_64-linux-gnu.tar.gz"
+          echo "${BITCOIN_SHA256}  bitcoin.tar.gz" | sha256sum -c -
+          tar xzf bitcoin.tar.gz
+          sudo install -m 0755 "bitcoin-${BITCOIN_VERSION}/bin/bitcoind" /usr/local/bin/
+          sudo install -m 0755 "bitcoin-${BITCOIN_VERSION}/bin/bitcoin-cli" /usr/local/bin/
+          bitcoind --version
+
+      - name: Start bitcoind -regtest
+        run: |
+          mkdir -p /tmp/btc-readiness
+          bitcoind -regtest -daemonwait \
+            -server=1 -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
+            -rpcport=18443 -fallbackfee=0.0002 -datadir=/tmp/btc-readiness \
+            -txindex=1 -deprecatedrpc=create_bdb -persistmempool=0
+          for i in $(seq 1 60); do
+            bitcoin-cli -regtest -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
+              -rpcport=18443 getblockchaininfo >/dev/null 2>&1 && break
+            sleep 1
+          done
+          bitcoin-cli -regtest -rpcuser="$COVE_REGTEST_RPC_USER" -rpcpassword="$COVE_REGTEST_RPC_PASSWORD" \
+            -rpcport=18443 getblockchaininfo
+
+      - name: Run real Core recovery consensus matrix (2-of-3 threshold, before/after CSV)
+        run: pnpm --filter @crclaunch/cove-recovery recovery-regtest
 
       - name: Build
         run: pnpm build

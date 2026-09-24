@@ -8,6 +8,7 @@ import {
   policyIdentityHash,
 } from "./policyIdentity.js";
 import { buildCoveVaultV3, type CoveVaultV3 } from "./vault.js";
+import type { VaultRecoveryProfile } from "./vaultProfile.js";
 
 /**
  * Canonical V3 backing vault derived DIRECTLY from a CoveStateV2 (§6). The MINT
@@ -18,6 +19,7 @@ export function buildBackingVaultV3(params: {
   state: CoveStateV2;
   guardianXOnly: Buffer;
   recoveryKeyXOnly: Buffer;
+  recoveryProfile?: VaultRecoveryProfile;
   network?: bitcoin.networks.Network;
 }): CoveVaultV3 {
   const currentStateHash = Buffer.from(stateHashV2(params.state), "hex");
@@ -40,6 +42,7 @@ export function buildBackingVaultV3(params: {
     redeemPolicyIdentityHash: redeemPi,
     guardianXOnly: params.guardianXOnly,
     ownerXOnly: params.recoveryKeyXOnly,
+    recoveryProfile: params.recoveryProfile,
     network: params.network,
   });
 }

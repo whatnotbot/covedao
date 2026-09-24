@@ -6,7 +6,7 @@ import type { CoreRpcProvider } from "@crclaunch/bitcoin";
 import { TOKEN_CARRIER_SATS, type CoveCanonicalView } from "@crclaunch/cove-covenant";
 import { buildTransferPsbtV2, type ResolvedInput } from "@crclaunch/cove-guardian/v3";
 import { loadCanonicalViewSnapshotFromDb } from "@crclaunch/cove-indexer/v3";
-import { COVE_FEE_CONFIG, deterministicFee, dustThreshold } from "@crclaunch/cove-economics";
+import { deterministicFee, dustThreshold } from "@crclaunch/cove-economics";
 import { MarketError } from "./errors.js";
 import type { MarketConfig } from "./config.js";
 import type { ListingV1, CancellationV1 } from "./types.js";
@@ -148,7 +148,10 @@ export class MarketService {
     if (input.totalPriceSats < dustThreshold(asBuffer(input.sellerPayoutScript))) {
       throw new MarketError("SELLER_PAYOUT_DUST", "seller payout below relay dust");
     }
-    const marketFee = deterministicFee(input.totalPriceSats, COVE_FEE_CONFIG.p2pFeeBps);
+    if (this.config.maxP2pSettlementSats != null && input.totalPriceSats > this.config.maxP2pSettlementSats) {
+      throw new MarketError("P2P_SETTLEMENT_CAP_EXCEEDED", `settlement ${input.totalPriceSats} > canary cap ${this.config.maxP2pSettlementSats}`);
+    }
+    const marketFee = deterministicFee(input.totalPriceSats, this.config.p2pFeeBps);
     if (marketFee < dustThreshold(this.config.feeScript)) {
       throw new MarketError("MARKET_FEE_DUST", "p2p fee below relay dust");
     }
@@ -262,7 +265,7 @@ export class MarketService {
 
       await this.resolveSource(listingToV1(row));
 
-      const marketFee = deterministicFee(row.totalPriceSats, COVE_FEE_CONFIG.p2pFeeBps);
+      const marketFee = deterministicFee(row.totalPriceSats, this.config.p2pFeeBps);
       const [inserted] = await tx
         .insert(schema.coveV3MarketFills)
         .values({
@@ -312,7 +315,7 @@ export class MarketService {
       tokenOutputs.push({ script: asBuffer(listing.sellerTokenChangeScript), amountAtoms: changeAtoms });
     }
     const extraCarrierSats = BigInt(tokenOutputs.length) * TOKEN_CARRIER_SATS - source.valueSats;
-    const marketFee = deterministicFee(listing.totalPriceSats, COVE_FEE_CONFIG.p2pFeeBps);
+    const marketFee = deterministicFee(listing.totalPriceSats, this.config.p2pFeeBps);
     const btcOutputs = [
       { script: asBuffer(listing.sellerPayoutScript), valueSats: listing.totalPriceSats },
       { script: this.config.feeScript, valueSats: marketFee },

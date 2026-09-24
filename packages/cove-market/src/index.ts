@@ -23,7 +23,7 @@ export {
   verifyCancellationAuthorization,
 } from "./order/signature.js";
 export { validateListingShape } from "./order/validate.js";
-export { defaultMarketConfig, type MarketConfig } from "./config.js";
+export { defaultMarketConfig, mainnetMarketConfig, type MarketConfig } from "./config.js";
 export {
   unsignedTxDigest,
   sighashTypeOf,

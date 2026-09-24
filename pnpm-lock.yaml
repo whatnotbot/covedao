@@ -380,6 +380,9 @@ importers:
       '@crclaunch/cove-economics':
         specifier: workspace:*
         version: link:../cove-economics
+      '@crclaunch/cove-mainnet':
+        specifier: workspace:*
+        version: link:../cove-mainnet
       '@crclaunch/cove-simplicity':
         specifier: workspace:*
         version: link:../cove-simplicity

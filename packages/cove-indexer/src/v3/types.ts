@@ -1,4 +1,5 @@
 import type { CoveStateV2, OutPoint } from "@crclaunch/cove-covenant";
+import type { VaultRecoveryProfile } from "@crclaunch/cove-vault";
 
 /**
  * Canonical V3 indexer state types (§6). The authoritative derived state
@@ -71,7 +72,10 @@ export interface V3IndexerConfig {
   chainIdentity: string;
   guardianXOnly: Buffer;
   recoveryKeyXOnly: Buffer;
+  /** MAINNET1 threshold-recovery profile (optional; DEV1 derived from recoveryKeyXOnly when absent). */
+  recoveryProfile?: VaultRecoveryProfile;
   feeScript: Buffer;
+  /** Absolute activation height; Cove ops below this are ignored (§13/§48). */
   genesisHeight: bigint;
 }
 

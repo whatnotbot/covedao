@@ -25,6 +25,8 @@ export interface V3AppConfig {
   recoveryProfile?: VaultRecoveryProfile;
   /** Guardian private key (server-side secret, regtest/staging ONLY). */
   guardianPrivateKey: Buffer | null;
+  /** Absolute activation height (0 = genesis); Cove ops below this are ignored. */
+  activationHeight: bigint;
   maxMinerFeeSats: bigint;
   maxListingBlocks: bigint;
   reservationTtlSeconds: number;
@@ -135,6 +137,7 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
       recoveryKeyXOnly: recoveryProfile.recoveryPubkeys[0]!, // unused for MAINNET1
       recoveryProfile,
       guardianPrivateKey: null,
+      activationHeight: profile.activationHeight ?? 0n,
       maxMinerFeeSats: 20_000n,
       maxListingBlocks: 21_000n,
       reservationTtlSeconds: 90,
@@ -160,6 +163,7 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
     guardianXOnly: xonly(guardianPriv ?? recoveryPriv),
     recoveryKeyXOnly: xonly(recoveryPriv),
     guardianPrivateKey: guardianPriv,
+    activationHeight: 0n,
     maxMinerFeeSats: 20_000n,
     maxListingBlocks: 21_000n,
     reservationTtlSeconds: 90,

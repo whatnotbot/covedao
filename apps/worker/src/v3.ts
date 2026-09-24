@@ -54,8 +54,9 @@ async function main() {
     chainIdentity: config.chainIdentity,
     guardianXOnly: config.guardianXOnly,
     recoveryKeyXOnly: config.recoveryKeyXOnly,
+    recoveryProfile: config.recoveryProfile,
     feeScript: config.feeScript,
-    genesisHeight: 0n,
+    genesisHeight: config.activationHeight,
   };
 
   const state = await hydrateState(db, config.network, indexerConfig);

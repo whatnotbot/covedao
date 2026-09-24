@@ -129,9 +129,14 @@ export class V3IndexerState {
   }
 
   private bitcoinNetwork(): bitcoin.networks.Network {
-    return this.config.network === "regtest"
-      ? bitcoin.networks.regtest
-      : bitcoin.networks.testnet;
+    switch (this.config.network) {
+      case "regtest":
+        return bitcoin.networks.regtest;
+      case "mainnet":
+        return bitcoin.networks.bitcoin;
+      default:
+        return bitcoin.networks.testnet;
+    }
   }
 
   /** Apply one canonical block; returns the events produced and stores undo. */
@@ -270,6 +275,7 @@ export class V3IndexerState {
       state: s0,
       guardianXOnly: this.config.guardianXOnly,
       recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile,
       network: this.bitcoinNetwork(),
     });
     const tx = bitcoin.Transaction.fromHex(rawHex);
@@ -339,6 +345,7 @@ export class V3IndexerState {
       state: nextState,
       guardianXOnly: this.config.guardianXOnly,
       recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile,
       network: this.bitcoinNetwork(),
     });
     const successor = tx.outs[1];
@@ -503,6 +510,7 @@ export class V3IndexerState {
       state: nextState,
       guardianXOnly: this.config.guardianXOnly,
       recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile,
       network: this.bitcoinNetwork(),
     });
     const successor = tx.outs[1];

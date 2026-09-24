@@ -1,7 +1,7 @@
 import * as bitcoin from "bitcoinjs-lib";
 import { randomUUID } from "node:crypto";
 import { stateHashV2 } from "@crclaunch/cove-covenant";
-import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
+import { buildBackingVaultV3, type VaultRecoveryProfile } from "@crclaunch/cove-vault";
 import { COVE_POLICY_V3 } from "@crclaunch/cove-wire";
 import { unsignedTxDigest } from "./resolve.js";
 import type { GuardianV3Signer } from "./signer.js";
@@ -30,6 +30,7 @@ export interface SignTransitionParams {
   view: CoveCanonicalView;
   network: GuardianV3Network;
   recoveryKeyXOnly: Buffer;
+  recoveryProfile?: VaultRecoveryProfile;
   feeScript: Buffer;
   maxMinerFeeSats?: bigint;
   auditSink?: AuditSink;
@@ -100,6 +101,7 @@ export function validateAndSignMintTransition(
     network: params.network,
     guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     feeScript: params.feeScript,
     maxMinerFeeSats: params.maxMinerFeeSats,
   });
@@ -128,6 +130,7 @@ export function validateAndSignMintTransition(
     state: a.currentState,
     guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: bitcoinNetwork(params.network),
   });
   params.signer.signVaultExecutionLeaf(
@@ -163,6 +166,7 @@ export function validateAndSignRedeemTransition(
     network: params.network,
     guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     feeScript: params.feeScript,
     maxMinerFeeSats: params.maxMinerFeeSats,
   });
@@ -191,6 +195,7 @@ export function validateAndSignRedeemTransition(
     state: a.currentState,
     guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: bitcoinNetwork(params.network),
   });
   params.signer.signVaultExecutionLeaf(

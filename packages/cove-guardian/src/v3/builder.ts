@@ -7,7 +7,7 @@ import {
   s0StateV2,
   type CoveStateV2,
 } from "@crclaunch/cove-covenant";
-import { buildBackingVaultV3, type CoveVaultV3 } from "@crclaunch/cove-vault";
+import { buildBackingVaultV3, type CoveVaultV3, type VaultRecoveryProfile } from "@crclaunch/cove-vault";
 import {
   COVE_POLICY_V3,
   computeTokenId,
@@ -51,6 +51,7 @@ export function buildDeployPsbtV3(params: {
   identity: TokenIdentityInput;
   guardianXOnly: Buffer;
   recoveryKeyXOnly: Buffer;
+  recoveryProfile?: VaultRecoveryProfile;
   deployerInputs: ResolvedInput[];
   deployerChangeScript: Buffer;
   minerFeeSats: Sats;
@@ -62,6 +63,7 @@ export function buildDeployPsbtV3(params: {
     state: s0,
     guardianXOnly: params.guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: params.network,
   });
   const wire = encodeDeployV2({
@@ -116,6 +118,7 @@ export function buildMintPsbtV3(params: {
   mintAmountAtoms: bigint;
   guardianXOnly: Buffer;
   recoveryKeyXOnly: Buffer;
+  recoveryProfile?: VaultRecoveryProfile;
   buyerInputs: ResolvedInput[];
   buyerCarrierScript: Buffer; // buyer token carrier output script
   buyerChangeScript: Buffer;
@@ -127,12 +130,14 @@ export function buildMintPsbtV3(params: {
     state: params.prevState,
     guardianXOnly: params.guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: params.network,
   });
   const nextVault = buildBackingVaultV3({
     state: nextState,
     guardianXOnly: params.guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: params.network,
   });
   const buyFeeSats = deterministicFee(grossSats, COVE_FEE_CONFIG.buyFeeBps);
@@ -306,6 +311,7 @@ export function buildRedeemPsbtV3(params: {
   tokenInputTotalAtoms: bigint;
   guardianXOnly: Buffer;
   recoveryKeyXOnly: Buffer;
+  recoveryProfile?: VaultRecoveryProfile;
   sellerPayoutScript: Buffer;
   sellerChangeScript: Buffer;
   feeScript: Buffer;
@@ -316,12 +322,14 @@ export function buildRedeemPsbtV3(params: {
     state: params.prevState,
     guardianXOnly: params.guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: params.network,
   });
   const nextVault = buildBackingVaultV3({
     state: nextState,
     guardianXOnly: params.guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: params.network,
   });
   const redeemFeeSats = deterministicFee(grossSats, COVE_FEE_CONFIG.redeemFeeBps);

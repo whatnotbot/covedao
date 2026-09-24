@@ -6,7 +6,7 @@ import {
   applyRedeemV2,
   type CoveStateV2,
 } from "@crclaunch/cove-covenant";
-import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
+import { buildBackingVaultV3, type VaultRecoveryProfile } from "@crclaunch/cove-vault";
 import { executeMintV3, executeRedeemV3 } from "@crclaunch/cove-simplicity";
 import { OP_DEPLOY, OP_MINT, OP_REDEEM, OP_TRANSFER, computeTokenId } from "@crclaunch/cove-wire";
 import { COVE_FEE_CONFIG, checkFeeSettlement, deterministicFee, isP2TR, isP2WPKH } from "@crclaunch/cove-economics";
@@ -54,6 +54,7 @@ export interface FinalizeParams {
   network: GuardianV3Network;
   guardianXOnly: Buffer;
   recoveryKeyXOnly: Buffer;
+  recoveryProfile?: VaultRecoveryProfile;
   feeScript: Buffer;
   maxMinerFeeSats?: bigint;
   /** Resolved prevouts for EVERY input, captured independently before signing. */
@@ -149,6 +150,7 @@ export function validateFinalizedDeployTransaction(params: {
   chainIdentity: string;
   guardianXOnly: Buffer;
   recoveryKeyXOnly: Buffer;
+  recoveryProfile?: VaultRecoveryProfile;
 }): FinalValidationResult {
   const parsed = parseTx(params.rawTxHex);
   if (!(parsed instanceof bitcoin.Transaction)) return parsed;
@@ -168,6 +170,7 @@ export function validateFinalizedDeployTransaction(params: {
     state: s0,
     guardianXOnly: params.guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: btcNetwork(params.network),
   });
   const s0Out = tx.outs[1];
@@ -206,6 +209,7 @@ export function validateFinalizedMintTransaction(params: FinalizeParams): FinalV
     state: currentState,
     guardianXOnly: params.guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: btcNetwork(params.network),
   });
   const expectedPrevValue = RESERVE_ANCHOR_SATS + currentState.backingSats;
@@ -231,6 +235,7 @@ export function validateFinalizedMintTransaction(params: FinalizeParams): FinalV
     state: nextState,
     guardianXOnly: params.guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: btcNetwork(params.network),
   });
   const successor = tx.outs[1];
@@ -294,6 +299,7 @@ export function validateFinalizedRedeemTransaction(params: FinalizeParams): Fina
     state: currentState,
     guardianXOnly: params.guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: btcNetwork(params.network),
   });
   const expectedPrevValue = RESERVE_ANCHOR_SATS + currentState.backingSats;
@@ -336,6 +342,7 @@ export function validateFinalizedRedeemTransaction(params: FinalizeParams): Fina
     state: nextState,
     guardianXOnly: params.guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: btcNetwork(params.network),
   });
   const successor = tx.outs[1];

@@ -1,6 +1,6 @@
 import * as bitcoin from "bitcoinjs-lib";
 import { TOKEN_CARRIER_SATS } from "@crclaunch/cove-covenant";
-import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
+import { buildBackingVaultV3, type VaultRecoveryProfile } from "@crclaunch/cove-vault";
 import { executeMintV3, executeRedeemV3 } from "@crclaunch/cove-simplicity";
 import { COVE_FEE_CONFIG, checkFeeSettlement } from "@crclaunch/cove-economics";
 import { RESERVE_ANCHOR_SATS } from "./builder.js";
@@ -63,6 +63,7 @@ export interface ValidateParams {
   network: GuardianV3Network;
   guardianXOnly: Buffer;
   recoveryKeyXOnly: Buffer;
+  recoveryProfile?: VaultRecoveryProfile;
   feeScript: Buffer;
   maxMinerFeeSats?: bigint;
 }
@@ -83,12 +84,14 @@ export function validateMintTransitionV3(params: ValidateParams): ValidationResu
     state: analysis.currentState,
     guardianXOnly: params.guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: btcNet,
   });
   const nextVault = buildBackingVaultV3({
     state: analysis.nextState,
     guardianXOnly: params.guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: btcNet,
   });
 
@@ -216,12 +219,14 @@ export function validateRedeemTransitionV3(params: ValidateParams): ValidationRe
     state: analysis.currentState,
     guardianXOnly: params.guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: btcNet,
   });
   const nextVault = buildBackingVaultV3({
     state: analysis.nextState,
     guardianXOnly: params.guardianXOnly,
     recoveryKeyXOnly: params.recoveryKeyXOnly,
+      recoveryProfile: params.recoveryProfile,
     network: btcNet,
   });
 

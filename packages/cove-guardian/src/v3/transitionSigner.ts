@@ -1,7 +1,7 @@
 import * as bitcoin from "bitcoinjs-lib";
 import { randomUUID } from "node:crypto";
 import { stateHashV2, type CoveCanonicalView } from "@crclaunch/cove-covenant";
-import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
+import { buildBackingVaultV3, type VaultRecoveryProfile } from "@crclaunch/cove-vault";
 import { COVE_POLICY_V3 } from "@crclaunch/cove-wire";
 import { validateMintTransitionV3, validateRedeemTransitionV3 } from "./validate.js";
 import { unsignedTxDigest } from "./resolve.js";
@@ -34,6 +34,7 @@ export interface TransitionSignRequest {
   view: CoveCanonicalView;
   network: GuardianV3Network;
   recoveryKeyXOnly: Buffer;
+  recoveryProfile?: VaultRecoveryProfile;
   feeScript: Buffer;
   maxMinerFeeSats?: bigint;
 }
@@ -186,6 +187,7 @@ export class LocalGuardianTransitionSigner implements GuardianTransitionSigner {
       state: analysis.currentState,
       guardianXOnly,
       recoveryKeyXOnly: req.recoveryKeyXOnly,
+      recoveryProfile: req.recoveryProfile,
       network: req.network === "regtest" ? bitcoin.networks.regtest : bitcoin.networks.testnet,
     });
     const leaf = op === "MINT" ? prevVault.mintLeaf : prevVault.redeemLeaf;

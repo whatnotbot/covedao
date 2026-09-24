@@ -3,7 +3,7 @@
 ## Git
 
 - Starting SHA: `bd1a9c56bba2423a9ff232e07005223f1aafe212`
-- Ending SHA: `c786621`
+- Ending SHA: `87dae88`
 - Branch `main`, pushed to `origin/main`; working tree clean except untracked `fr.html`.
 
 ## Protocol freeze
@@ -36,10 +36,14 @@ and committed `.env` credentials. Wired into CI.
 
 ## CI
 
-- `Cove V3 — mainnet readiness gate` run **36018880603**: success (protocol
-  freeze, vault profile goldens, fail-closed config, secret scan, full build).
-- All prior workflows green on the same commit: CI, V3 indexer, V3 market,
-  V3 full lifecycle, V3 product, covenant, NUMS/vault, Simplicity, V1 reorg.
+- `Cove V3 — mainnet readiness gate` run **36030643590**: success (protocol
+  freeze, vault profile goldens, fail-closed config, secret scan, full build,
+  real Core recovery consensus matrix).
+- All prior V3 workflows green on the same commit: CI, V3 indexer, V3 market,
+  V3 full lifecycle, V3 product, covenant, NUMS/vault, Simplicity.
+- `Cove V1 real Bitcoin Core regtest reorg` is the one pre-existing flake
+  (`regtest-reorg failed: bitcoind exited with code 1` in legacy V1
+  `regtest-reorg.ts`); unrelated to the Phase 8 V3-only changes.
 
 ## Owner decisions remaining
 
@@ -116,6 +120,22 @@ validateAndSignMint/RedeemTransition) — all accept an optional `recoveryProfil
 `V3AppConfig.recoveryProfile` + `V3AppService` now thread the recovery profile
 through the full backing-buy/redeem/launch path, so the product can run under
 MAINNET1 (defaults DEV1). The production-profile path is end-to-end wired.
+
+## Durable signer wired into the product path (done this round)
+
+The production web/worker runtime now signs through the durable Guardian
+boundary instead of calling `validateAndSignMintTransition` directly:
+
+- `V3AppService` accepts an optional `transitionSigner` and branches
+  `buildBackingBuy`/`buildRedeem` to `signMint`/`signRedeem` when present
+  (threading `recoveryProfile` + `maxMinerFeeSats` through the request).
+- `apps/web/src/lib/v3-server.ts` constructs
+  `LocalGuardianTransitionSigner(signer, PostgresSigningJournal(db),
+  PostgresGuardianAudit(db, <profile>), <risk policy>)` and injects it, so every
+  product sign now does durable-before-sign audit + outpoint reservation +
+  signer-side risk caps. `PostgresGuardianAudit` (new, `cove-app/src/audit.ts`)
+  persists the VALIDATED_TO_SIGN audit row to `cove_v3_guardian_audit` with the
+  actual vault profile version (no hardcoded MAINNET1).
 
 ## Honest status — NOT_READY for canary
 

@@ -3,6 +3,7 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { ECPairFactory } from "ecpair";
 import { CoveChainView, s0StateV2 } from "@crclaunch/cove-covenant";
+import { isSimplicityAvailable } from "@crclaunch/cove-simplicity";
 import { CHAIN_BITCOIN_REGTEST } from "@crclaunch/cove-wire";
 import { buildDeployPsbtV3, buildMintPsbtV3, RESERVE_ANCHOR_SATS } from "./builder.js";
 import { validateAndSignMintTransition } from "./guardian.js";
@@ -28,7 +29,7 @@ const MAINNET1 = {
 };
 
 describe("production-profile MINT path (§137) — MAINNET1 vault through the Guardian", () => {
-  it("builds + validates + signs a MINT against a 2-of-3 MAINNET1 vault", () => {
+  it.skipIf(!isSimplicityAvailable())("builds + validates + signs a MINT against a 2-of-3 MAINNET1 vault", () => {
     const tokenId = Buffer.from("ab".repeat(32), "hex");
     const s0 = s0StateV2({ tokenId: tokenId.toString("hex") });
 
@@ -83,6 +84,10 @@ describe("production-profile MINT path (§137) — MAINNET1 vault through the Gu
       recoveryProfile: MAINNET1,
       feeScript: Buffer.from("0014" + "f".repeat(40), "hex"),
     });
+    if (!out.ok) {
+      // Surface the exact rejection so CI-only failures are self-diagnosing.
+      throw new Error(`MINT validation rejected: ${(out as { reason?: string; detail?: string }).reason}: ${(out as { detail?: string }).detail}`);
+    }
     expect(out.ok).toBe(true);
   });
 });

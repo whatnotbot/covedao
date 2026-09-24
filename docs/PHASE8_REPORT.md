@@ -138,6 +138,12 @@ boundary instead of calling `validateAndSignMintTransition` directly:
   persists the VALIDATED_TO_SIGN audit row to `cove_v3_guardian_audit` with the
   actual vault profile version (no hardcoded MAINNET1).
 
+The durable stores are now directly integration-tested against real Postgres
+(`cove-app/src/journal-audit.integration.test.ts`): the signing journal's
+RESERVED/IDEMPOTENT/CONFLICT + restart survival + a 20-concurrent race (exactly
+one RESERVED), and the audit's canonical hash chain + linkage + restart survival
++ `signedAt`. Wired into the persistent truth-gate CI.
+
 ## MAINNET1 production-profile E2E (done this round)
 
 `packages/cove-guardian/src/v3-mainnet-profile-lifecycle.ts` runs the full

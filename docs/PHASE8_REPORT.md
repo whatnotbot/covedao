@@ -46,6 +46,15 @@ and committed `.env` credentials. Wired into CI.
 activationHeight, guardianXOnly (custody backend), recovery.pubkeys/csvBlocks,
 feeScript, buy/redeem/p2pFeeBps, canary allowlist + caps.
 
+## Recovery tool + consensus matrix (done this round)
+
+- `@crclaunch/cove-recovery`: OFFLINE recovery package — reconstructs the exact
+  MAINNET1 vault, builds a destination/fee-policy-constrained spend, signs
+  2-of-3 Schnorr, verifies each signature, finalizes only after threshold
+  (never auto-broadcasts).
+- `recovery-regtest.ts`: real Core consensus matrix — before-CSV reject, 1/3
+  reject, malformed-witness reject, 2/3 accept after maturity. CI green.
+
 ## Honest status — NOT_READY for canary
 
 Phase 8A code readiness is **NOT complete**. The following remain as code/tooling
@@ -54,12 +63,11 @@ READY_FOR_CONTROLLED_MAINNET_CANARY:
 
 1. **Durable-before-sign Guardian audit + hash chain** and the **per-backing
    signing journal** (double-sign protection) — not implemented.
-2. **Offline `cove-recovery` tool** — only the threshold leaf + witness builder
-   exist; the tool and the real Core recovery consensus matrix are not built.
-3. **Separate Guardian service boundary** (remote `GuardianTransitionSigner`,
+2. **Separate Guardian service boundary** (remote `GuardianTransitionSigner`,
    no local key on mainnet web/worker) — not implemented; only the fail-closed
    config guard exists.
-4. Risk-policy caps enforced at the signer, backup/restore + reindex drills,
-   monitoring/alerts, rate limits, release manifest, full runbook suite.
+3. Risk-policy caps enforced at the signer, backup/restore + reindex drills,
+   monitoring/alerts, rate limits, release manifest, full runbook suite,
+   readiness CLI.
 
 Final readiness: **NOT_READY**.

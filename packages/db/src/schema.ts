@@ -1,4 +1,4 @@
-import { inArray, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -646,9 +646,11 @@ export const coveV3MarketListings = pgTable(
     index("cove_v3_market_listings_token_status_idx").on(t.network, t.tokenId, t.status),
     index("cove_v3_market_listings_status_created_idx").on(t.network, t.status, t.createdAt),
     // One ACTIVE/RESERVED/BROADCAST listing per source outpoint (double-list guard).
+    // Literal IN-list: CREATE INDEX is DDL and cannot use bind parameters, so the
+    // status constants are inlined here (they are fixed protocol values).
     uniqueIndex("cove_v3_market_listings_source_active_uq")
       .on(t.network, t.sourceTxid, t.sourceVout)
-      .where(inArray(t.status, ["ACTIVE", "RESERVED", "BROADCAST"])),
+      .where(sql`${t.status} in ('ACTIVE', 'RESERVED', 'BROADCAST')`),
   ],
 );
 

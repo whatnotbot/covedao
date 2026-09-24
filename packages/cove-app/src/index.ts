@@ -38,9 +38,17 @@ export {
   OWNER_DECISION_KEYS,
   type MainnetStage,
   type MainnetProfile,
-  type MainnetRecoveryProfile,
   type MainnetHealth,
 } from "./mainnet.js";
+export {
+  computeMainnetReadiness,
+  checkCoreAgreement,
+  verifyMainnetGenesis,
+  BITCOIN_MAINNET_GENESIS_HASH,
+  type CoreAgreementResult,
+  type MainnetReadiness,
+  type MainnetReadinessInput,
+} from "./readiness.js";
 export { PostgresSigningJournal } from "./journal.js";
 export { PostgresGuardianAudit } from "./audit.js";
 export { checkBackingInvariant, checkSupplyInvariant, type InvariantResult } from "./invariants.js";

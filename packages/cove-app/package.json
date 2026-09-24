@@ -20,6 +20,7 @@
     "@crclaunch/cove-economics": "workspace:*",
     "@crclaunch/cove-guardian": "workspace:*",
     "@crclaunch/cove-indexer": "workspace:*",
+    "@crclaunch/cove-mainnet": "workspace:*",
     "@crclaunch/cove-market": "workspace:*",
     "@crclaunch/cove-wire": "workspace:*",
     "@crclaunch/curve": "workspace:*",

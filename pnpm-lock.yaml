@@ -290,6 +290,9 @@ importers:
       '@crclaunch/cove-indexer':
         specifier: workspace:*
         version: link:../cove-indexer
+      '@crclaunch/cove-mainnet':
+        specifier: workspace:*
+        version: link:../cove-mainnet
       '@crclaunch/cove-market':
         specifier: workspace:*
         version: link:../cove-market

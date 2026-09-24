@@ -1,12 +1,13 @@
 import type { CoreRpcProvider } from "@crclaunch/bitcoin";
 import type { GuardianV3Network } from "./types.js";
+import type { ValidatedCoveTransaction } from "./finalize.js";
 
 /**
- * Hardened broadcast boundary (Phase 4.4 §20). The ONLY path to Core broadcast
- * for a Cove transaction. Before sendrawtransaction it requires: final raw
- * bytes available, final Cove validation PASS (caller-provided), network gate
- * checked, and Core testmempoolaccept allowed. Mainnet is ALWAYS refused (no
- * environment variable may activate it this phase).
+ * Hardened broadcast boundary (Phase 5 §1). The ONLY path to Core broadcast for
+ * a Cove transaction, and it accepts ONLY an opaque `ValidatedCoveTransaction`
+ * that the final validators produce — it is structurally impossible for
+ * application code to hand it arbitrary unvalidated raw hex. testmempoolaccept
+ * remains mandatory; mainnet is ALWAYS refused.
  */
 
 export interface BroadcastResult {
@@ -14,18 +15,21 @@ export interface BroadcastResult {
   mempoolAcceptAllowed: boolean;
 }
 
-export async function validateAndBroadcastCoveTransaction(params: {
-  rawTxHex: string;
+export async function broadcastValidatedCoveTransaction(params: {
+  validated: ValidatedCoveTransaction;
   network: GuardianV3Network;
   provider: CoreRpcProvider;
 }): Promise<BroadcastResult> {
   if ((params.network as string) === "mainnet") {
     throw new Error("MAINNET_BROADCAST_REFUSED: mainnet is disabled this phase");
   }
-  const accept = await params.provider.testMempoolAccept(params.rawTxHex);
+  const accept = await params.provider.testMempoolAccept(params.validated.rawTxHex);
   if (accept.allowed !== true) {
     throw new Error(`testmempoolaccept rejected: ${accept.rejectReason ?? "unknown"}`);
   }
-  const txid = await params.provider.broadcastTransaction(params.rawTxHex);
+  const txid = await params.provider.broadcastTransaction(params.validated.rawTxHex);
+  if (txid !== params.validated.txid) {
+    throw new Error(`TXID_MISMATCH: broadcast ${txid} != validated ${params.validated.txid}`);
+  }
   return { txid, mempoolAcceptAllowed: accept.allowed };
 }

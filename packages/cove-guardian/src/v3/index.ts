@@ -29,11 +29,15 @@ export {
   type AnalyzeParams,
 } from "./analyze.js";
 export {
+  validateFinalizedDeployTransaction,
   validateFinalizedMintTransaction,
   validateFinalizedRedeemTransaction,
   validateFinalizedTransferTransaction,
   type FinalizeParams,
-  type FinalizeResult,
+  type FinalValidationResult,
+  type FinalValidationRejection,
+  type ValidatedCoveTransaction,
+  type ResolvedPrevout,
 } from "./finalize.js";
 export {
   buildCanonicalMintWitness,
@@ -46,7 +50,7 @@ export {
   type AuditSink,
 } from "./audit.js";
 export {
-  validateAndBroadcastCoveTransaction,
+  broadcastValidatedCoveTransaction,
   type BroadcastResult,
 } from "./broadcast.js";
 export type {

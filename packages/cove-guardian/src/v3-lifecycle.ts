@@ -43,10 +43,12 @@ import {
   consoleAuditSink,
   validateAndSignMintTransition,
   validateAndSignRedeemTransition,
-  validateAndBroadcastCoveTransaction,
+  broadcastValidatedCoveTransaction,
+  validateFinalizedDeployTransaction,
   validateFinalizedMintTransaction,
   validateFinalizedRedeemTransaction,
   validateFinalizedTransferTransaction,
+  type ValidatedCoveTransaction,
 } from "./v3/index.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
@@ -234,9 +236,14 @@ async function main(): Promise<void> {
     results.push({ op, txid, height });
   };
 
-  // Hardened broadcast boundary (§20): mainnet ALWAYS refused + testmempoolaccept.
-  const broadcast = async (rawHex: string): Promise<string> => {
-    return (await validateAndBroadcastCoveTransaction({ rawTxHex: rawHex, network: "regtest", provider })).txid;
+  // Hardened broadcast boundary (§20): accepts ONLY a ValidatedCoveTransaction
+  // produced by final validation; mainnet ALWAYS refused + testmempoolaccept.
+  const broadcastValidated = async (validated: ValidatedCoveTransaction): Promise<string> => {
+    return (await broadcastValidatedCoveTransaction({ validated, network: "regtest", provider })).txid;
+  };
+  const validatedOrThrow = (result: ValidatedCoveTransaction | { ok: false; reason: string }, label: string): ValidatedCoveTransaction => {
+    if ("ok" in result) throw new Error(`finalized ${label} revalidation failed: ${result.reason}`);
+    return result;
   };
 
   // ── DEPLOY ──
@@ -260,7 +267,17 @@ async function main(): Promise<void> {
   deploy.psbt.signInput(0, deployer);
   deploy.psbt.finalizeAllInputs();
   const deployHex = deploy.psbt.extractTransaction().toHex();
-  const deployTxid = await broadcast(deployHex);
+  const deployVal = validatedOrThrow(
+    validateFinalizedDeployTransaction({
+      rawTxHex: deployHex,
+      network: "regtest",
+      chainIdentity: CHAIN_BITCOIN_REGTEST,
+      guardianXOnly,
+      recoveryKeyXOnly: recoveryXOnly,
+    }),
+    "DEPLOY",
+  );
+  const deployTxid = await broadcastValidated(deployVal);
   rawTxs.push(deployHex);
   await confirm(deployTxid, "DEPLOY");
   const deployRaw = await provider.getRawTransaction(deployTxid);
@@ -338,8 +355,7 @@ async function main(): Promise<void> {
     recoveryKeyXOnly: recoveryXOnly,
     feeScript,
   });
-  assert(mint1Fin.ok, `finalized MINT revalidation failed: ${mint1Fin.reason}`);
-  const mint1Txid = await broadcast(mint1Hex);
+  const mint1Txid = await broadcastValidated(validatedOrThrow(mint1Fin, "MINT"));
   rawTxs.push(mint1Hex);
   await confirm(mint1Txid, "MINT");
   assert(mint1.grossSats === 49_350n, `mint gross ${mint1.grossSats}`);
@@ -378,8 +394,7 @@ async function main(): Promise<void> {
   transfer.psbt.finalizeAllInputs();
   const transferHex = transfer.psbt.extractTransaction().toHex();
   const transferFin = validateFinalizedTransferTransaction({ rawTxHex: transferHex, view });
-  assert(transferFin.ok, `finalized TRANSFER revalidation failed: ${transferFin.reason}`);
-  const transferTxid = await broadcast(transferHex);
+  const transferTxid = await broadcastValidated(validatedOrThrow(transferFin, "TRANSFER"));
   rawTxs.push(transferHex);
   await confirm(transferTxid, "TRANSFER");
   const bobCarrier: OutPoint = { txid: transferTxid, vout: 1 };
@@ -447,8 +462,7 @@ async function main(): Promise<void> {
     recoveryKeyXOnly: recoveryXOnly,
     feeScript,
   });
-  assert(redeemFin.ok, `finalized REDEEM revalidation failed: ${redeemFin.reason}`);
-  const redeemTxid = await broadcast(redeemHex);
+  const redeemTxid = await broadcastValidated(validatedOrThrow(redeemFin, "REDEEM"));
   rawTxs.push(redeemHex);
   await confirm(redeemTxid, "REDEEM");
   assert(redeem.grossSats === 49_350n, `redeem gross ${redeem.grossSats}`);
@@ -521,8 +535,7 @@ async function main(): Promise<void> {
     recoveryKeyXOnly: recoveryXOnly,
     feeScript,
   });
-  assert(mint2Fin.ok, `finalized RE-BUY revalidation failed: ${mint2Fin.reason}`);
-  const mint2Txid = await broadcast(mint2Hex);
+  const mint2Txid = await broadcastValidated(validatedOrThrow(mint2Fin, "RE-BUY"));
   rawTxs.push(mint2Hex);
   await confirm(mint2Txid, "RE-BUY");
   const aliceCarrier2: OutPoint = { txid: mint2Txid, vout: 2 };
@@ -573,8 +586,7 @@ async function main(): Promise<void> {
   p2p.psbt.finalizeAllInputs();
   const p2pHex = p2p.psbt.extractTransaction().toHex();
   const p2pFin = validateFinalizedTransferTransaction({ rawTxHex: p2pHex, view });
-  assert(p2pFin.ok, `finalized P2P revalidation failed: ${p2pFin.reason}`);
-  const p2pTxid = await broadcast(p2pHex);
+  const p2pTxid = await broadcastValidated(validatedOrThrow(p2pFin, "P2P"));
   rawTxs.push(p2pHex);
   await confirm(p2pTxid, "P2P");
   const carolCarrier: OutPoint = { txid: p2pTxid, vout: 1 };

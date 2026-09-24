@@ -1,115 +1,103 @@
-# Cove Trust Model — Validate, Never Trust
+# Cove Trust Model — V3 (production)
 
-The invariant:
+This is the canonical architecture reference for the production Cove V3
+protocol: wire V2, `CoveStateV2`, policy V3, geometric20 backing `R(s)`,
+token-UTXO ownership, and the NUMS/3-leaf V3 MAST with CMR-bound Simplicity
+pre-execution.
 
-> **A transaction builder, frontend, API caller, wallet, and the OP_RETURN
-> payload are all untrusted.** The deterministic validator/indexer derives
-> validity from canonical state + signer/ownership + outputs + rules.
+> **A transaction builder, frontend, API caller, wallet, and every OP_RETURN
+> payload are untrusted.** Validity is derived ONLY from canonical Bitcoin
+> blocks + frozen protocol rules + the canonical previous state. Nothing in
+> this document claims Bitcoin enforces Cove rules.
 
-## Cove is CLIENT-VALIDATED — Bitcoin does not enforce it
-
-This is the single most important assumption in this document.
-
-- **Bitcoin validates Bitcoin consensus rules only**: UTXO spends, script and
-  signature execution, and value conservation (no inflation). It does **not**
-  validate any Cove-specific rule — ticker uniqueness, supply, balances, the
-  pricing curve, fees, or transfer semantics. All of those are Cove-indexer
-  rules.
-- **Bitcoin does NOT reject**: a DEPLOY of a taken ticker, a MINT of
-  900,000,000 tokens, a MINT paying 1 sat, or a TRANSFER of tokens never owned.
-  All of these confirm on-chain and are then **ignored by the indexer**.
-- **Token supply is a claim made by whoever runs the indexer.** The difference
-  from a closed metaprotocol is that this indexer is open and anyone can
-  reproduce it — not that Bitcoin enforces it.
-- A transaction is only valid Cove if it pays the hardcoded treasury and
-  settlement scripts in `packages/protocol/src/cove/config.ts`. That makes Cove
-  a **payment-gated token standard with one beneficiary**, not an open
-  meta-protocol. This is the intended design — but it is stated explicitly.
-
-## Canonical facts (trusted)
-
-| Fact     | Source                                             |
-| -------- | -------------------------------------------------- |
-| Chain    | Canonical Bitcoin signet blocks, in order (height ASC, txIndex ASC) |
-| Ownership| Input 0's spent-UTXO `scriptPubKey` (Bitcoin-enforced signature) |
-| Outputs  | The exact vout layout + satoshi values in the tx   |
-| Rules    | Curve, fees, layout, dust, recomputed locally      |
-
-## Adversarial claims (verified)
-
-| Claim                 | How checked                                                      |
-| --------------------- | ---------------------------------------------------------------- |
-| "I am actor X"        | Derived from input 0 spent UTXO script, not from payload          |
-| "send to recipient Y" | Derived from vout 1 scriptPubKey                                  |
-| `amt`, `supply`       | Cross-checked vs canonical state + recomputed curve               |
-| settlement sats       | Recomputed; vout 2 must match **exactly** (curve + platform fee)  |
-| launch fee            | vout 1 must equal 10,000 sats to canonical treasury               |
-| ticker uniqueness     | Canonical ticker index (first deploy in txIndex order wins)       |
-| balance sufficiency   | Canonical balances (available = balance − locked)                 |
-| continuation          | vout 2 (transfer) must be the actor script, dust-safe             |
-
-## Rejection codes
-
-Each code below means "**rejected by the indexer**" — the Bitcoin transaction
-still confirms; the indexer simply does not apply it to Cove state.
-
-`TICKER_TAKEN`, `STALE_SUPPLY`, `OVERMINT`, `BELOW_MIN_CONTRIBUTION`,
-`SUBTOKEN_MINT_UNSUPPORTED`, `UNDERPAYMENT`, `OVERPAYMENT`, `WRONG_TREASURY`,
-`WRONG_SETTLEMENT_SCRIPT`, `WRONG_RECIPIENT`, `WRONG_CONTINUATION`,
-`MISSING_CONTINUATION`, `INVALID_OUTPUT_LAYOUT`, `UNSUPPORTED_ACTOR_SCRIPT`,
-`INVALID_RECIPIENT`, `SELF_TRANSFER`, `INSUFFICIENT_AVAILABLE_TOKENS`,
-`ZERO_AMOUNT`, `RECIPIENT_ANCHOR_DUST`, `CONTINUATION_DUST`,
-`MULTIPLE_COVE_OPERATIONS`, `MALFORMED_COVE`, `UNSUPPORTED_VERSION`.
-
-## Dust (relay policy, not consensus)
-
-Outputs are checked against Bitcoin Core's `GetDustThreshold` (3 sat/vB):
-P2WPKH = 294 sats, P2TR = 330 sats, P2PKH = 546 sats. Recipient anchors and
-continuation outputs must be dust-safe. The mint settlement is one combined
-output (curve + platform fee), so no 5-sat treasury dust output exists.
-
-## Rules of the wire format
-
-- Binary envelope: `COVE` magic + version + opcode + ticker + uint64 BE atoms.
-- Canonical OP_RETURN: `OP_RETURN <single minimal push> <end>` — no trailing
-  data, no non-minimal push, no multiple Cove envelopes per tx.
-- Arbitrary non-Cove OP_RETURN (e.g. `coinbin.org`) is **NOT** invalid Cove; it
-  is simply `NON_COVE`. Only payloads with the Cove magic count as Cove.
-
-## Determinism
-
-- State is a pure function of `(network, genesis height, canonical blocks, version)`.
-- No timestamps, DB UUIDs, insertion order, or display addresses enter the root.
-- Reorg = rebuild from the canonical chain; identical blocks → identical
-  `computeStateRoot()`.
-- All arithmetic is `BigInt`. No floats.
-
-## Not proven by the indexer
-
-- **Custody**: no keys, no signing server-side. Wallets sign the PSBT.
-- **Mainnet**: all mainnet flags are `false`; mainnet genesis is `null`.
-- **Confirmation depth**: applied at block; reorgs handled by deterministic rebuild.
-- **Bitcoin enforcement**: see "Cove is CLIENT-VALIDATED" above — nothing in
-  this document claims Bitcoin enforces Cove rules.
+The legacy V1/indexer-authoritative model lives at
+`docs/legacy/COVE_V1_TRUST_MODEL.md` and is **not** production.
 
 ---
 
-## Phase 4.4 — Guardian enforcement / Simplicity trust boundary (exact)
+## What BITCOIN enforces
 
-**BITCOIN ENFORCES:** canonical Bitcoin UTXO spending, holder signatures,
-Taproot script-path commitment, revealed tapleaf/control-block validity,
-Guardian CHECKSIG, CSV recovery, Bitcoin value conservation, double-spend
-prevention.
+- canonical transaction ordering (block height ASC, tx index ASC)
+- Bitcoin UTXO ownership (holder signatures)
+- Taproot script-path commitment, revealed tapleaf/control-block validity
+- the Guardian `OP_CHECKSIG` in the execution leaf
+- `OP_CHECKSEQUENCEVERIFY` recovery timelock
+- Bitcoin value conservation (no inflation)
+- double-spend prevention
 
-**SIMPLICITY PRE-EXECUTION VALIDATES:** the invariants actually encoded in the V3
-program (positive amount, supply conservation, no over/underflow, reserve/backing
-movement). It does **not** implement the full geometric20 curve.
+Bitcoin does **not** execute Simplicity and does **not** validate any Cove rule.
 
-**REFERENCE COVE POLICY VALIDATES:** complete CoveStateV2 transition, geometric20
-exact R-delta, token-UTXO semantics, output/payment/fee semantics.
+---
 
-**GUARDIAN:** executes both required policy layers and signs only after acceptance.
+## What Cove V3 validates (deterministic client validation)
 
-Bitcoin itself still does **not** execute Simplicity. CMR commitment does **not**
-make Bitcoin independently validate Simplicity semantics. **Guardian compromise
-remains a trust assumption.**
+- **token identity** — precomputable, domain-separated `tokenId`
+  (`H_CoveToken(chainIdentity ‖ policyVersion ‖ ticker ‖ nonce)`); the ticker is
+  presentation metadata only, never an authority.
+- **token-UTXO lineage** — ownership is the set of unspent token UTXOs created
+  by valid DEPLOY/MINT/TRANSFER/REDEEM transitions; balances are derived
+  (`SUM(unspent token UTXOs)`), never an authoritative account counter.
+- **CoveStateV2** — `issuedPublicSupplyAtoms`, `backingSats == R(supply)`,
+  `curveStage`, all recomputed from the canonical V2 transition.
+- **backing** — the single canonical reserve function `R(s)` over `geometric20`;
+  MINT `R(s+q) − R(s)`, REDEEM `R(s) − R(s−q)`; backing never funds carriers or
+  miner fees.
+- **wire V2** — canonical binary envelope (magic `CV`, version 2, opcode,
+  tokenId/amount/allocations); malformed wire is recorded `INVALID` and never
+  mutates state.
+- **V3 MAST** — NUMS internal key + MINT/REDEEM/recovery leaves; the policy
+  identity hash binds `(version, op, tokenId, currentStateHash, CMR)`.
+- **CMR-bound Simplicity pre-execution** — the Guardian executes the REAL
+  compiled Simplicity predicate and requires its CMR to equal the frozen V3 CMR.
+
+---
+
+## What SIMPLICITY pre-execution validates
+
+The invariants actually encoded in the V3 program:
+
+- MINT: positive amount, supply conservation, no u64 overflow, public cap,
+  reserve movement.
+- REDEEM: positive amount, no underflow, supply conservation, backing movement.
+
+It does **not** implement the full geometric20 curve. Simplicity PASS is
+**not** by itself a complete Cove transition.
+
+---
+
+## What the REFERENCE Cove policy validates (TypeScript)
+
+- complete `CoveStateV2` transition (`applyMintV2` / `applyRedeemV2`)
+- geometric20 exact R-delta (curve-exactness is TS-only)
+- token-UTXO semantics
+- output/payment/fee semantics (successor vault, carrier, payout, protocol fee,
+  miner-fee bound, fee-dust standardness)
+
+---
+
+## The Guardian
+
+- executes **both** required policy layers (Simplicity + full reference)
+- verifies the compiled CMR against the frozen V3 CMR
+- signs (BIP341 script-path) **only after acceptance**
+- holds the signing key privately; the harness cannot sign backing inputs itself
+
+**Guardian compromise remains a trust assumption.** Bitcoin does not execute
+Simplicity; the CMR commitment does not make Bitcoin independently validate
+Simplicity semantics.
+
+---
+
+## The indexer
+
+- a deterministic replay/cache/persistence layer over canonical Bitcoin blocks
+- NOT the source of ownership
+- NOT allowed to invent balances (balances are derived from token UTXOs)
+- records invalid Cove-looking transactions but never applies them to state
+
+## The database
+
+- a disposable projection, fully rebuildable from Bitcoin
+- never authoritative over Bitcoin
+- application metadata (descriptions/images) links to the stable `tokenId` and
+  survives reindex; the chain projection does not.

@@ -37,4 +37,17 @@ describe("architecture: no harness bypass of Guardian signing", () => {
     expect(signer).toMatch(/signTaprootInput/);
     expect(signer).toMatch(/verifySchnorr/);
   });
+
+  it("broadcast accepts ONLY ValidatedCoveTransaction (no arbitrary raw hex param)", () => {
+    const broadcast = readFileSync(join(here, "broadcast.ts"), "utf8");
+    expect(broadcast).toMatch(/validated:\s*ValidatedCoveTransaction/);
+    expect(broadcast).not.toMatch(/rawTxHex\s*:\s*string/);
+  });
+
+  it("the ValidatedCoveTransaction brand is not exported (opaque, non-constructible)", () => {
+    const finalize = readFileSync(join(here, "finalize.ts"), "utf8");
+    // The brand is a module-private const Symbol, never re-exported.
+    expect(finalize).toMatch(/const ValidatedCoveTransactionBrand: unique symbol = Symbol/);
+    expect(finalize).not.toMatch(/export.*ValidatedCoveTransactionBrand/);
+  });
 });

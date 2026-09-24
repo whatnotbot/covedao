@@ -1,61 +1,94 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import type { WalletCapabilities } from "@crclaunch/wallets";
 
 interface WalletState {
   connected: boolean;
   address: string;
+  script: string;
   adapterId: string;
   network: string;
-  connect: () => Promise<string>;
+  capabilities: WalletCapabilities | null;
+  connect: () => Promise<void>;
   disconnect: () => void;
-  signPsbt: (psbt: string) => Promise<string>;
+  signPsbt: (psbtBase64: string, operation: string) => Promise<string>;
+  signBip322: (message: string) => Promise<string>;
+  getUtxos: () => Promise<{ txid: string; vout: number }[]>;
 }
 
 const WalletContext = createContext<WalletState | null>(null);
 
-function mockAddress(): string {
-  if (typeof window === "undefined") return "bc1qm0ck000000000000000000000000000000000000000000000000";
-  const stored = window.localStorage.getItem("crc:mock:address");
-  if (stored) return stored;
-  const addr = `bc1qm0ck${Array.from({ length: 24 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("")}`;
-  window.localStorage.setItem("crc:mock:address", addr);
-  return addr;
+interface TestWallet {
+  id: string;
+  connect(): Promise<{ adapterId: string; paymentAddress: string; paymentScript: string; network: string; capabilities: WalletCapabilities }>;
+  disconnect?(): Promise<void>;
+  signPsbt(params: { psbtBase64: string; inputIndexes?: number[]; operation: string }): Promise<string>;
+  signBip322Simple?(params: { message: string }): Promise<string>;
+  getUtxos?(): Promise<{ txid: string; vout: number }[]>;
+}
+
+function getTestWallet(): TestWallet | null {
+  if (typeof window === "undefined") return null;
+  return (window as unknown as { __COVE_TEST_WALLET__?: TestWallet }).__COVE_TEST_WALLET__ ?? null;
 }
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [connected, setConnected] = useState(false);
-  const [address, setAddress] = useState<string>("");
+  const [address, setAddress] = useState("");
+  const [script, setScript] = useState("");
+  const [adapterId, setAdapterId] = useState("");
+  const [network, setNetwork] = useState("");
+  const [capabilities, setCapabilities] = useState<WalletCapabilities | null>(null);
 
   const connect = useCallback(async () => {
-    const addr = mockAddress();
-    setAddress(addr);
+    const wallet = getTestWallet();
+    if (!wallet) throw new Error("No wallet detected");
+    const conn = await wallet.connect();
     setConnected(true);
-    return addr;
+    setAddress(conn.paymentAddress);
+    setScript(conn.paymentScript);
+    setAdapterId(conn.adapterId);
+    setNetwork(conn.network);
+    setCapabilities(conn.capabilities);
   }, []);
 
   const disconnect = useCallback(() => {
     setConnected(false);
+    setAddress("");
+    setScript("");
   }, []);
 
   const signPsbt = useCallback(
-    async (psbt: string) => {
-      if (!connected || !address) throw new Error("Wallet not connected.");
-      // Mock signature marker (never real crypto). Browser wallets would
-      // produce a real signature here via their injected adapter.
-      return `${psbt}\nMOCK-SIGNED-BY:${address}`;
+    async (psbtBase64: string, operation: string) => {
+      const wallet = getTestWallet();
+      if (!wallet) throw new Error("No wallet detected");
+      return wallet.signPsbt({ psbtBase64, operation });
     },
-    [connected, address],
+    [],
   );
 
-  // Auto-connect a mock wallet so mock-mode flows work without a real wallet.
+  const signBip322 = useCallback(async (message: string) => {
+    const wallet = getTestWallet();
+    if (!wallet) throw new Error("No wallet detected");
+    if (!wallet.signBip322Simple) throw new Error("Wallet does not support BIP-322");
+    return wallet.signBip322Simple({ message });
+  }, []);
+
+  const getUtxos = useCallback(async () => {
+    const wallet = getTestWallet();
+    if (!wallet || !wallet.getUtxos) return [];
+    return wallet.getUtxos();
+  }, []);
+
+  // NO auto-connect in production: the mock/demo wallet must never self-attach.
   useEffect(() => {
-    void connect();
-  }, [connect]);
+    // optional: auto-detect is intentionally left out of the production path.
+  }, []);
 
   const value = useMemo(
-    () => ({ connected, address, adapterId: "mock", network: "mock", connect, disconnect, signPsbt }),
-    [connected, address, connect, disconnect, signPsbt],
+    () => ({ connected, address, script, adapterId, network, capabilities, connect, disconnect, signPsbt, signBip322, getUtxos }),
+    [connected, address, script, adapterId, network, capabilities, connect, disconnect, signPsbt, signBip322, getUtxos],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

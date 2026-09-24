@@ -1,7 +1,9 @@
-import { isProtocolError } from "@crclaunch/protocol";
+import { AppError } from "@crclaunch/cove-app";
+import { MarketError } from "@crclaunch/cove-market";
+import { BackingError } from "@crclaunch/cove-economics";
 
 /** Serialize bigint as strings for the JSON API (no JS floating point). */
-function bigintToString(_key: string, value: any): any {
+function bigintToString(_key: string, value: unknown): unknown {
   return typeof value === "bigint" ? value.toString() : value;
 }
 
@@ -16,26 +18,76 @@ export function ok(data: unknown): Response {
   return json({ ok: true, data });
 }
 
-export function fail(
-  code: string,
-  message: string,
-  status = 400,
-  retryable = false,
-): Response {
+export function fail(code: string, message: string, status = 400, retryable = false): Response {
   return json({ ok: false, error: { code, message, retryable } }, status);
 }
 
+function codeOf(e: unknown): string {
+  if (e instanceof AppError) return e.code;
+  if (e instanceof MarketError) return e.code;
+  if (e instanceof BackingError) return e.code;
+  const msg = e instanceof Error ? e.message : String(e);
+  if (msg.startsWith("CLIENT_INTENT_MISMATCH")) return "CLIENT_INTENT_MISMATCH";
+  return "INTERNAL_ERROR";
+}
+
+/** Map V3 errors to stable client codes + human copy (§71/§72). Never expose stacks. */
 export function handleError(e: unknown): Response {
-  console.error("[api] error:", e);
-  if (isProtocolError(e)) {
-    const status = e.code === "PROTOCOL_NOT_VERIFIED" ? 403 : 400;
-    return fail(e.code, e.message, status, e.retryable);
+  console.error("[api] error:", e instanceof Error ? e.message : String(e));
+  const code = codeOf(e);
+  const human = humanCopy(code);
+  const retryable = ["CORE_UNAVAILABLE", "INDEXER_UNHEALTHY", "INDEXER_REBUILDING", "QUOTE_STALE", "STATE_CHANGED", "MEMPOOL_REJECTED", "BROADCAST_FAILED"].includes(code);
+  const status = code === "INTERNAL_ERROR" ? 500 : code === "WRONG_NETWORK" || code === "MAINNET_DISABLED" ? 403 : 400;
+  return fail(code, human, status, retryable);
+}
+
+function humanCopy(code: string): string {
+  switch (code) {
+    case "QUOTE_STALE":
+      return "The backing state changed while you were reviewing. We refreshed the quote.";
+    case "STATE_CHANGED":
+      return "The chain state changed. Please review the latest values.";
+    case "LISTING_RESERVED":
+      return "Another buyer is currently filling this listing.";
+    case "LISTING_SOURCE_SPENT":
+      return "The seller's token output is no longer available.";
+    case "PROTOCOL_FEE_DUST":
+      return "This trade is too small to create a standard Bitcoin fee output.";
+    case "INDEXER_REBUILDING":
+      return "Cove is rebuilding chain state. Trading is temporarily paused.";
+    case "INDEXER_UNHEALTHY":
+      return "The Cove indexer is catching up. Trading is temporarily paused.";
+    case "CORE_UNAVAILABLE":
+      return "Bitcoin Core is unreachable. Trading is temporarily paused.";
+    case "WALLET_REQUIRED":
+      return "Connect a wallet to continue.";
+    case "WALLET_UNSUPPORTED":
+      return "Your wallet does not support this action.";
+    case "WRONG_NETWORK":
+      return "Your wallet is connected to the wrong network.";
+    case "MAINNET_DISABLED":
+      return "Mainnet is not enabled yet.";
+    case "INSUFFICIENT_BTC":
+      return "Not enough BTC to cover this transaction.";
+    case "PSBT_MUTATED":
+      return "The transaction changed after it was built. Please retry.";
+    case "MEMPOOL_REJECTED":
+      return "Bitcoin rejected this transaction. Please retry.";
+    case "BROADCAST_FAILED":
+      return "The transaction could not be broadcast. Please retry.";
+    case "GUARDIAN_UNAVAILABLE":
+      return "The backing transition service is unavailable.";
+    case "GUARDIAN_REJECTED":
+      return "The backing transition was rejected by validation.";
+    case "TOKEN_NOT_FOUND":
+      return "Token not found.";
+    case "TOKEN_AMOUNT_INVALID":
+      return "Invalid token amount.";
+    case "CLIENT_INTENT_MISMATCH":
+      return "The transaction did not match what you reviewed.";
+    default:
+      return "An unexpected error occurred.";
   }
-  if (e instanceof Error) {
-    // Never expose stack traces.
-    return fail("INTERNAL_ERROR", "An unexpected error occurred.", 500, true);
-  }
-  return fail("INTERNAL_ERROR", "An unexpected error occurred.", 500, true);
 }
 
 export async function readJson(req: Request): Promise<Record<string, unknown>> {
@@ -44,4 +96,16 @@ export async function readJson(req: Request): Promise<Record<string, unknown>> {
   } catch {
     return {};
   }
+}
+
+export function strField(body: Record<string, unknown>, key: string, fallback = ""): string {
+  const v = body[key];
+  return typeof v === "string" ? v : fallback;
+}
+
+export function bigintField(body: Record<string, unknown>, key: string, fallback = 0n): bigint {
+  const v = body[key];
+  if (typeof v === "string" && /^\d+$/.test(v)) return BigInt(v);
+  if (typeof v === "bigint") return v;
+  return fallback;
 }

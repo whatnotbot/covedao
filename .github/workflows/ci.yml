@@ -29,6 +29,9 @@ jobs:
       - name: Check dependency graph (no cycles, simplicity ⇏ guardian)
         run: node scripts/check-dependency-graph.mjs
 
+      - name: Check V3 architecture (no legacy CRC adapter/account/graduation/DEX)
+        run: node scripts/check-v3-architecture.mjs
+
       - name: Typecheck
         run: pnpm typecheck
 

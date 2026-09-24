@@ -7,11 +7,10 @@ export type {
   SignBip322Params,
   WalletAdapter,
 } from "./types.js";
+// Browser-safe client intent verification (ECC-free).
 export {
   verifyClientIntent,
   unsignedTxDigestHex,
-  signPsbtWithKey,
-  signBip322WithKey,
   type ClientIntent,
   type VerifiedIntent,
 } from "./cove-intent.js";

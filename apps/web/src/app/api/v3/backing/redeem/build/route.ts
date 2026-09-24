@@ -1,0 +1,23 @@
+import { ok, handleError, readJson, strField, bigintField } from "@/lib/api";
+import { assertV3Enabled } from "@/lib/v3-server";
+
+export const dynamic = "force-dynamic";
+
+export async function POST(req: Request) {
+  try {
+    const { app } = assertV3Enabled();
+    const body = await readJson(req);
+    const result = await app.buildRedeem({
+      network: strField(body, "network"),
+      tokenId: strField(body, "tokenId"),
+      amountAtoms: bigintField(body, "amountAtoms", 0n),
+      walletScript: strField(body, "walletScript"),
+      walletAddress: strField(body, "walletAddress") || null,
+      minerFeeSats: bigintField(body, "minerFeeSats", 1000n),
+      idempotencyKey: strField(body, "idempotencyKey") || `redeem-${Date.now()}`,
+    });
+    return ok(result);
+  } catch (e) {
+    return handleError(e);
+  }
+}

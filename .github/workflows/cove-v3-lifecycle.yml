@@ -31,8 +31,26 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # Simplicity is built BEFORE the lifecycle runs. If the Rust build or CMR
+      # verification fails, the lifecycle (which invokes the binary with no skip
+      # and no TS-only fallback) fails — the intended signal.
+      - uses: dtolnay/rust-toolchain@stable
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build cove-simplicity release binary + verify frozen V3 CMRs
+        working-directory: packages/cove-simplicity/rust
+        run: |
+          set -euo pipefail
+          cargo build --release
+          BIN=target/release/cove-simplicity
+          MINT_CMR=$("$BIN" build mint | python3 -c 'import sys,json; print(json.load(sys.stdin)["cmr"])')
+          REDEEM_CMR=$("$BIN" build redeem | python3 -c 'import sys,json; print(json.load(sys.stdin)["cmr"])')
+          test "$MINT_CMR" = "0b594eb3fadec17b45bb1d245ae18f8c512a1ba42751f820cd28351ced6c8377"
+          test "$REDEEM_CMR" = "37e681b3e70a34acc3b38680c06fbe4f1b2799bede2607c6c9ed7fcac8c95d56"
+          echo "compiled MINT CMR: $MINT_CMR"
+          echo "compiled REDEEM CMR: $REDEEM_CMR"
 
       - name: Download + checksum-verify pinned Bitcoin Core
         run: |

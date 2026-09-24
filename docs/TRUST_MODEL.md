@@ -91,3 +91,25 @@ output (curve + platform fee), so no 5-sat treasury dust output exists.
 - **Confirmation depth**: applied at block; reorgs handled by deterministic rebuild.
 - **Bitcoin enforcement**: see "Cove is CLIENT-VALIDATED" above — nothing in
   this document claims Bitcoin enforces Cove rules.
+
+---
+
+## Phase 4.4 — Guardian enforcement / Simplicity trust boundary (exact)
+
+**BITCOIN ENFORCES:** canonical Bitcoin UTXO spending, holder signatures,
+Taproot script-path commitment, revealed tapleaf/control-block validity,
+Guardian CHECKSIG, CSV recovery, Bitcoin value conservation, double-spend
+prevention.
+
+**SIMPLICITY PRE-EXECUTION VALIDATES:** the invariants actually encoded in the V3
+program (positive amount, supply conservation, no over/underflow, reserve/backing
+movement). It does **not** implement the full geometric20 curve.
+
+**REFERENCE COVE POLICY VALIDATES:** complete CoveStateV2 transition, geometric20
+exact R-delta, token-UTXO semantics, output/payment/fee semantics.
+
+**GUARDIAN:** executes both required policy layers and signs only after acceptance.
+
+Bitcoin itself still does **not** execute Simplicity. CMR commitment does **not**
+make Bitcoin independently validate Simplicity semantics. **Guardian compromise
+remains a trust assumption.**

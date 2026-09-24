@@ -279,17 +279,16 @@ async function main() {
   const snapshot = await loadCanonicalViewSnapshotFromDb({ db, network: "regtest", tokenId: tokenIdHex });
   // cross-token lookup must return null
   if (snapshot.getCurrentBackingState(Buffer.alloc(32, 0x01)) !== null) throw new Error("cross-token snapshot leaked backing");
-  // use snapshot directly in a Guardian REDEEM (no in-memory V3IndexerState)
-  const bob2 = REGTEST_KEYS.bob;
-  const redeem2 = buildRedeemPsbtV3({
+  // use snapshot directly in a Guardian MINT (no in-memory V3IndexerState)
+  const newBuyer = REGTEST_KEYS.carol;
+  const newBuyerFund = await fund(newBuyer, 1.0);
+  const mint3 = buildMintPsbtV3({
     network: bitcoin.networks.regtest, tokenId, prevState: mint2.nextState,
     prevBacking: { txid: mint2Txid, vout: 1, script: mint2.nextVault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS + mint2.nextState.backingSats },
-    redeemAmountAtoms: MINT_AMOUNT,
-    tokenInputs: [{ txid: mint2Txid, vout: 2, script: p2wpkh(bob2), valueSats: TOKEN_CARRIER_SATS }],
-    tokenInputTotalAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
-    sellerPayoutScript: p2wpkh(bob2), sellerChangeScript: p2wpkh(bob2), feeScript, minerFeeSats: REGTEST_MINER_FEE,
+    mintAmountAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
+    buyerInputs: [newBuyerFund], buyerCarrierScript: p2wpkh(newBuyer), buyerChangeScript: p2wpkh(newBuyer), feeScript, minerFeeSats: REGTEST_MINER_FEE,
   });
-  const snapSign = validateAndSignRedeemTransition({ signer, psbt: redeem2.psbt, view: snapshot, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const snapSign = validateAndSignMintTransition({ signer, psbt: mint3.psbt, view: snapshot, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!snapSign.ok) throw new Error(`snapshot-driven Guardian refused: ${snapSign.reason}`);
   console.log(`✓ DB snapshot → Guardian signed (Simplicity PASS, CMR ${snapSign.actualCmr.slice(0, 8)}…)`);
 

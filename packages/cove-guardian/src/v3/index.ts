@@ -91,8 +91,10 @@ export {
 export {
   LocalGuardianTransitionSigner,
   RemoteGuardianTransitionSigner,
+  checkRiskPolicy,
   type DurableAuditSink,
   type TransitionSignRequest,
   type TransitionSignOutcome,
   type GuardianTransitionSigner,
+  type GuardianRiskPolicy,
 } from "./transitionSigner.js";

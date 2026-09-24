@@ -42,6 +42,34 @@ export type TransitionSignOutcome =
   | SignedTransitionResult
   | { ok: false; reason: string; detail: string; audit: AuditRecord | null };
 
+/**
+ * Phase 8 operational risk policy (§25/§26). Enforced INSIDE the signer so a
+ * compromised web/API cannot bypass caps. These are operational brakes, not
+ * protocol semantics.
+ */
+export interface GuardianRiskPolicy {
+  maxGrossSats: bigint;
+  maxRedeemPayoutSats: bigint;
+  maxBackingSats: bigint;
+  maxMinerFeeSats: bigint;
+  /** null = any token; otherwise an allowlist of tokenId hex (canary mode). */
+  allowedTokenIds: string[] | null;
+}
+
+export function checkRiskPolicy(policy: GuardianRiskPolicy, analysis: MintAnalysis | RedeemAnalysis, operation: "MINT" | "REDEEM"): string | null {
+  const tokenId = analysis.tokenId.toString("hex");
+  if (policy.allowedTokenIds && !policy.allowedTokenIds.includes(tokenId)) {
+    return `token ${tokenId} is not in the canary allowlist`;
+  }
+  if (analysis.grossSats > policy.maxGrossSats) return `gross ${analysis.grossSats} exceeds cap ${policy.maxGrossSats}`;
+  if (analysis.nextState.backingSats > policy.maxBackingSats) return `next backing ${analysis.nextState.backingSats} exceeds cap ${policy.maxBackingSats}`;
+  if (analysis.minerFeeSats > policy.maxMinerFeeSats) return `miner fee ${analysis.minerFeeSats} exceeds cap ${policy.maxMinerFeeSats}`;
+  if (operation === "REDEEM" && (analysis as RedeemAnalysis).netPayoutSats > policy.maxRedeemPayoutSats) {
+    return `redeem payout exceeds cap ${policy.maxRedeemPayoutSats}`;
+  }
+  return null;
+}
+
 export interface GuardianTransitionSigner {
   signMint(req: TransitionSignRequest): Promise<TransitionSignOutcome>;
   signRedeem(req: TransitionSignRequest): Promise<TransitionSignOutcome>;
@@ -93,6 +121,7 @@ export class LocalGuardianTransitionSigner implements GuardianTransitionSigner {
     private readonly signer: GuardianV3Signer,
     private readonly journal: SigningJournalStore,
     private readonly audit: DurableAuditSink,
+    private readonly riskPolicy: GuardianRiskPolicy,
   ) {}
 
   async signMint(req: TransitionSignRequest): Promise<TransitionSignOutcome> {
@@ -113,6 +142,13 @@ export class LocalGuardianTransitionSigner implements GuardianTransitionSigner {
       return { ok: false, reason: validate.reason, detail: validate.detail, audit: null };
     }
     const analysis = validate.analysis;
+
+    // 0. Risk policy (operational brake) enforced BEFORE audit/sign.
+    const risk = checkRiskPolicy(this.riskPolicy, analysis, op);
+    if (risk) {
+      return { ok: false, reason: "RISK_POLICY_REJECTED", detail: risk, audit: null };
+    }
+
     const record = buildAuditRecord({
       operation: op,
       network: req.network,

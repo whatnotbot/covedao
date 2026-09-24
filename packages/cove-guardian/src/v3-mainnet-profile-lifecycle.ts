@@ -161,7 +161,7 @@ async function main(): Promise<void> {
   assert(info.chain === "regtest", `expected regtest, got ${info.chain}`);
   const provider = new CoreRpcProvider({ url: RPC_URL, user: RPC_USER, password: RPC_PASSWORD });
 
-  await rpc.createWallet("cove-mn1");
+  await rpc.createWallet("cove43"); // reuse the same wallet as v3-lifecycle (idempotent; single loaded wallet)
   const mineAddr = await rpc.getNewAddress();
   await rpc.generateToAddress(101, mineAddr);
 

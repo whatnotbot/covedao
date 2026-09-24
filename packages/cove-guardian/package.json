@@ -20,6 +20,7 @@
     "@crclaunch/bitcoin": "workspace:*",
     "@crclaunch/cove-covenant": "workspace:*",
     "@crclaunch/cove-economics": "workspace:*",
+    "@crclaunch/cove-simplicity": "workspace:*",
     "@crclaunch/cove-vault": "workspace:*",
     "@crclaunch/cove-wire": "workspace:*",
     "@crclaunch/curve": "workspace:*",

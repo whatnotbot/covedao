@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyMint, type CoveState } from "@crclaunch/cove-covenant";
-import { validateMint } from "@crclaunch/cove-guardian";
+import { PUBLIC_SUPPLY } from "@crclaunch/cove-economics";
 import {
   MINT_CMR,
   MINT_CMR_V1,
@@ -21,7 +21,6 @@ import {
  */
 
 const ATOMS = 100_000_000n;
-const RECIPIENT = Buffer.from("5120" + "cc".repeat(32), "hex");
 
 function prevState(supplyTokens: bigint, reserveSats: bigint): CoveState {
   return {
@@ -34,33 +33,27 @@ function prevState(supplyTokens: bigint, reserveSats: bigint): CoveState {
   };
 }
 
-/** TypeScript reference result for a witness (true = valid transition). */
+/**
+ * TypeScript reference result for a witness (true = valid transition).
+ *
+ * This is the EXACT overlap with the V3 Simplicity MINT predicate (mint.simf):
+ *   amount > 0
+ *   prevSupply + amount == nextSupply  (no u64 overflow)
+ *   nextSupply <= 840,000,000          (no overmint)
+ *   prevReserve + contribution == nextReserve  (no u64 overflow)
+ *
+ * It deliberately does NOT check the geometric20 curve-exactness of
+ * `contribution`: the Simplicity predicate receives the curve contribution as a
+ * witness and does not implement the full curve. Curve-exactness is a TS-only
+ * check enforced by the Guardian's FULL reference policy, not by this
+ * differential oracle (see the Phase 4.4 trust model).
+ */
 function tsValid(w: MintWitness): boolean {
-  const prev = prevState(w.prevSupply, w.prevReserve);
-  const amountAtoms = w.amount * ATOMS;
-  let canonical;
-  try {
-    canonical = applyMint(prev, amountAtoms);
-  } catch {
-    // zero / subtoken / overmint → invalid (matches Simplicity over the overlap).
-    return false;
-  }
-  const next: CoveState = {
-    ...prev,
-    publicSupplyAtoms: w.nextSupply * ATOMS,
-    reserveSats: w.nextReserve,
-    curveStage: canonical.nextState.curveStage,
-  };
-  const decision = validateMint({
-    prevState: prev,
-    nextState: next,
-    amountAtoms,
-    curveContributionSats: w.contribution,
-    feeSats: 1_000n,
-    recipientCommitment: RECIPIENT,
-    network: "regtest",
-  });
-  return decision.ok;
+  if (w.amount <= 0n) return false;
+  if (w.prevSupply + w.amount !== w.nextSupply) return false;
+  if (w.nextSupply > PUBLIC_SUPPLY) return false;
+  if (w.prevReserve + w.contribution !== w.nextReserve) return false;
+  return true;
 }
 
 function simplicityValid(w: MintWitness): boolean {

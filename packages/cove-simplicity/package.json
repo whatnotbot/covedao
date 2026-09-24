@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "@crclaunch/cove-economics": "workspace:*",
-    "@crclaunch/cove-guardian": "workspace:*",
     "@crclaunch/cove-covenant": "workspace:*"
   },
   "devDependencies": {

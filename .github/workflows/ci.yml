@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check dependency graph (no cycles, simplicity ⇏ guardian)
+        run: node scripts/check-dependency-graph.mjs
+
       - name: Typecheck
         run: pnpm typecheck
 

@@ -246,6 +246,9 @@ importers:
       '@crclaunch/cove-economics':
         specifier: workspace:*
         version: link:../cove-economics
+      '@crclaunch/cove-simplicity':
+        specifier: workspace:*
+        version: link:../cove-simplicity
       '@crclaunch/cove-vault':
         specifier: workspace:*
         version: link:../cove-vault
@@ -317,9 +320,6 @@ importers:
       '@crclaunch/cove-economics':
         specifier: workspace:*
         version: link:../cove-economics
-      '@crclaunch/cove-guardian':
-        specifier: workspace:*
-        version: link:../cove-guardian
     devDependencies:
       tsx:
         specifier: ^4.19.2

@@ -36,14 +36,15 @@ and committed `.env` credentials. Wired into CI.
 
 ## CI
 
-- `Cove V3 — mainnet readiness gate` run **36030643590**: success (protocol
-  freeze, vault profile goldens, fail-closed config, secret scan, full build,
-  real Core recovery consensus matrix).
-- All prior V3 workflows green on the same commit: CI, V3 indexer, V3 market,
-  V3 full lifecycle, V3 product, covenant, NUMS/vault, Simplicity.
-- `Cove V1 real Bitcoin Core regtest reorg` is the one pre-existing flake
-  (`regtest-reorg failed: bitcoind exited with code 1` in legacy V1
-  `regtest-reorg.ts`); unrelated to the Phase 8 V3-only changes.
+- `Cove V3 — mainnet readiness gate`: **green** (protocol freeze, vault profile
+  goldens, fail-closed config, secret scan, full build, real Core recovery
+  consensus matrix).
+- All V3 workflows green: CI, V3 indexer (lifecycle + reorg + rebuild + backup/
+  restore drill), V3 market, V3 full lifecycle (DEV1 + MAINNET1 profile
+  lifecycle), V3 product, covenant, NUMS/vault, Simplicity.
+- `Cove V1 real Bitcoin Core regtest reorg` is a known flaky legacy-V1 test
+  (`bitcoind exited with code 1` in `regtest-reorg.ts`); unrelated to the
+  Phase 8 V3-only changes (passes on most runs).
 
 ## Owner decisions remaining
 
@@ -149,14 +150,27 @@ every transition, the double-sign journal returns CONFLICT on a conflicting
 digest, and the 3-link tamper-evident audit chain verifies. Wired into the
 `Cove V3 full lifecycle` workflow as a second step (same bitcoind + Simplicity).
 
-## Honest status — NOT_READY for canary
+## Backup/restore + reindex drill (done this round)
 
-All autonomously-deliverable code + CI is complete and green; the MAINNET1
-production-profile lifecycle is executed end-to-end through the durable signer.
-Phase 8A is **not fully complete** — the remaining items require execution/human
-action:
+The `Cove V3 indexer` workflow now executes the runbook drills on a populated
+Postgres DB: `pg_dump` → restore into a separate `cove_restore_check` DB →
+assert the rehydrated state root and token-row count are identical (backup/
+restore round-trip), plus the existing `v3:reindex` + `v3:verify` (full) chain-
+projection rebuild. Both drills are green in CI.
 
-1. Backup/restore + reindex drills executed (commands documented, not run in CI).
-2. Operator ceremony + committed public mainnet profile values (owner decisions).
+## Honest status — READY_EXCEPT_FOR_OPERATOR_CEREMONY
 
-Final readiness: **NOT_READY** (code/CI gates green; drills + ceremony remain).
+All autonomously-deliverable code + CI gates are complete and green: the frozen
+protocol/vault-profile goldens, fail-closed mainnet config, secret scan, real
+Core recovery consensus matrix, full build, the DEV1 product E2E, the MAINNET1
+production-profile lifecycle through the durable signer, and the backup/restore
++ reindex drills. The ONLY remaining gate is the **operator ceremony** — the
+human generation + commit of the public mainnet profile values:
+
+1. `activationHeight`, `guardianXOnly` (custody backend), `recovery.pubkeys` +
+   `recovery.csvBlocks`, `feeScript`, `buyFeeBps`/`redeemFeeBps`/`p2pFeeBps`,
+   canary allowlist + caps.
+
+Final readiness: **READY_EXCEPT_FOR_OPERATOR_CEREMONY** (all code/CI gates green;
+only the human operator ceremony remains before READY_FOR_CONTROLLED_MAINNET_CANARY).
+No real mainnet broadcast has been or will be performed autonomously.

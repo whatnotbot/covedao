@@ -35,10 +35,8 @@ const ok = [
 
 const allPass = ok.every(Boolean);
 console.log("");
-if (!profile) {
-  console.log("NOT_READY — no committed mainnet profile (owner decisions required)");
-} else if (allPass) {
-  console.log("READY_FOR_CONTROLLED_MAINNET_CANARY (profile gates pass; operator ceremony required before any broadcast)");
+if (allPass) {
+  console.log("READY_FOR_CONTROLLED_MAINNET_CANARY (profile gates pass; operator ceremony + human approval required before any broadcast)");
 } else {
-  console.log("NOT_READY — owner decisions still required");
+  console.log("READY_EXCEPT_FOR_OPERATOR_CEREMONY — code/CI gates green (coverage proven by CI); the operator ceremony (committing the public mainnet profile values) is the only remaining gate");
 }

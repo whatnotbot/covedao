@@ -2,7 +2,7 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { ECPairFactory, type ECPairInterface } from "ecpair";
 import { CHAIN_BITCOIN_REGTEST, computeTokenId } from "@crclaunch/cove-wire";
-import type { V3IndexerConfig } from "./types.js";
+import type { V3IndexerConfig } from "../types.js";
 
 /**
  * ONE deterministic REGTEST-ONLY protocol fixture (§1/§2). Every integration

@@ -1,6 +1,6 @@
 import { CoreRpcProvider } from "@crclaunch/bitcoin";
 import { createDb } from "@crclaunch/db";
-import { regtestConfig } from "./regtest-fixture.js";
+import { regtestConfig } from "./testing/regtest-fixture.js";
 import { V3Store } from "./store.js";
 import { hydrateState } from "./hydrate.js";
 import { reindexDb } from "./reindex.js";

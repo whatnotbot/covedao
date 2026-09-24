@@ -3,7 +3,7 @@ import * as ecc from "tiny-secp256k1";
 import type { ECPairInterface } from "ecpair";
 import { CoreRpcProvider } from "@crclaunch/bitcoin";
 import { CHAIN_BITCOIN_REGTEST } from "@crclaunch/cove-wire";
-import { REGTEST_KEYS, REGTEST_FEE_SCRIPT, REGTEST_NONCE, REGTEST_MINER_FEE, regtestConfig } from "./regtest-fixture.js";
+import { REGTEST_KEYS, REGTEST_GUARDIAN_PRIV, REGTEST_RECOVERY_XONLY, REGTEST_FEE_SCRIPT, REGTEST_NONCE, REGTEST_MINER_FEE, regtestConfig } from "./testing/regtest-fixture.js";
 import { TOKEN_CARRIER_SATS } from "@crclaunch/cove-covenant";
 import {
   GuardianV3Signer,
@@ -37,9 +37,9 @@ const RPC_URL = process.env.COVE_REGTEST_RPC_URL ?? "http://127.0.0.1:18443";
 const RPC_USER = process.env.COVE_REGTEST_RPC_USER ?? "user";
 const RPC_PASSWORD = process.env.COVE_REGTEST_RPC_PASSWORD ?? "pass";
 
-const signer = GuardianV3Signer.fromPrivateKey(Buffer.alloc(32, 0x42));
+const signer = GuardianV3Signer.fromPrivateKey(REGTEST_GUARDIAN_PRIV);
 const guardianXOnly = signer.xOnlyPubkey();
-const recoveryXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x43), true)!.subarray(1));
+const recoveryXOnly = REGTEST_RECOVERY_XONLY;
 const NONCE = REGTEST_NONCE;
 const MINT_AMOUNT = 84_000_000n * 100_000_000n;
 const MINER_FEE = REGTEST_MINER_FEE;

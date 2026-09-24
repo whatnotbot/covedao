@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./v3": "./src/v3/index.ts",
-    "./legacy": "./src/index.ts"
+    "./legacy": "./src/index.ts",
+    "./testing": "./src/v3/testing/regtest-fixture.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
@@ -29,7 +30,9 @@
     "mainnet-config": "tsx src/mainnet-config.ts",
     "mainnet-canary": "tsx src/mainnet-canary.ts",
     "regtest-reorg": "tsx src/regtest-reorg.ts",
-    "liquidity-demo": "tsx src/liquidity-demo.ts"
+    "liquidity-demo": "tsx src/liquidity-demo.ts",
+    "v3:persistent-lifecycle": "tsx src/v3/persistent-lifecycle.ts",
+    "v3:persistent-reorg-matrix": "tsx src/v3/persistent-reorg-matrix.ts"
   },
   "dependencies": {
     "@crclaunch/bitcoin": "workspace:*",

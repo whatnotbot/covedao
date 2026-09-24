@@ -137,14 +137,26 @@ boundary instead of calling `validateAndSignMintTransition` directly:
   persists the VALIDATED_TO_SIGN audit row to `cove_v3_guardian_audit` with the
   actual vault profile version (no hardcoded MAINNET1).
 
+## MAINNET1 production-profile E2E (done this round)
+
+`packages/cove-guardian/src/v3-mainnet-profile-lifecycle.ts` runs the full
+DEPLOY→MINT→REDEEM→RE-BUY journey on real Bitcoin Core regtest + the REAL Rust
+Simplicity binary under the MAINNET1 2-of-3 recovery profile, signed through the
+durable `LocalGuardianTransitionSigner` (durable-before-sign audit hash chain +
+per-backing signing journal + signer-side risk caps). Asserts: the recovery leaf
+is the 2-of-3 threshold script (not DEV1 144-CSV), the CMR/simplicity PASS on
+every transition, the double-sign journal returns CONFLICT on a conflicting
+digest, and the 3-link tamper-evident audit chain verifies. Wired into the
+`Cove V3 full lifecycle` workflow as a second step (same bitcoind + Simplicity).
+
 ## Honest status — NOT_READY for canary
 
-All autonomously-deliverable code + CI is complete and green; the production-profile
-path is threaded end-to-end and the MINT/REDEEM path is proven. Phase 8A is **not
-fully complete** — the remaining items require execution/human action:
+All autonomously-deliverable code + CI is complete and green; the MAINNET1
+production-profile lifecycle is executed end-to-end through the durable signer.
+Phase 8A is **not fully complete** — the remaining items require execution/human
+action:
 
-1. Full production-profile E2E journey executed (code-ready, not run end-to-end).
-2. Backup/restore + reindex drills executed (commands documented, not run in CI).
-3. Operator ceremony + committed public mainnet profile values (owner decisions).
+1. Backup/restore + reindex drills executed (commands documented, not run in CI).
+2. Operator ceremony + committed public mainnet profile values (owner decisions).
 
-Final readiness: **NOT_READY** (code/CI gates green; execution + ceremony remain).
+Final readiness: **NOT_READY** (code/CI gates green; drills + ceremony remain).

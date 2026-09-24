@@ -83,6 +83,12 @@ jobs:
       - name: Run full V3 lifecycle (fails, not skips, if Core unreachable)
         run: pnpm cove:v3-regtest-lifecycle
 
+      # Production-profile lifecycle: the SAME journey under the MAINNET1 2-of-3
+      # recovery profile + durable-before-sign Guardian boundary (audit chain +
+      # signing journal + risk caps). Proves §137/§145 end-to-end.
+      - name: Run MAINNET1 production-profile lifecycle (durable signer)
+        run: pnpm cove:v3-mainnet-profile-lifecycle
+
       - name: Dump bitcoind debug log (on failure)
         if: failure()
         run: tail -80 /tmp/btc-v3/regtest/debug.log

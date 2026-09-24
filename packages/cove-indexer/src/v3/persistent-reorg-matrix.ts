@@ -74,11 +74,20 @@ async function main() {
   const db = createDb(DB_URL);
   const cfg = regtestConfig();
   const store = new V3Store("regtest");
-  await rpc.createWallet("cove53r");
+  await rpc.createWallet("cove53");
+  // clear derived V3 projection for an isolated scenario
+  await db.transaction(async (tx) => {
+    await tx.delete(schema.coveV3Events).where(eq(schema.coveV3Events.network, "regtest"));
+    await tx.delete(schema.coveV3Undo).where(eq(schema.coveV3Undo.network, "regtest"));
+    await tx.delete(schema.coveV3TokenUtxos).where(eq(schema.coveV3TokenUtxos.network, "regtest"));
+    await tx.delete(schema.coveV3BackingStates).where(eq(schema.coveV3BackingStates.network, "regtest"));
+    await tx.delete(schema.coveV3Tokens).where(eq(schema.coveV3Tokens.network, "regtest"));
+    await tx.delete(schema.coveV3Blocks).where(eq(schema.coveV3Blocks.network, "regtest"));
+  });
   const mineAddr = await rpc.getNewAddress();
   await rpc.generate(101, mineAddr);
 
-  let state = await hydrateState(db, "regtest", cfg);
+  let state = new V3IndexerState(cfg);
   const sync = async () => { await persistentWorker({ db, store, state, provider, config: cfg }); };
   const mine = async () => { await rpc.generate(1, mineAddr); await sync(); };
   const broadcast = async (v: ValidatedCoveTransaction) => (await broadcastValidatedCoveTransaction({ validated: v, network: "regtest", provider })).txid;

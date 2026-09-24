@@ -101,6 +101,9 @@ feeScript, buy/redeem/p2pFeeBps, canary allowlist + caps.
 - `Metrics` collector (Guardian/market/app counters + gauges) + test (§62).
 - `docs/runbooks/BACKUP_RESTORE.md`: durable-vs-rebuildable table + encrypted
   backup/restore drill + chain-projection rebuild drill commands.
+- `docs/runbooks/CANARY_OPERATIONS.md`: controlled-canary stage model, human-only
+  activation, monitoring (metrics + invariants), signer-enforced caps/allowlist,
+  and fail-closed pause/rollback.
 
 ## Production-profile path (done this round)
 

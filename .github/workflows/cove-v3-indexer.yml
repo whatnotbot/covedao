@@ -31,6 +31,7 @@ jobs:
       COVE_REGTEST_RPC_USER: user
       COVE_REGTEST_RPC_PASSWORD: pass
       COVE_TEST_DATABASE_URL: postgres://cove:cove@127.0.0.1:5432/cove
+      COVE_DATABASE_URL: postgres://cove:cove@127.0.0.1:5432/cove
       BITCOIN_VERSION: "28.1"
       BITCOIN_SHA256: 07f77afd326639145b9ba9562912b2ad2ccec47b8a305bd075b4f4cb127b7ed7
 
@@ -88,6 +89,18 @@ jobs:
 
       - name: V3 store persistence test (Postgres)
         run: pnpm --filter @crclaunch/cove-indexer test -- v3/store.test.ts
+
+      - name: Persistent CLI status (reads DB)
+        run: pnpm --filter @crclaunch/cove-indexer v3:status
+
+      - name: Persistent CLI quick verify (DB + Core)
+        run: pnpm --filter @crclaunch/cove-indexer v3:verify
+
+      - name: Persistent CLI full verify (DB projection vs independent replay)
+        run: pnpm --filter @crclaunch/cove-indexer v3:verify -- --full
+
+      - name: Persistent reindex (writes Postgres)
+        run: pnpm --filter @crclaunch/cove-indexer v3:reindex
 
       - name: Dump bitcoind debug log (on failure)
         if: failure()

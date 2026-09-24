@@ -765,3 +765,62 @@ export const coveV3MarketEvents = pgTable(
   },
   (t) => [index("cove_v3_market_events_listing_idx").on(t.listingId, t.createdAt)],
 );
+
+// ── Cove V3 application metadata (off-chain, keyed by tokenId) ─────────────
+// Application-layer display metadata. NOT chain truth, NOT in the indexer state
+// root, and it survives a V3 reindex. The on-chain ticker comes from the V3
+// DEPLOY; this table can never change tokenId/ticker/supply/backing/version.
+
+export const coveV3TokenMetadata = pgTable(
+  "cove_v3_token_metadata",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    network: text("network").notNull(),
+    tokenId: text("token_id").notNull(),
+    displayName: text("display_name").notNull(),
+    description: text("description").notNull().default(""),
+    websiteUrl: text("website_url"),
+    xUrl: text("x_url"),
+    imageUrl: text("image_url"),
+    submittedByScript: text("submitted_by_script").notNull(),
+    deployTxid: text("deploy_txid"),
+    verified: boolean("verified").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("cove_v3_token_metadata_token_uq").on(t.network, t.tokenId)],
+);
+
+// ── Cove V3 application transaction sessions (coordination state only) ─────
+// Off-chain PSBT/session bookkeeping for the interactive flows. NEVER chain
+// ownership authority; never stores wallet keys/seeds/WIF/Guardian keys.
+
+export const coveV3AppTransactions = pgTable(
+  "cove_v3_app_transactions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    network: text("network").notNull(),
+    operation: text("operation").notNull(), // DEPLOY | BACKING_BUY | REDEEM | TRANSFER | P2P
+    tokenId: text("token_id"),
+    walletScript: text("wallet_script").notNull(),
+    walletAddress: text("wallet_address"),
+    stateHash: text("state_hash"),
+    backingTxid: text("backing_txid"),
+    backingVout: integer("backing_vout"),
+    unsignedTxDigest: text("unsigned_tx_digest"),
+    psbtBase64: text("psbt_base64"),
+    txid: text("txid"),
+    status: text("status").notNull().default("BUILT"), // BUILT | WALLET_SIGNED | BROADCAST | CONFIRMED | REORGED | FAILED | EXPIRED
+    expiresAtHeight: atoms("expires_at_height"),
+    errorCode: text("error_code"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("cove_v3_app_tx_idempotency_uq").on(t.network, t.walletScript, t.operation, t.idempotencyKey),
+    uniqueIndex("cove_v3_app_tx_txid_uq").on(t.network, t.txid).where(sql`${t.txid} IS NOT NULL`),
+    index("cove_v3_app_tx_status_idx").on(t.network, t.status),
+    index("cove_v3_app_tx_wallet_idx").on(t.network, t.walletScript, t.createdAt),
+  ],
+);

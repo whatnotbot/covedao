@@ -90,15 +90,22 @@ feeScript, buy/redeem/p2pFeeBps, canary allowlist + caps.
   btcValue == anchor+backing) and `checkSupplyInvariant` (sum unspent UTXOs ==
   issued supply) — per-token CRITICAL results.
 
+## Rate limiting + metrics + backup runbook (done this round)
+
+- `FixedWindowRateLimiter` (fixed-window, scoped by subject/operation) + test (§60).
+- `Metrics` collector (Guardian/market/app counters + gauges) + test (§62).
+- `docs/runbooks/BACKUP_RESTORE.md`: durable-vs-rebuildable table + encrypted
+  backup/restore drill + chain-projection rebuild drill commands.
+
 ## Honest status — NOT_READY for canary
 
-All frozen-protocol + security-critical code is complete and CI-green. Phase 8A
-is **not fully complete**: the following operational items remain unproven:
+All autonomously-deliverable code + CI is complete and green. Phase 8A is **not
+fully complete** — the following remain and require execution/human action:
 
-1. Backup/restore + reindex **drills** (documented in runbooks, not executed in CI).
-2. Monitoring/alerts + rate-limit **implementations** (runbook-referenced, not built).
-3. Production-profile full regtest lifecycle (full Phase-7 journey under the
-   MAINNET1 vault profile + remote signer + risk caps) — not run.
+1. **Production-profile full regtest lifecycle** (§137): run the full Phase-7
+   journey under the MAINNET1 vault profile + remote signer + risk caps — not run.
+2. **Backup/restore + reindex drills** executed (commands documented, not run in CI).
+3. **Metrics wiring** into worker/Guardian (collector exists, not emitting yet).
 4. Operator ceremony + committed public mainnet profile values (owner decisions).
 
 Final readiness: **NOT_READY**.

@@ -1,5 +1,15 @@
 /** Client-safe formatting helpers (no server-only deps). All inputs are strings/bigints. */
 
+/** Convert a display-token decimal string to an atom-string (no floats). */
+export function displayTokensToAtoms(input: string): string {
+  const s = input.trim();
+  if (!/^\d+(\.\d+)?$/.test(s)) throw new Error("invalid token amount");
+  const parts = s.split(".");
+  const whole = parts[0] || "0";
+  const frac = (parts[1] ?? "").padEnd(8, "0").slice(0, 8) || "0";
+  return (BigInt(whole) * 100_000_000n + BigInt(frac)).toString();
+}
+
 export function fmtInt(v: string | bigint | number): string {
   const n = typeof v === "string" ? BigInt(v) : BigInt(v);
   return n.toLocaleString("en-US");

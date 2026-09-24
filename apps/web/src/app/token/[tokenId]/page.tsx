@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useWallet } from "@/components/WalletProvider";
 import { verifyClientIntent } from "@crclaunch/wallets";
-import { fmtBtc, fmtTokens } from "@/lib/format";
+import { fmtBtc, fmtTokens, displayTokensToAtoms } from "@/lib/format";
 
 interface Detail {
   tokenId: string;
@@ -59,7 +59,7 @@ export default function TokenPage() {
       const qr = await fetch("/api/v3/backing/buy/quote", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tokenId, amountAtoms: amount }),
+        body: JSON.stringify({ tokenId, amountAtoms: displayTokensToAtoms(amount) }),
       });
       const qj = await qr.json();
       if (!qj.ok) throw new Error(qj.error?.message ?? "quote failed");
@@ -70,7 +70,7 @@ export default function TokenPage() {
         body: JSON.stringify({
           network: "regtest",
           tokenId,
-          amountAtoms: amount,
+          amountAtoms: displayTokensToAtoms(amount),
           quoteBinding: { stateHash: qj.data.stateHash, backingOutpoint: qj.data.backingOutpoint, expiresAtHeight: qj.data.expiresAtHeight },
           walletScript: script,
           walletAddress: address,
@@ -107,7 +107,7 @@ export default function TokenPage() {
       const qr = await fetch("/api/v3/backing/redeem/quote", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tokenId, amountAtoms: amount }),
+        body: JSON.stringify({ tokenId, amountAtoms: displayTokensToAtoms(amount) }),
       });
       const qj = await qr.json();
       if (!qj.ok) throw new Error(qj.error?.message ?? "quote failed");
@@ -117,7 +117,7 @@ export default function TokenPage() {
         body: JSON.stringify({
           network: "regtest",
           tokenId,
-          amountAtoms: amount,
+          amountAtoms: displayTokensToAtoms(amount),
           walletScript: script,
           walletAddress: address,
           minerFeeSats: "1000",
@@ -156,7 +156,7 @@ export default function TokenPage() {
         body: JSON.stringify({
           network: "regtest",
           tokenId,
-          amountAtoms: amount,
+          amountAtoms: displayTokensToAtoms(amount),
           recipientScript: recipient,
           walletScript: script,
           walletAddress: address,

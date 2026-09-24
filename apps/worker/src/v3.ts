@@ -25,10 +25,9 @@ const POLL_MS = Number(process.env.COVE_WORKER_POLL_MS ?? 2000);
 async function acquireNetworkLock(network: string): Promise<Client> {
   const client = new Client({ connectionString: DB_URL });
   await client.connect();
-  // 64-bit hash of the network string as the advisory-lock key.
-  let key = 0n;
-  for (const ch of Buffer.from(network, "utf8")) key = (key * 131n + BigInt(ch)) & 0x7fffffffffffffffn;
-  const res = await client.query("SELECT pg_try_advisory_lock($1)", [key.toString()]);
+  // Small deterministic advisory-lock key per network (single-owner guard).
+  const key = network === "regtest" ? 1 : network === "signet" ? 2 : 3;
+  const res = await client.query("SELECT pg_try_advisory_lock($1)", [key]);
   if (res.rows[0]?.pg_try_advisory_lock !== true) {
     await client.end();
     throw new Error(`another V3 worker owns network "${network}" (advisory lock held)`);

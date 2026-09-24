@@ -61,6 +61,7 @@ class Rpc {
   generate = (n: number, a: string) => this.call<string[]>("generatetoaddress", [n, a]);
   getBestBlockHash = () => this.call<string>("getbestblockhash");
   invalidateBlock = (h: string) => this.call<void>("invalidateblock", [h]);
+  abandonTransaction = (txid: string) => this.call<void>("abandontransaction", [txid]);
 }
 function orThrow(r: ValidatedCoveTransaction | { ok: false; reason: string }): ValidatedCoveTransaction {
   if ("ok" in r) throw new Error(`final validation failed: ${r.reason}`);
@@ -127,11 +128,11 @@ async function main() {
   const aliceFund = await fund(alice, 0.01);
   const transfer = buildTransferPsbtV2({ network: bitcoin.networks.regtest, tokenId, tokenInputs: [{ txid: mintTxid, vout: 2, script: p2wpkh(alice), valueSats: TOKEN_CARRIER_SATS }], tokenInputTotalAtoms: MINT_AMOUNT, tokenOutputs: [{ script: p2wpkh(bob), amountAtoms: MINT_AMOUNT }], funderInputs: [aliceFund], funderChangeScript: p2wpkh(alice), btcOutputs: [], minerFeeSats: REGTEST_MINER_FEE });
   transfer.psbt.signInput(0, alice); transfer.psbt.signInput(1, alice); transfer.psbt.finalizeAllInputs();
-  await broadcast(orThrow(validateFinalizedTransferTransaction({ rawTxHex: transfer.psbt.extractTransaction().toHex(), view: state })));
+  const bobTransferTxid = await broadcast(orThrow(validateFinalizedTransferTransaction({ rawTxHex: transfer.psbt.extractTransaction().toHex(), view: state })));
   await mine();
   const tipA = await rpc.getBestBlockHash();
   await rpc.invalidateBlock(tipA);
-  await rpc.generate(1, await rpc.getNewAddress());
+  // rollback ONLY (Core tip is now the MINT block); do NOT re-mine yet
   await reorgPersistentToTip({ db, store, state, provider, config: cfg });
   {
     const h = await hydrateState(db, "regtest", cfg);
@@ -145,7 +146,8 @@ async function main() {
   }
   console.log(`✓ TRANSFER reorg rollback (Alice restored, Bob removed)`);
 
-  // ── conflicting transfer: Alice→Carol ──
+  // ── conflicting transfer: abandon Bob, then Alice→Carol ──
+  await rpc.abandonTransaction(bobTransferTxid);
   const transfer2 = buildTransferPsbtV2({ network: bitcoin.networks.regtest, tokenId, tokenInputs: [{ txid: mintTxid, vout: 2, script: p2wpkh(alice), valueSats: TOKEN_CARRIER_SATS }], tokenInputTotalAtoms: MINT_AMOUNT, tokenOutputs: [{ script: p2wpkh(carol), amountAtoms: MINT_AMOUNT }], funderInputs: [await fund(alice, 0.01)], funderChangeScript: p2wpkh(alice), btcOutputs: [], minerFeeSats: REGTEST_MINER_FEE });
   transfer2.psbt.signInput(0, alice); transfer2.psbt.signInput(1, alice); transfer2.psbt.finalizeAllInputs();
   const transfer2Txid = await broadcast(orThrow(validateFinalizedTransferTransaction({ rawTxHex: transfer2.psbt.extractTransaction().toHex(), view: state })));

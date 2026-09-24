@@ -555,7 +555,7 @@ async function main(): Promise<void> {
     replayed.state.issuedPublicSupplyAtoms === liveBacking.state.issuedPublicSupplyAtoms,
     "replay supply mismatch",
   );
-  assert(replayed.state.backingSats === liveBacking.state.backingSats, "replay backing mismatch");
+  assert(replayBacking.state.backingSats === liveBacking.state.backingSats, "replay backing mismatch");
   assert(
     replayed.view.balanceOf(tokenId) === view.balanceOf(tokenId),
     "replay balance mismatch",

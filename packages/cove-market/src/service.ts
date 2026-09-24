@@ -1,6 +1,6 @@
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
-import { eq, and, isNull, inArray, lte } from "drizzle-orm";
+import { eq, and, isNull, inArray, lte, desc } from "drizzle-orm";
 import { schema, type Database, type DbTransaction } from "@crclaunch/db";
 import type { CoreRpcProvider } from "@crclaunch/bitcoin";
 import { TOKEN_CARRIER_SATS, type CoveCanonicalView } from "@crclaunch/cove-covenant";
@@ -498,7 +498,8 @@ export class MarketService {
       reorged++;
     }
 
-    // (C) Invalidate listings whose source was spent by someone else.
+    // (C) Reconcile open listings (ACTIVE/RESERVED/BROADCAST) and reorged
+    // listings (REORGED): detect external spends and restore post-reorg state.
     const openListings = await this.db
       .select()
       .from(schema.coveV3MarketListings)
@@ -511,7 +512,7 @@ export class MarketService {
     for (const listing of openListings) {
       const utxo = await this.sourceUtxoRow(listing.sourceTxid, listing.sourceVout);
       if (utxo && utxo.spentByTxid) {
-        // Spent per the indexer. If it is NOT one of our own fills → external.
+        // Indexer says the source is confirmed-spent by some tx.
         const ourTx = await this.listingFillTxid(listing.listingId, utxo.spentByTxid);
         if (!ourTx) {
           await this.invalidateListing(listing.listingId, `spent by ${utxo.spentByTxid}`);
@@ -519,20 +520,34 @@ export class MarketService {
         }
         continue;
       }
-      // Indexer has no spend yet — confirm Core agrees the source is unspent.
+      // No confirmed spend in the indexer view.
       const txout = await this.provider.getTxout(listing.sourceTxid, listing.sourceVout);
-      if (!txout) {
-        // Spent in mempool. If it is our BROADCAST fill still in mempool, skip.
-        const fill = await this.listingOpenFill(listing.listingId);
-        const isOurs = fill?.status === "BROADCAST" && fill.txid && (await this.inMempool(fill.txid));
-        if (!isOurs) {
-          await this.invalidateListing(listing.listingId, "source spent in mempool by an external tx");
-          invalidated++;
+      if (txout) {
+        // Source is unspent. A reorged listing whose fill tx is gone → ACTIVE.
+        if (listing.status === "REORGED") {
+          await this.db.update(schema.coveV3MarketListings).set({ status: "ACTIVE", updatedAt: new Date() }).where(eq(schema.coveV3MarketListings.listingId, listing.listingId));
         }
-      } else if (listing.status === "REORGED") {
-        // Source is spendable again after reorg: return to ACTIVE (unless cancelled).
-        await this.db.update(schema.coveV3MarketListings).set({ status: "ACTIVE", updatedAt: new Date() }).where(eq(schema.coveV3MarketListings.listingId, listing.listingId));
+        continue;
       }
+      // Source is spent in the mempool (unconfirmed). Determine the spender.
+      const ourTxid = await this.latestFillTxid(listing.listingId);
+      const isOurs = ourTxid !== null && (await this.inMempool(ourTxid));
+      if (isOurs) {
+        if (listing.status === "REORGED") {
+          // Our fill is back in the mempool after a reorg: re-pend it.
+          await this.db.transaction(async (tx) => {
+            await tx
+              .update(schema.coveV3MarketFills)
+              .set({ status: "BROADCAST", canonical: true, updatedAt: new Date() })
+              .where(and(eq(schema.coveV3MarketFills.listingId, listing.listingId), eq(schema.coveV3MarketFills.txid, ourTxid)));
+            await tx.update(schema.coveV3MarketListings).set({ status: "BROADCAST", updatedAt: new Date() }).where(eq(schema.coveV3MarketListings.listingId, listing.listingId));
+            await tx.insert(schema.coveV3MarketEvents).values({ network: this.config.network, listingId: listing.listingId, eventType: "FILL_REPENDING", payloadJson: { txid: ourTxid } });
+          });
+        }
+        continue;
+      }
+      await this.invalidateListing(listing.listingId, "source spent in mempool by an external tx");
+      invalidated++;
     }
 
     // (D) Expire listings + reservations.
@@ -587,17 +602,14 @@ export class MarketService {
     return rows.length > 0;
   }
 
-  private async listingOpenFill(listingId: string): Promise<FillSelect | null> {
+  private async latestFillTxid(listingId: string): Promise<string | null> {
     const rows = await this.db
-      .select()
+      .select({ txid: schema.coveV3MarketFills.txid })
       .from(schema.coveV3MarketFills)
-      .where(
-        and(
-          eq(schema.coveV3MarketFills.listingId, listingId),
-          inArray(schema.coveV3MarketFills.status, ["RESERVED", "PSBT_BUILT", "BUYER_SIGNED", "SELLER_SIGNED", "BROADCAST", "CONFIRMED"]),
-        ),
-      );
-    return rows[0] ?? null;
+      .where(eq(schema.coveV3MarketFills.listingId, listingId))
+      .orderBy(desc(schema.coveV3MarketFills.createdAt))
+      .limit(1);
+    return rows[0]?.txid ?? null;
   }
 
   private async inMempool(txid: string): Promise<boolean> {
@@ -630,7 +642,14 @@ export class MarketService {
       .select()
       .from(schema.coveV3MarketTrades)
       .where(and(eq(schema.coveV3MarketTrades.network, this.config.network), eq(schema.coveV3MarketTrades.txid, fill.txid!)));
-    if (existing.length > 0) return;
+    if (existing.length > 0) {
+      // Re-confirmation after a reorg: restore canonicity + new height.
+      await tx
+        .update(schema.coveV3MarketTrades)
+        .set({ canonical: true, blockHeight, blockHash, createdAt: new Date() })
+        .where(and(eq(schema.coveV3MarketTrades.network, this.config.network), eq(schema.coveV3MarketTrades.txid, fill.txid!)));
+      return;
+    }
     await tx.insert(schema.coveV3MarketTrades).values({
       network: this.config.network,
       tokenId: listing.tokenId,

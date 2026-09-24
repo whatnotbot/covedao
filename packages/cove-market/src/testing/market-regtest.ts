@@ -298,13 +298,25 @@ async function main() {
   await reorgPersistentToTip({ db, store, state, provider, config: cfg });
   const reorgRecon = await market.reconcileMarket();
   assert(reorgRecon.reorged === 1, `expected 1 reorged, got ${reorgRecon.reorged}`);
-  const reorgFill = await db.select().from(schema.coveV3MarketFills).where(eq(schema.coveV3MarketFills.id, fillId));
-  assert(reorgFill[0]!.status === "REORGED", "fill must be REORGED after reorg");
   const reorgTrade = await db.select().from(schema.coveV3MarketTrades).where(eq(schema.coveV3MarketTrades.txid, validated.txid));
   assert(reorgTrade[0]!.canonical === false, "trade must be non-canonical after reorg");
+  const reorgFill = await db.select().from(schema.coveV3MarketFills).where(eq(schema.coveV3MarketFills.id, fillId));
+  assert(reorgFill[0]!.status === "BROADCAST", "reorged fill must re-pend (tx still in mempool)");
   const reorgListing = await db.select().from(schema.coveV3MarketListings).where(eq(schema.coveV3MarketListings.listingId, listingId));
-  assert(reorgListing[0]!.status === "ACTIVE", "reorged listing must return to ACTIVE (source unspent)");
-  console.log(`✓ reorg: trade non-canonical, fill REORGED, listing back to ACTIVE`);
+  assert(reorgListing[0]!.status === "BROADCAST", "reorged listing must re-pend with its fill");
+  console.log(`✓ reorg: trade non-canonical, fill/listing re-pended to BROADCAST`);
+
+  // Re-mine with a FRESH coinbase address (same address would re-produce the
+  // orphaned block hash and be rejected as a duplicate).
+  await rpc.generate(1, await rpc.getNewAddress());
+  await sync();
+  const reconRecon = await market.reconcileMarket();
+  assert(reconRecon.confirmed === 1, "re-pended fill must re-confirm");
+  const reconTrade = await db.select().from(schema.coveV3MarketTrades).where(eq(schema.coveV3MarketTrades.txid, validated.txid));
+  assert(reconTrade[0]!.canonical === true, "trade must be canonical again after re-confirm");
+  const reconListing = await db.select().from(schema.coveV3MarketListings).where(eq(schema.coveV3MarketListings.listingId, listingId));
+  assert(reconListing[0]!.status === "FILLED", "listing must be FILLED again after re-confirm");
+  console.log(`✓ re-confirm after reorg: trade canonical, listing FILLED`);
 
   console.log("MARKET REGTEST PASSED");
 }

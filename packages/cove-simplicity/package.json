@@ -17,7 +17,8 @@
   },
   "dependencies": {
     "@crclaunch/cove-economics": "workspace:*",
-    "@crclaunch/cove-covenant": "workspace:*"
+    "@crclaunch/cove-covenant": "workspace:*",
+    "@crclaunch/curve": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

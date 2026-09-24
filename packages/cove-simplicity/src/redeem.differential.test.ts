@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { grossRedeem } from "@crclaunch/cove-economics";
 import {
   REDEEM_CMR,
-  executeRedeem,
+  executeRedeemV3,
   isSimplicityAvailable,
   type RedeemWitness,
 } from "./simplicity.js";
@@ -28,7 +28,7 @@ function tsRedeemValid(w: RedeemWitness): boolean {
 
 function expectAgree(w: RedeemWitness): void {
   const ts = tsRedeemValid(w);
-  const sim = executeRedeem(w) === "PASS";
+  const sim = executeRedeemV3(w).result === "PASS";
   const label = JSON.stringify(w, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
   expect(sim, `witness ${label}`).toBe(ts);
 }

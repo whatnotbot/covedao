@@ -320,6 +320,9 @@ importers:
       '@crclaunch/cove-economics':
         specifier: workspace:*
         version: link:../cove-economics
+      '@crclaunch/curve':
+        specifier: workspace:*
+        version: link:../curve
     devDependencies:
       tsx:
         specifier: ^4.19.2

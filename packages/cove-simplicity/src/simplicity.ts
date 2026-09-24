@@ -10,8 +10,10 @@ import { dirname, join } from "node:path";
  *   2. computes the real Commitment Merkle Root (CMR),
  *   3. executes the program on the Simplicity Bit Machine against witness data.
  *
- * Results are compared against the TypeScript reference policy in the
- * differential tests — TypeScript result MUST equal the Simplicity result.
+ * This is the STRICT production execution path. It never falls back to a
+ * TypeScript-only check and never skips: absence of the binary, a timeout, a
+ * malformed result, a CMR drift, or a Bit Machine FAIL are all typed failures
+ * that the Guardian treats as "no signature".
  */
 
 /** Historical/dev CMRs (COVE_POLICY_V1/V2, preserved). */
@@ -44,12 +46,42 @@ export interface RedeemWitness {
   payout: bigint; // sats
 }
 
-function binaryPath(): string {
+/** Typed Simplicity execution failure modes (fail-closed). */
+export type SimplicityFailureCode =
+  | "SIMPLICITY_BINARY_MISSING"
+  | "SIMPLICITY_EXECUTION_ERROR"
+  | "SIMPLICITY_TIMEOUT"
+  | "SIMPLICITY_MALFORMED_RESULT"
+  | "CMR_MISMATCH"
+  | "SIMPLICITY_REJECTED";
+
+export interface SimplicityExecutionResult {
+  policy: "MINT" | "REDEEM";
+  expectedCmr: string;
+  /** CMR the compiled binary actually reported, or null if it failed first. */
+  actualCmr: string | null;
+  /** "PASS" only when the Bit Machine returned PASS AND actualCmr === expectedCmr. */
+  result: "PASS" | "FAIL";
+  /** Typed reason when result === "FAIL"; null when PASS. */
+  failure: SimplicityFailureCode | null;
+}
+
+export const SIMPLICITY_TIMEOUT_MS = 10_000;
+
+function binaryPath(): string | null {
   const here = dirname(fileURLToPath(import.meta.url));
   const release = join(here, "..", "rust", "target", "release", "cove-simplicity");
   const debug = join(here, "..", "rust", "target", "debug", "cove-simplicity");
+  // Prefer the release binary; fall back to debug for local dev. The CMR check
+  // below rejects any binary (release or debug) whose compiled CMR differs from
+  // the frozen expectation, so a stale binary can never silently pass.
   if (existsSync(release)) return release;
-  return debug;
+  if (existsSync(debug)) return debug;
+  return null;
+}
+
+export function isSimplicityAvailable(): boolean {
+  return binaryPath() !== null;
 }
 
 function mintWitnessString(w: MintWitness): string {
@@ -60,29 +92,102 @@ function redeemWitnessString(w: RedeemWitness): string {
   return `mod witness { const AMOUNT: u64 = ${w.amount}; const OLD_SUPPLY: u64 = ${w.oldSupply}; const NEW_SUPPLY: u64 = ${w.newSupply}; const OLD_BACKING: u64 = ${w.oldBacking}; const NEW_BACKING: u64 = ${w.newBacking}; const PAYOUT: u64 = ${w.payout}; }`;
 }
 
-export function isSimplicityAvailable(): boolean {
-  return existsSync(binaryPath());
+interface ExecOutput {
+  cmr: string;
+  result: string;
 }
 
-function execute(policy: "mint" | "redeem", witness: string, expectedCmr: string): "PASS" | "FAIL" {
-  const bin = binaryPath();
-  const stdout = execFileSync(bin, ["exec", policy, witness], {
-    encoding: "utf8",
-    maxBuffer: 1_000_000,
-  });
-  const parsed = JSON.parse(stdout) as { cmr: string; result: string };
-  if (parsed.cmr !== expectedCmr) {
-    throw new Error(`CMR drift: expected ${expectedCmr}, got ${parsed.cmr}`);
+export interface SimplicityExecOptions {
+  timeoutMs?: number;
+  /**
+   * Override the binary path. `null` simulates an absent runtime
+   * (SIMPLICITY_BINARY_MISSING); a string points the executor at a specific
+   * binary (used by failure-injection tests). Default: release, then debug.
+   */
+  binaryPath?: string | null;
+}
+
+function executeStrict(
+  policy: "MINT" | "REDEEM",
+  rustPolicy: "mint" | "redeem",
+  witness: string,
+  expectedCmr: string,
+  opts: SimplicityExecOptions,
+): SimplicityExecutionResult {
+  const base: SimplicityExecutionResult = {
+    policy,
+    expectedCmr,
+    actualCmr: null,
+    result: "FAIL",
+    failure: null,
+  };
+
+  const bin = opts.binaryPath !== undefined ? opts.binaryPath : binaryPath();
+  if (bin === null) {
+    return { ...base, failure: "SIMPLICITY_BINARY_MISSING" };
   }
-  return parsed.result === "PASS" ? "PASS" : "FAIL";
+
+  let stdout: string;
+  try {
+    stdout = execFileSync(bin, ["exec", rustPolicy, witness], {
+      encoding: "utf8",
+      maxBuffer: 1_000_000,
+      timeout: opts.timeoutMs ?? SIMPLICITY_TIMEOUT_MS,
+    });
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException & {
+      killed?: boolean;
+      signal?: string;
+      code?: string | number | null;
+    };
+    if (err.killed === true || err.signal === "SIGTERM" || err.code === "ETIMEDOUT") {
+      return { ...base, failure: "SIMPLICITY_TIMEOUT" };
+    }
+    return { ...base, failure: "SIMPLICITY_EXECUTION_ERROR" };
+  }
+
+  let parsed: ExecOutput;
+  try {
+    parsed = JSON.parse(stdout) as ExecOutput;
+  } catch {
+    return { ...base, failure: "SIMPLICITY_MALFORMED_RESULT" };
+  }
+  if (typeof parsed.cmr !== "string" || typeof parsed.result !== "string") {
+    return { ...base, failure: "SIMPLICITY_MALFORMED_RESULT" };
+  }
+  if (parsed.result !== "PASS" && parsed.result !== "FAIL") {
+    return { ...base, failure: "SIMPLICITY_MALFORMED_RESULT" };
+  }
+
+  const actualCmr = parsed.cmr;
+  if (actualCmr !== expectedCmr) {
+    return { ...base, actualCmr, failure: "CMR_MISMATCH" };
+  }
+  if (parsed.result === "PASS") {
+    return { ...base, actualCmr, result: "PASS", failure: null };
+  }
+  return { ...base, actualCmr, result: "FAIL", failure: "SIMPLICITY_REJECTED" };
 }
 
-/** Execute the Simplicity MINT predicate. Returns "PASS" | "FAIL". */
-export function executeMint(witness: MintWitness): "PASS" | "FAIL" {
-  return execute("mint", mintWitnessString(witness), MINT_CMR);
+/**
+ * Execute the REAL V3 MINT Simplicity predicate. Returns PASS only when the
+ * Bit Machine succeeded AND the compiled CMR exactly equals the frozen V3 CMR.
+ * Never throws; every failure mode is typed and fail-closed.
+ */
+export function executeMintV3(
+  witness: MintWitness,
+  opts: SimplicityExecOptions = {},
+): SimplicityExecutionResult {
+  return executeStrict("MINT", "mint", mintWitnessString(witness), MINT_CMR, opts);
 }
 
-/** Execute the Simplicity REDEEM predicate. Returns "PASS" | "FAIL". */
-export function executeRedeem(witness: RedeemWitness): "PASS" | "FAIL" {
-  return execute("redeem", redeemWitnessString(witness), REDEEM_CMR);
+/**
+ * Execute the REAL V3 REDEEM Simplicity predicate. Same strict contract as
+ * executeMintV3 (exact CMR + successful Bit Machine run required for PASS).
+ */
+export function executeRedeemV3(
+  witness: RedeemWitness,
+  opts: SimplicityExecOptions = {},
+): SimplicityExecutionResult {
+  return executeStrict("REDEEM", "redeem", redeemWitnessString(witness), REDEEM_CMR, opts);
 }

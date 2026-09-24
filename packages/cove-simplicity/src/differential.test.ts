@@ -4,7 +4,7 @@ import { PUBLIC_SUPPLY } from "@crclaunch/cove-economics";
 import {
   MINT_CMR,
   MINT_CMR_V1,
-  executeMint,
+  executeMintV3,
   isSimplicityAvailable,
   type MintWitness,
 } from "./simplicity.js";
@@ -57,7 +57,7 @@ function tsValid(w: MintWitness): boolean {
 }
 
 function simplicityValid(w: MintWitness): boolean {
-  return executeMint(w) === "PASS";
+  return executeMintV3(w).result === "PASS";
 }
 
 function expectAgree(w: MintWitness): void {
@@ -150,41 +150,41 @@ describe("V3 overflow enforcement (u64 wraparound must be rejected)", () => {
   it.skipIf(!isSimplicityAvailable())("supply + amount wrap → MINT FAIL", () => {
     // prev = u64::MAX, amount = 1: sum wraps to 0. le_64(prev, sum) must fail.
     expect(
-      executeMint({
+      executeMintV3({
         amount: 1n,
         prevSupply: U64MAX,
         nextSupply: 0n,
         prevReserve: 0n,
         nextReserve: 1n,
         contribution: 1n,
-      }),
+      }).result,
     ).toBe("FAIL");
   });
 
   it.skipIf(!isSimplicityAvailable())("backing + contribution wrap → MINT FAIL", () => {
     expect(
-      executeMint({
+      executeMintV3({
         amount: 1n,
         prevSupply: 0n,
         nextSupply: 1n,
         prevReserve: U64MAX,
         nextReserve: 0n,
         contribution: 1n,
-      }),
+      }).result,
     ).toBe("FAIL");
   });
 
   it.skipIf(!isSimplicityAvailable())("exact u64 boundary (no wrap) is handled", () => {
     // prev = 0, amount = 1: valid at the boundary (no overflow).
     expect(
-      executeMint({
+      executeMintV3({
         amount: 1n,
         prevSupply: 0n,
         nextSupply: 1n,
         prevReserve: 0n,
         nextReserve: 1n,
         contribution: 1n,
-      }),
+      }).result,
     ).toBe("PASS");
   });
 });

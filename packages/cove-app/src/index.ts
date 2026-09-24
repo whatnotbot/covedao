@@ -29,3 +29,15 @@ export {
 export { getV3Status, type V3Status } from "./health.js";
 export type { V3TokenSummary } from "./token-read.js";
 export { listV3Tokens, getV3TokenDetail } from "./token-read.js";
+export {
+  deriveMainnetStage,
+  mainnetProfileComplete,
+  missingOwnerDecisions,
+  assertNoLocalGuardianKeyOnMainnet,
+  assertNoRecoveryPrivateKeyOnMainnet,
+  OWNER_DECISION_KEYS,
+  type MainnetStage,
+  type MainnetProfile,
+  type MainnetRecoveryProfile,
+  type MainnetHealth,
+} from "./mainnet.js";

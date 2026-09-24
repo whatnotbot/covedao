@@ -1,0 +1,49 @@
+name: Cove V3 — mainnet readiness gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  readiness:
+    name: protocol freeze + recovery profile + fail-closed mainnet config + secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check dependency graph (no cycles, simplicity ⇏ guardian)
+        run: node scripts/check-dependency-graph.mjs
+
+      - name: Check V3 architecture (no legacy CRC adapter/account/graduation/DEX)
+        run: node scripts/check-v3-architecture.mjs
+
+      - name: Secret scan (no leaked private keys/WIF/test-keys/.env in tracked tree)
+        run: node scripts/check-secrets.mjs
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests (frozen manifest, vault profile goldens, mainnet fail-closed, recovery ordering)
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build

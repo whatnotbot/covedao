@@ -824,3 +824,57 @@ export const coveV3AppTransactions = pgTable(
     index("cove_v3_app_tx_wallet_idx").on(t.network, t.walletScript, t.createdAt),
   ],
 );
+
+// ── Cove V3 Guardian durable audit + signing journal (Phase 8) ─────────────
+// Tamper-evident Guardian audit history and the per-backing-outpoint signing
+// journal (double-sign protection). Off-chain operational state; no secrets.
+
+export const coveV3GuardianAudit = pgTable(
+  "cove_v3_guardian_audit",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    network: text("network").notNull(),
+    requestId: text("request_id").notNull(),
+    operation: text("operation").notNull(),
+    tokenId: text("token_id").notNull(),
+    backingTxid: text("backing_txid").notNull(),
+    backingVout: integer("backing_vout").notNull(),
+    prevStateHash: text("prev_state_hash").notNull(),
+    nextStateHash: text("next_state_hash").notNull(),
+    amountAtoms: atoms("amount_atoms").notNull(),
+    grossSats: atoms("gross_sats").notNull(),
+    protocolFeeSats: atoms("protocol_fee_sats").notNull(),
+    minerFeeSats: atoms("miner_fee_sats").notNull(),
+    policyVersion: integer("policy_version").notNull(),
+    vaultProfileVersion: text("vault_profile_version").notNull(),
+    expectedCmr: text("expected_cmr").notNull(),
+    actualCmr: text("actual_cmr").notNull(),
+    simplicityResult: text("simplicity_result").notNull(),
+    referencePolicyResult: text("reference_policy_result").notNull(),
+    unsignedTxDigest: text("unsigned_tx_digest").notNull(),
+    decision: text("decision").notNull(),
+    rejectionReason: text("rejection_reason"),
+    beforeSignPersistedAt: timestamp("before_sign_persisted_at", { withTimezone: true }).notNull(),
+    signedAt: timestamp("signed_at", { withTimezone: true }),
+    previousAuditHash: text("previous_audit_hash").notNull(),
+    auditHash: text("audit_hash").notNull(),
+  },
+  (t) => [
+    uniqueIndex("cove_v3_guardian_audit_hash_uq").on(t.network, t.auditHash),
+    index("cove_v3_guardian_audit_outpoint_idx").on(t.network, t.backingTxid, t.backingVout),
+  ],
+);
+
+export const coveV3SigningJournal = pgTable(
+  "cove_v3_signing_journal",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    network: text("network").notNull(),
+    backingTxid: text("backing_txid").notNull(),
+    backingVout: integer("backing_vout").notNull(),
+    unsignedTxDigest: text("unsigned_tx_digest").notNull(),
+    signatureHash: text("signature_hash"),
+    committedAt: timestamp("committed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("cove_v3_signing_journal_outpoint_uq").on(t.network, t.backingTxid, t.backingVout)],
+);

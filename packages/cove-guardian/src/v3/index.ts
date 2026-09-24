@@ -78,3 +78,13 @@ export {
   type RedeemResult,
   type TransferResult,
 } from "./builder.js";
+export {
+  GUARDIAN_AUDIT_DOMAIN,
+  canonicalAuditRecordBytes,
+  computeGuardianAuditHash,
+  verifyGuardianAuditChain,
+  InMemorySigningJournal,
+  type GuardianAuditDigestFields,
+  type SigningJournalStore,
+  type SigningReservation,
+} from "./journal.js";

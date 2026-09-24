@@ -41,3 +41,4 @@ export {
   type MainnetRecoveryProfile,
   type MainnetHealth,
 } from "./mainnet.js";
+export { PostgresSigningJournal } from "./journal.js";

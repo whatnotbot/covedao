@@ -66,3 +66,15 @@ export type {
   SignedTransitionResult,
   AuditRecord,
 } from "./types.js";
+export {
+  buildDeployPsbtV3,
+  buildMintPsbtV3,
+  buildRedeemPsbtV3,
+  buildTransferPsbtV2,
+  RESERVE_ANCHOR_SATS,
+  type ResolvedInput,
+  type DeployResult,
+  type MintResult,
+  type RedeemResult,
+  type TransferResult,
+} from "./builder.js";

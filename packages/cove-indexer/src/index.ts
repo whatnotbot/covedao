@@ -1,7 +1,9 @@
 /**
  * LEGACY / REFERENCE — OP_RETURN Cove V1 + indexer-authoritative balances.
- * Not the production token protocol; see packages/cove-covenant and
- * docs/COVE_COVENANT_ARCHITECTURE.md. Do not reactivate as balance authority.
+ * NOT the production token protocol. The production Cove V3 indexer lives in
+ * `./v3` (import `@crclaunch/cove-indexer/v3`). This entrypoint is kept only for
+ * historical compatibility; do not use it as balance authority or as the
+ * production indexer.
  */
 export { CoveIndexer } from "./indexer.js";
 export type {

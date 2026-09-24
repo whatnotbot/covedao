@@ -286,6 +286,18 @@ importers:
       '@crclaunch/config':
         specifier: workspace:*
         version: link:../config
+      '@crclaunch/cove-covenant':
+        specifier: workspace:*
+        version: link:../cove-covenant
+      '@crclaunch/cove-economics':
+        specifier: workspace:*
+        version: link:../cove-economics
+      '@crclaunch/cove-vault':
+        specifier: workspace:*
+        version: link:../cove-vault
+      '@crclaunch/cove-wire':
+        specifier: workspace:*
+        version: link:../cove-wire
       '@crclaunch/curve':
         specifier: workspace:*
         version: link:../curve
@@ -295,13 +307,25 @@ importers:
       '@crclaunch/protocol':
         specifier: workspace:*
         version: link:../protocol
+      bitcoinjs-lib:
+        specifier: ^6.1.7
+        version: 6.1.8
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
       drizzle-orm:
         specifier: ^0.36.4
         version: 0.36.4(@types/pg@8.23.1)(@types/react@19.3.0)(pg@8.23.0)(react@19.0.0)
+      tiny-secp256k1:
+        specifier: ^2.2.3
+        version: 2.2.4
     devDependencies:
+      '@crclaunch/cove-guardian':
+        specifier: workspace:*
+        version: link:../cove-guardian
+      ecpair:
+        specifier: ^2.1.0
+        version: 2.1.0
       tsx:
         specifier: ^4.19.2
         version: 4.23.15

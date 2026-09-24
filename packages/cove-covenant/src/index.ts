@@ -58,6 +58,7 @@ export {
 export { TOKEN_CARRIER_SATS, isCarrierValue } from "./carrier.js";
 export {
   CoveChainView,
+  type CoveCanonicalView,
   type OutPoint,
   type TokenUtxo,
   type TokenMeta,

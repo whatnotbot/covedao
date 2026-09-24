@@ -32,6 +32,19 @@ export interface BackingView {
   outpoint: OutPoint;
 }
 
+/**
+ * Minimal canonical view interface the Guardian and the production indexer
+ * share (§7/§23). The Guardian resolves actual tx input outpoints against a
+ * pure synchronous view; the caller never labels arbitrary BTC inputs as Cove
+ * inputs. `CoveChainView` and the indexer's DB snapshot loader both implement it.
+ */
+export interface CoveCanonicalView {
+  getBackingStateByOutpoint(outpoint: OutPoint): CoveStateV2 | null;
+  getCurrentBackingState(tokenId: Buffer): CoveStateV2 | null;
+  getBackingOutpoint(tokenId: Buffer): OutPoint | null;
+  getTokenUtxo(outpoint: OutPoint): TokenUtxo | null;
+}
+
 function opKey(o: OutPoint): string {
   return `${o.txid}:${o.vout}`;
 }

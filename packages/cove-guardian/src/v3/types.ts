@@ -1,4 +1,4 @@
-import type { CoveStateV2, OutPoint, TokenUtxo } from "@crclaunch/cove-covenant";
+import type { CoveStateV2, OutPoint } from "@crclaunch/cove-covenant";
 import type { SimplicityExecutionResult } from "@crclaunch/cove-simplicity";
 
 /**
@@ -11,18 +11,11 @@ export type GuardianV3Network = "regtest" | "signet" | "testnet";
 export const MAINNET_DISABLED = true as const;
 
 /**
- * Minimal canonical view interface the Guardian resolves against. It reads
- * canonical backing/token state from ACTUAL transaction input outpoints — the
- * caller never labels arbitrary BTC inputs as Cove inputs. The Phase 4.3
- * `CoveChainView` satisfies this; a future production indexer will implement
- * another adapter.
+ * Minimal canonical view interface the Guardian resolves against. It lives in
+ * cove-covenant (shared with the production indexer's snapshot loader); re-exported
+ * here for the Guardian's own import surface.
  */
-export interface CoveCanonicalView {
-  getBackingStateByOutpoint(outpoint: OutPoint): CoveStateV2 | null;
-  getCurrentBackingState(tokenId: Buffer): CoveStateV2 | null;
-  getBackingOutpoint(tokenId: Buffer): OutPoint | null;
-  getTokenUtxo(outpoint: OutPoint): TokenUtxo | null;
-}
+export type { CoveCanonicalView } from "@crclaunch/cove-covenant";
 
 /** Typed reasons the Guardian refuses to sign (fail-closed). */
 export type ValidationFailureCode =

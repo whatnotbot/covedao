@@ -1,5 +1,6 @@
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
+import { resolve } from "node:path";
 import { ECPairFactory, type ECPairInterface } from "ecpair";
 import { CoreRpcProvider } from "@crclaunch/bitcoin";
 import { CoveChainView, TOKEN_CARRIER_SATS } from "@crclaunch/cove-covenant";
@@ -46,7 +47,7 @@ const ECPair = ECPairFactory(ecc);
 const RPC_URL = process.env.COVE_REGTEST_RPC_URL ?? "http://127.0.0.1:18443";
 const RPC_USER = process.env.COVE_REGTEST_RPC_USER ?? "user";
 const RPC_PASSWORD = process.env.COVE_REGTEST_RPC_PASSWORD ?? "pass";
-const PROFILE_PATH = process.env.COVE_V3_MAINNET_PROFILE_PATH ?? "test/fixtures/mainnet-profile.json";
+const PROFILE_PATH = resolve(process.env.INIT_CWD ?? process.cwd(), process.env.COVE_V3_MAINNET_PROFILE_PATH ?? "test/fixtures/mainnet-profile.json");
 
 const MINER_FEE = 1_000n;
 const NONCE = Buffer.alloc(32, 0xab);

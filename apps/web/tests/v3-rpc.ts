@@ -35,8 +35,10 @@ export async function fund(address: string, btc: number): Promise<string> {
 
 /** Non-token-carrier BTC UTXOs for an address (carriers are exactly 1000 sats). */
 export async function listBtcUtxos(address: string): Promise<{ txid: string; vout: number }[]> {
-  const rows = await rpc<{ txid: string; vout: number; amount: number }[]>("listunspent", [0, 9999999, [address]]);
-  return rows.filter((r) => Math.round(r.amount * 1e8) > 1000).map((r) => ({ txid: r.txid, vout: r.vout }));
+  // scantxoutset scans the whole UTXO set for the address (listunspent only
+  // sees the node's OWN wallet, which does not track the E2E identities).
+  const res = await rpc<{ unspents: { txid: string; vout: number; amount: number }[] }>("scantxoutset", ["start", [{ desc: `addr(${address})` }]]);
+  return res.unspents.filter((u) => Math.round(u.amount * 1e8) > 1000).map((u) => ({ txid: u.txid, vout: u.vout }));
 }
 
 export function p2wpkhAddress(privHex: string): string {

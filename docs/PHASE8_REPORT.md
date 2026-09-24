@@ -65,17 +65,23 @@ feeScript, buy/redeem/p2pFeeBps, canary allowlist + caps.
 - Double-sign race test: 20 concurrent distinct digests → exactly one RESERVED,
   19 CONFLICT (green).
 
+## Guardian service boundary (done this round)
+
+- `GuardianTransitionSigner` interface (only `signMint`/`signRedeem`/`health` — no
+  generic sign). `LocalGuardianTransitionSigner` validates → durably persists a
+  VALIDATED_TO_SIGN audit BEFORE signing (failure → AUDIT_PERSISTENCE_FAILED,
+  zero signature) → reserves the backing outpoint (conflict →
+  BACKING_ALREADY_SIGNED) → signs → records after-sign. `RemoteGuardianTransitionSigner`
+  is a fail-closed stub (MAINNET_SIGNER_NOT_READY) until a custody backend exists.
+
 ## Honest status — NOT_READY for canary
 
 Phase 8A code readiness is **NOT complete**. The following remain as code/tooling
 (not owner ceremony) blockers, and this report must not be read as
 READY_FOR_CONTROLLED_MAINNET_CANARY:
 
-1. **Separate Guardian service boundary** (remote `GuardianTransitionSigner`,
-   no local key on mainnet web/worker, durable-before-sign wired into the async
-   signing entry points) — not implemented; only the fail-closed config guard
-   + journal/audit primitives exist.
-2. Risk-policy caps enforced at the signer, backup/restore + reindex drills,
-   monitoring/alerts, rate limits, release manifest, readiness CLI.
+1. Risk-policy caps enforced at the signer (max gross/redeem/backing, allowlist).
+2. Operational hardening: backup/restore + reindex drills, monitoring/alerts,
+   rate limits, release manifest, readiness CLI.
 
 Final readiness: **NOT_READY**.

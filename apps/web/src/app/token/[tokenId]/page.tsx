@@ -280,7 +280,7 @@ export default function TokenPage() {
               {tab === "transfer" && (
                 <label className="block">
                   <span className="text-xs text-gray-400">Recipient scriptPubKey (hex)</span>
-                  <input value={recipient} onChange={(e) => setRecipient(e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-bg px-4 py-2 text-sm text-white outline-none focus:border-brand" />
+                  <input value={recipient} placeholder="Recipient scriptPubKey" onChange={(e) => setRecipient(e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-bg px-4 py-2 text-sm text-white outline-none focus:border-brand" />
                 </label>
               )}
               <button

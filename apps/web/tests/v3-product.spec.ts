@@ -10,6 +10,12 @@ const ECPair = ECPairFactory(ecc);
 
 test.describe.configure({ mode: "serial" });
 
+// The full journey mutates shared on-chain state and must run exactly once —
+// desktop only. Mobile coverage is a separate read-only smoke spec.
+test.beforeEach(async (_fixtures, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "full product journey is desktop-only");
+});
+
 const BASE = "http://localhost:3100";
 
 async function status() {

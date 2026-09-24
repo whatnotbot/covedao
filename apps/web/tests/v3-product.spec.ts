@@ -184,6 +184,7 @@ test("E2E-008 cancel: Alice cancels a second listing", async ({ browser }) => {
   await expect(page.getByText(/listing created/i).first()).toBeVisible({ timeout: 60_000 });
 
   await page.goto(`${BASE}/wallet`);
+  await page.getByRole("button", { name: /connect wallet/i }).click();
   await page.getByRole("button", { name: "Cancel", exact: true }).first().click();
   await expect(page.getByText(/listing cancelled/i).first()).toBeVisible({ timeout: 60_000 });
 });

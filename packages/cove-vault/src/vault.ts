@@ -2,6 +2,7 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { numsInternalKey } from "./nums.js";
 import { buildExecutionLeaf, buildRecoveryLeaf } from "./leaves.js";
+import { buildRecoveryLeafForProfile, dev1RecoveryProfile, type VaultRecoveryProfile } from "./vaultProfile.js";
 import {
   LEAF_VERSION_TAPSCRIPT,
   merklePaths,
@@ -122,6 +123,8 @@ export interface BuildCoveVaultV3Params {
   redeemPolicyIdentityHash: Buffer;
   guardianXOnly: Buffer;
   ownerXOnly: Buffer;
+  /** Versioned recovery profile; defaults to DEV1 (single key, 144 CSV). */
+  recoveryProfile?: VaultRecoveryProfile;
   network?: bitcoin.networks.Network;
 }
 
@@ -129,7 +132,8 @@ export function buildCoveVaultV3(params: BuildCoveVaultV3Params): CoveVaultV3 {
   const numsKey = numsInternalKey();
   const mintScript = buildExecutionLeaf(params.mintPolicyIdentityHash, params.guardianXOnly);
   const redeemScript = buildExecutionLeaf(params.redeemPolicyIdentityHash, params.guardianXOnly);
-  const recoveryScript = buildRecoveryLeaf(params.ownerXOnly);
+  const recoveryProfile = params.recoveryProfile ?? dev1RecoveryProfile(params.ownerXOnly);
+  const recoveryScript = buildRecoveryLeafForProfile(recoveryProfile);
 
   const mintTapleaf = tapleafHash(mintScript, LEAF_VERSION_TAPSCRIPT);
   const redeemTapleaf = tapleafHash(redeemScript, LEAF_VERSION_TAPSCRIPT);

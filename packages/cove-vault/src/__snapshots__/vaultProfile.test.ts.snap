@@ -1,0 +1,3 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`MAINNET1 threshold recovery profile (§3-§6) > freezes the 2-of-3 recovery leaf bytes 1`] = `"029000b275201428f3a3532ff4f1cac70f7292bfad06d1037f800ee8839b56ebba917a22e900ac209c1f585aa80762f9f4458f6806978b7befb46c7b68af82d399630793ff1a2b50ba20baf7689c0a3558fb604589036a8d1e4b685d909f6e0e2c6018a14049ae64ec26ba529c"`;

@@ -13,6 +13,16 @@ export {
 } from "./policyIdentity.js";
 export { RECOVERY_CSV_BLOCKS, buildExecutionLeaf, buildRecoveryLeaf } from "./leaves.js";
 export {
+  sortRecoveryPubkeys,
+  buildThresholdRecoveryLeaf,
+  buildThresholdRecoveryWitness,
+  buildDev1RecoveryLeaf,
+  buildRecoveryLeafForProfile,
+  dev1RecoveryProfile,
+  type VaultProfileVersion,
+  type VaultRecoveryProfile,
+} from "./vaultProfile.js";
+export {
   LEAF_VERSION_TAPSCRIPT,
   taggedHash,
   tapleafHash,

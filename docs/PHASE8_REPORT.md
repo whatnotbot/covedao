@@ -74,14 +74,24 @@ feeScript, buy/redeem/p2pFeeBps, canary allowlist + caps.
   BACKING_ALREADY_SIGNED) → signs → records after-sign. `RemoteGuardianTransitionSigner`
   is a fail-closed stub (MAINNET_SIGNER_NOT_READY) until a custody backend exists.
 
+## Risk policy + readiness CLI (done this round)
+
+- `GuardianRiskPolicy` enforced INSIDE the signer before audit/sign (max gross /
+  redeem payout / backing / miner fee + canary token allowlist) — a compromised
+  web/API cannot bypass caps.
+- `scripts/cove-v3-mainnet-readiness.mjs` reports the deterministic readiness
+  gate + OWNER_DECISION_REQUIRED gaps (defaults to NOT_READY).
+
 ## Honest status — NOT_READY for canary
 
-Phase 8A code readiness is **NOT complete**. The following remain as code/tooling
-(not owner ceremony) blockers, and this report must not be read as
-READY_FOR_CONTROLLED_MAINNET_CANARY:
+The frozen-protocol + security-critical code is complete and CI-green, but Phase
+8A is **not complete**: the following operational items remain unproven (code
+ready, execution pending):
 
-1. Risk-policy caps enforced at the signer (max gross/redeem/backing, allowlist).
-2. Operational hardening: backup/restore + reindex drills, monitoring/alerts,
-   rate limits, release manifest, readiness CLI.
+1. Backup/restore drill + reindex drill (documented in runbooks, not executed as CI).
+2. Monitoring/alerts + rate-limit implementations (runbooks reference them; not built).
+3. Production-profile full regtest lifecycle (full Phase-7 journey under the
+   MAINNET1 vault profile + remote-signer + risk caps) — not run.
+4. Operator ceremony + committed public mainnet profile values (owner decisions).
 
 Final readiness: **NOT_READY**.

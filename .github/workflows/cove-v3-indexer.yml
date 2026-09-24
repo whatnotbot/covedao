@@ -60,6 +60,11 @@ jobs:
         env:
           DATABASE_URL: ${{ env.COVE_TEST_DATABASE_URL }}
 
+      - name: Run durable signer store integration test (journal + audit vs Postgres)
+        run: pnpm --filter @crclaunch/cove-app test -- journal-audit.integration.test.ts
+        env:
+          COVE_TEST_DATABASE_URL: ${{ env.COVE_TEST_DATABASE_URL }}
+
       - name: Download + checksum-verify pinned Bitcoin Core
         run: |
           set -euo pipefail

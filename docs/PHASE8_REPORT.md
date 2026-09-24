@@ -82,16 +82,23 @@ feeScript, buy/redeem/p2pFeeBps, canary allowlist + caps.
 - `scripts/cove-v3-mainnet-readiness.mjs` reports the deterministic readiness
   gate + OWNER_DECISION_REQUIRED gaps (defaults to NOT_READY).
 
+## Release manifest + invariant monitors (done this round)
+
+- `scripts/cove-v3-release-manifest.mjs`: deterministic release manifest (git
+  commit, frozen CMRs, policy/vault-profile versions, content hash) — no secrets.
+- `cove-app/invariants.ts`: `checkBackingInvariant` (backing == R(supply),
+  btcValue == anchor+backing) and `checkSupplyInvariant` (sum unspent UTXOs ==
+  issued supply) — per-token CRITICAL results.
+
 ## Honest status — NOT_READY for canary
 
-The frozen-protocol + security-critical code is complete and CI-green, but Phase
-8A is **not complete**: the following operational items remain unproven (code
-ready, execution pending):
+All frozen-protocol + security-critical code is complete and CI-green. Phase 8A
+is **not fully complete**: the following operational items remain unproven:
 
-1. Backup/restore drill + reindex drill (documented in runbooks, not executed as CI).
-2. Monitoring/alerts + rate-limit implementations (runbooks reference them; not built).
+1. Backup/restore + reindex **drills** (documented in runbooks, not executed in CI).
+2. Monitoring/alerts + rate-limit **implementations** (runbook-referenced, not built).
 3. Production-profile full regtest lifecycle (full Phase-7 journey under the
-   MAINNET1 vault profile + remote-signer + risk caps) — not run.
+   MAINNET1 vault profile + remote signer + risk caps) — not run.
 4. Operator ceremony + committed public mainnet profile values (owner decisions).
 
 Final readiness: **NOT_READY**.

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { TokenCard, type V3TokenCardData } from "@/components/TokenCard";
+import { Tile } from "@/components/Tile";
 import { useSparklines } from "@/lib/use-sparklines";
 
 /**
@@ -133,15 +134,6 @@ Every token is a flat 1,000,000,000 supply with nothing held back for the
           operators can check each other.
         </p>
       </section>
-    </div>
-  );
-}
-
-function Tile({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="tile">
-      <div className="tile-value">{value}</div>
-      <div className="tile-label">{label}</div>
     </div>
   );
 }

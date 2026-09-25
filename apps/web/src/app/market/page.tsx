@@ -8,6 +8,7 @@ import { DEMO_LISTINGS, DEMO_TOKENS } from "@/lib/demo-tokens";
 import { useWallet } from "@/components/WalletProvider";
 import { fmtBtc, fmtTokens, fmtInt } from "@/lib/format";
 import { Sparkline } from "@/components/Sparkline";
+import { Tile } from "@/components/Tile";
 import { useSparklines } from "@/lib/use-sparklines";
 import { unitPriceSats } from "@/lib/ohlc";
 import { verifyClientIntent } from "@crclaunch/wallets";
@@ -266,15 +267,6 @@ function MarketContent() {
 /** The server's own words when it has them; the short copy otherwise. */
 function errorText(j: { error?: { message?: string; detail?: string } }): string {
   return j.error?.detail || j.error?.message || "Something went wrong.";
-}
-
-function Tile({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="tile">
-      <div className="tile-value">{value}</div>
-      <div className="tile-label">{label}</div>
-    </div>
-  );
 }
 
 /** Status is protocol state, so it gets the semantic chips, not grey text. */

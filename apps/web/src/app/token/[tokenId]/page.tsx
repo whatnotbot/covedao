@@ -12,6 +12,7 @@ import { FeePicker, useFeeRates, type FeeRatesResponse, type FeeTier } from "@/c
 import { TxStatus } from "@/components/TxStatus";
 import { TokenActivity } from "@/components/TokenActivity";
 import { TokenImage } from "@/components/TokenImage";
+import { Tile } from "@/components/Tile";
 import { unitPriceSats } from "@/lib/ohlc";
 
 interface Detail {
@@ -354,12 +355,29 @@ function TokenContent() {
         </div>
 
         <div className="mt-8 grid grid-cols-2 gap-px bg-rule sm:grid-cols-4">
-          <Tile value={fmtBtc(BigInt(detail.backingSats))} label="BTC backing" />
-          <Tile value={fmtTokens(BigInt(detail.remainingCapacityAtoms))} label="Remaining" />
-          <Tile value={fmtInt(detail.holderCount)} label="Holders" />
           <Tile
+            size="md"
+            value={fmtBtc(BigInt(detail.backingSats))}
+            label="BTC backing"
+            help={`Real Bitcoin held in a vault for ${detail.ticker} — you can always sell back into it, no buyer needed.`}
+          />
+          <Tile
+            size="md"
+            value={fmtTokens(BigInt(detail.remainingCapacityAtoms))}
+            label="Remaining"
+            help="Tokens nobody has bought yet. The price steps up as they go."
+          />
+          <Tile
+            size="md"
+            value={fmtInt(detail.holderCount)}
+            label="Holders"
+            help={`Wallets holding at least one ${detail.ticker}, counted from confirmed blocks.`}
+          />
+          <Tile
+            size="md"
             value={detail.bestAskSats ? fmtBtc(BigInt(detail.bestAskSats)) : "—"}
             label={detail.activeListingCount ? `Best ask · ${detail.activeListingCount} listed` : "Best ask"}
+            help="The cheapest price another holder is asking — person to person, not the vault."
           />
         </div>
       </section>
@@ -657,15 +675,6 @@ function Line({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
     <div className="flex items-baseline justify-between gap-4">
       <dt className={strong ? "text-bone" : "text-bone-dim"}>{k}</dt>
       <dd className={`tabular-nums ${strong ? "text-base text-bone" : "text-bone-2"}`}>{v}</dd>
-    </div>
-  );
-}
-
-function Tile({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="tile">
-      <div className="text-lg tabular-nums text-bone">{value}</div>
-      <div className="tile-label">{label}</div>
     </div>
   );
 }

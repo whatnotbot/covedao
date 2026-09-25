@@ -8,6 +8,8 @@ import { DEMO_TOKENS } from "@/lib/demo-tokens";
 import { fmtBtc, fmtInt, fmtTokens } from "@/lib/format";
 import { Sparkline } from "@/components/Sparkline";
 import { TokenImage } from "@/components/TokenImage";
+import { Tile } from "@/components/Tile";
+import { InfoTip } from "@/components/InfoTip";
 import { useSparklines } from "@/lib/use-sparklines";
 
 type SortKey = "progress" | "backing" | "holders" | "newest";
@@ -129,7 +131,11 @@ function ExploreContent() {
         {/* Aggregate row — the shape of the whole set before any single token. */}
         <div className="mt-6 grid grid-cols-3 gap-px bg-rule">
           <Tile value={String(rows.length)} label="Tokens" />
-          <Tile value={fmtBtc(totalBacking)} label="Total backing" />
+          <Tile
+            value={fmtBtc(totalBacking)}
+            label="Total backing"
+            help="All the Bitcoin held across every token's vault. Each token has its own."
+          />
           <Tile value={fmtInt(totalHolders)} label="Holders" />
         </div>
       </section>
@@ -300,7 +306,15 @@ function TokenTable({
             <th>Trend</th>
             <th>Issued / cap</th>
             <th>Progress</th>
-            <th>Backing</th>
+            <th>
+              <span className="inline-flex items-center gap-1.5">
+                Backing
+                <InfoTip label="backing">
+                  Real Bitcoin held in a vault for this token — holders can always sell back into
+                  it, no buyer needed.
+                </InfoTip>
+              </span>
+            </th>
             <th>Stage</th>
             <th>Holders</th>
             <th>Best ask</th>
@@ -370,15 +384,6 @@ function TokenTable({
           })}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function Tile({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="tile">
-      <div className="tile-value">{value}</div>
-      <div className="tile-label">{label}</div>
     </div>
   );
 }

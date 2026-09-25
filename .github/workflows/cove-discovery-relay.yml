@@ -1,0 +1,85 @@
+name: Cove crc-20 discovery envelope — real relay proof
+
+# The discovery envelope requires TWO OP_RETURN outputs in one transaction,
+# which is `multi-op-return` (non-standard) before Bitcoin Core 30 relaxed the
+# datacarrier policy. That boundary is outside our control, so it is measured
+# against a live node on every change rather than assumed. This job pins Core
+# 31.1 deliberately — the rest of the suite runs on 28.1, and the contrast is
+# the point.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  relay:
+    name: dual OP_RETURN relays and mines on Bitcoin Core 31.1
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      BITCOIN_VERSION: "31.1"
+      COVE_RELAY_RPC_URL: http://127.0.0.1:18556
+      COVE_RELAY_RPC_AUTH: "u:p"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch Bitcoin Core ${{ env.BITCOIN_VERSION }}
+        run: |
+          set -euo pipefail
+          BASE="https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_VERSION}"
+          TARBALL="bitcoin-${BITCOIN_VERSION}-x86_64-linux-gnu.tar.gz"
+          curl -sSL --retry 3 -o "$TARBALL" "$BASE/$TARBALL"
+          curl -sSL --retry 3 -o SHA256SUMS "$BASE/SHA256SUMS"
+          grep " $TARBALL\$" SHA256SUMS | sha256sum -c -
+          tar xzf "$TARBALL"
+          echo "$PWD/bitcoin-${BITCOIN_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Start regtest node
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cove-relay
+          bitcoind -regtest -datadir=/tmp/cove-relay \
+            -rpcuser=u -rpcpassword=p -rpcport=18556 \
+            -listen=0 -fallbackfee=0.0001 -txindex -daemon
+          for i in $(seq 1 30); do
+            bitcoin-cli -regtest -datadir=/tmp/cove-relay \
+              -rpcuser=u -rpcpassword=p -rpcport=18556 getblockcount >/dev/null 2>&1 && break
+            sleep 1
+          done
+          bitcoin-cli -regtest -datadir=/tmp/cove-relay -rpcuser=u -rpcpassword=p \
+            -rpcport=18556 getnetworkinfo | grep subversion
+
+      # Proves the dual envelope relays, mines, and that the JSON payload is
+      # byte-identical to the canonical re-derivation of the binary envelope.
+      - name: Relay proof
+        run: pnpm --filter @crclaunch/cove-wire test
+
+      # Guards against the test passing vacuously: with no node reachable it
+      # must SKIP, never silently succeed as though it had proven something.
+      - name: Test skips (does not pass) when no node is configured
+        run: |
+          set -euo pipefail
+          OUT=$(COVE_RELAY_RPC_URL= pnpm --filter @crclaunch/cove-wire test 2>&1)
+          echo "$OUT" | tail -5
+          echo "$OUT" | grep -qE "skipped|↓" || {
+            echo "expected the relay test to be skipped without COVE_RELAY_RPC_URL"; exit 1; }
+
+      - name: Node log (on failure)
+        if: failure()
+        run: tail -60 /tmp/cove-relay/regtest/debug.log || true

@@ -99,8 +99,8 @@ export default function LaunchPage() {
   return (
     <div className="mx-auto max-w-xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Launch a token</h1>
-        <p className="text-sm text-gray-400">Precomputable tokenId, deterministic geometric20 backing, policy V3.</p>
+        <h1 className="text-2xl text-bone">Launch a token</h1>
+        <p className="text-sm text-bone-dim">Precomputable tokenId, deterministic geometric20 backing, policy V3.</p>
       </div>
 
       <div className="space-y-3">
@@ -112,12 +112,12 @@ export default function LaunchPage() {
       </div>
 
       {!prepared ? (
-        <button onClick={prepare} disabled={busy} className="w-full rounded-xl bg-brand px-6 py-3 font-semibold text-white hover:bg-brand-bright disabled:opacity-50">
+        <button onClick={prepare} disabled={busy} className="w-full bg-signal px-6 py-3 text-bone hover:bg-[#F0A253] disabled:opacity-50">
           {busy ? "Preparing…" : "Review launch identity"}
         </button>
       ) : (
-        <div className="rounded-2xl border border-border bg-surface p-5 text-sm">
-          <h2 className="font-semibold text-white">Review</h2>
+        <div className="border border-rule bg-ink-2 p-5 text-sm">
+          <h2 className="text-bone">Review</h2>
           <Row k="tokenId" v={<span className="break-all font-mono text-xs">{prepared.tokenId}</span>} />
           <Row k="Ticker" v={`$${prepared.ticker}`} />
           <Row k="Policy" v={`V${prepared.policyVersion}`} />
@@ -128,11 +128,11 @@ export default function LaunchPage() {
           <Row k="Vault anchor" v={`${prepared.vaultAnchorSats} sats`} />
           <div className="mt-4">
             {!connected ? (
-              <button onClick={() => void connect()} className="w-full rounded-xl bg-brand px-6 py-3 font-semibold text-white hover:bg-brand-bright">
+              <button onClick={() => void connect()} className="w-full bg-signal px-6 py-3 text-bone hover:bg-[#F0A253]">
                 Connect wallet to build
               </button>
             ) : (
-              <button onClick={buildAndSign} disabled={busy} className="w-full rounded-xl bg-brand px-6 py-3 font-semibold text-white hover:bg-brand-bright disabled:opacity-50">
+              <button onClick={buildAndSign} disabled={busy} className="w-full bg-signal px-6 py-3 text-bone hover:bg-[#F0A253] disabled:opacity-50">
                 {busy ? status || "Working…" : "Build, review and sign"}
               </button>
             )}
@@ -143,7 +143,7 @@ export default function LaunchPage() {
       {status && <p className="text-sm text-success">{status}</p>}
       {error && <p className="text-sm text-danger">{error}</p>}
       {tokenId && (
-        <a href={`/token/${tokenId}`} className="block text-center text-sm text-brand hover:underline">
+        <a href={`/token/${tokenId}`} className="block text-center text-sm text-signal hover:underline">
           Open token page →
         </a>
       )}
@@ -154,8 +154,8 @@ export default function LaunchPage() {
 function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <label className="block">
-      <span className="text-xs text-gray-400">{label}</span>
-      <input value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-surface px-4 py-2 text-sm text-white outline-none focus:border-brand" />
+      <span className="text-xs text-bone-dim">{label}</span>
+      <input value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full border border-rule bg-ink-2 px-4 py-2 text-sm text-bone outline-none focus:border-brand" />
     </label>
   );
 }
@@ -163,8 +163,8 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-border/40 py-1.5 last:border-0">
-      <span className="text-gray-500">{k}</span>
-      <span className="text-right text-gray-200">{v}</span>
+      <span className="text-bone-dim">{k}</span>
+      <span className="text-right text-bone">{v}</span>
     </div>
   );
 }

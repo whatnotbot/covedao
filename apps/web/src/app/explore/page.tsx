@@ -23,14 +23,14 @@ export default function ExplorePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Explore</h1>
-        <p className="text-sm text-gray-400">Confirmed Cove tokens (tokenId, ticker or name search).</p>
+        <h1 className="text-2xl text-bone">Explore</h1>
+        <p className="text-sm text-bone-dim">Confirmed Cove tokens (tokenId, ticker or name search).</p>
       </div>
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search tokenId, ticker or name"
-        className="w-full max-w-md rounded-xl border border-border bg-surface px-4 py-2 text-sm text-white outline-none focus:border-brand"
+        className="w-full max-w-md border border-rule bg-ink-2 px-4 py-2 text-sm text-bone outline-none focus:border-brand"
       />
       {!loaded ? (
         <Empty message="Loading…" />
@@ -48,5 +48,5 @@ export default function ExplorePage() {
 }
 
 function Empty({ message }: { message: string }) {
-  return <div className="rounded-2xl border border-dashed border-border bg-surface/40 px-6 py-12 text-center text-gray-400">{message}</div>;
+  return <div className="border border-dashed border-rule bg-ink-3 px-6 py-12 text-center text-bone-dim">{message}</div>;
 }

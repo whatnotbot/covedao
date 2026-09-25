@@ -99,34 +99,34 @@ export default function WalletPage() {
 
   if (!connected) {
     return (
-      <div className="rounded-2xl border border-dashed border-border bg-surface/40 px-6 py-12 text-center">
-        <p className="text-gray-400">Connect a wallet to view holdings.</p>
-        <button onClick={() => void connect()} className="mt-4 rounded-xl bg-brand px-6 py-3 font-semibold text-white hover:bg-brand-bright">Connect Wallet</button>
+      <div className="border border-dashed border-rule bg-ink-3 px-6 py-12 text-center">
+        <p className="text-bone-dim">Connect a wallet to view holdings.</p>
+        <button onClick={() => void connect()} className="mt-4 bg-signal px-6 py-3 text-bone hover:bg-[#F0A253]">Connect Wallet</button>
       </div>
     );
   }
 
-  if (!loaded || !portfolio) return <div className="text-gray-400">Loading wallet…</div>;
+  if (!loaded || !portfolio) return <div className="text-bone-dim">Loading wallet…</div>;
 
   const salesRequired = portfolio.fills.filter((f) => f.status === "BUYER_SIGNED");
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-white">Wallet</h1>
-        <p className="break-all font-mono text-xs text-gray-500">{address}</p>
+        <h1 className="text-2xl text-bone">Wallet</h1>
+        <p className="break-all font-mono text-xs text-bone-dim">{address}</p>
       </div>
 
       {salesRequired.length > 0 && (
-        <section className="rounded-2xl border border-warning/40 bg-surface p-5">
-          <h2 className="font-semibold text-white">Sales requiring signature</h2>
+        <section className="border border-warning/40 bg-ink-2 p-5">
+          <h2 className="text-bone">Sales requiring signature</h2>
           {salesRequired.map((f) => (
             <div key={f.id} className="mt-3 flex items-center justify-between border-b border-border/40 py-2 last:border-0">
               <div className="text-sm">
-                <div className="text-gray-200">{fmtTokens(BigInt(f.amountAtoms))} for {fmtBtc(BigInt(f.totalPriceSats))}</div>
-                <div className="font-mono text-xs text-gray-500">fill {f.id.slice(0, 8)}</div>
+                <div className="text-bone">{fmtTokens(BigInt(f.amountAtoms))} for {fmtBtc(BigInt(f.totalPriceSats))}</div>
+                <div className="font-mono text-xs text-bone-dim">fill {f.id.slice(0, 8)}</div>
               </div>
-              <button onClick={() => void sellerSign(f)} disabled={busy === f.id} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-bright disabled:opacity-50">
+              <button onClick={() => void sellerSign(f)} disabled={busy === f.id} className="bg-signal px-4 py-2 text-sm text-bone hover:bg-[#F0A253] disabled:opacity-50">
                 {busy === f.id ? "Signing…" : "Review & Sign Sale"}
               </button>
             </div>
@@ -135,16 +135,16 @@ export default function WalletPage() {
       )}
 
       <section>
-        <h2 className="text-lg font-semibold text-white">Holdings</h2>
+        <h2 className="text-lg text-bone">Holdings</h2>
         {portfolio.holdings.length === 0 ? (
-          <p className="mt-2 text-sm text-gray-400">No token holdings yet.</p>
+          <p className="mt-2 text-sm text-bone-dim">No token holdings yet.</p>
         ) : (
           <div className="mt-2 grid gap-3 sm:grid-cols-2">
             {portfolio.holdings.map((h) => (
-              <a key={h.tokenId} href={`/token/${h.tokenId}`} className="rounded-2xl border border-border bg-surface p-4">
-                <div className="font-mono text-xs text-gray-400">{h.tokenId.slice(0, 16)}…</div>
-                <div className="mt-1 text-xl font-semibold text-white">{fmtTokens(BigInt(h.amountAtoms))}</div>
-                <div className="text-xs text-gray-500">{h.utxoCount} token UTXO{h.utxoCount === 1 ? "" : "s"}</div>
+              <a key={h.tokenId} href={`/token/${h.tokenId}`} className="border border-rule bg-ink-2 p-4">
+                <div className="font-mono text-xs text-bone-dim">{h.tokenId.slice(0, 16)}…</div>
+                <div className="mt-1 text-xl text-bone">{fmtTokens(BigInt(h.amountAtoms))}</div>
+                <div className="text-xs text-bone-dim">{h.utxoCount} token UTXO{h.utxoCount === 1 ? "" : "s"}</div>
               </a>
             ))}
           </div>
@@ -152,19 +152,19 @@ export default function WalletPage() {
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold text-white">My listings</h2>
+        <h2 className="text-lg text-bone">My listings</h2>
         {portfolio.listings.length === 0 ? (
-          <p className="mt-2 text-sm text-gray-400">No listings.</p>
+          <p className="mt-2 text-sm text-bone-dim">No listings.</p>
         ) : (
           <div className="mt-2 space-y-2">
             {portfolio.listings.map((l) => (
-              <div key={l.listingId} className="flex items-center justify-between rounded-xl border border-border bg-surface p-3 text-sm">
+              <div key={l.listingId} className="flex items-center justify-between border border-rule bg-ink-2 p-3 text-sm">
                 <div>
-                  <div className="text-gray-200">{fmtTokens(BigInt(l.amountAtoms))} @ {fmtBtc(BigInt(l.totalPriceSats))}</div>
-                  <div className="text-xs text-gray-500">{l.status}</div>
+                  <div className="text-bone">{fmtTokens(BigInt(l.amountAtoms))} @ {fmtBtc(BigInt(l.totalPriceSats))}</div>
+                  <div className="text-xs text-bone-dim">{l.status}</div>
                 </div>
                 {l.status === "ACTIVE" && (
-                  <button onClick={() => void cancel(l.listingId)} disabled={busy === l.listingId} className="rounded-lg border border-border px-3 py-1.5 text-xs text-gray-300 hover:border-danger hover:text-danger disabled:opacity-50">
+                  <button onClick={() => void cancel(l.listingId)} disabled={busy === l.listingId} className="border border-rule px-3 py-1.5 text-xs text-bone-2 hover:border-danger hover:text-danger disabled:opacity-50">
                     Cancel
                   </button>
                 )}

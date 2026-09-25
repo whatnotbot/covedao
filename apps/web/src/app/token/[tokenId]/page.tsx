@@ -225,19 +225,19 @@ export default function TokenPage() {
     }
   }
 
-  if (!loaded) return <div className="text-gray-400">Loading token…</div>;
-  if (!detail) return <div className="text-gray-400">Token not found.</div>;
+  if (!loaded) return <div className="text-bone-dim">Loading token…</div>;
+  if (!detail) return <div className="text-bone-dim">Token not found.</div>;
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">{detail.displayName} <span className="text-gray-500">${detail.ticker}</span></h1>
-        <p className="mt-1 break-all font-mono text-xs text-gray-500">tokenId {detail.tokenId}</p>
+        <h1 className="text-2xl text-bone">{detail.displayName} <span className="text-bone-dim">${detail.ticker}</span></h1>
+        <p className="mt-1 break-all font-mono text-xs text-bone-dim">tokenId {detail.tokenId}</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="space-y-3 rounded-2xl border border-border bg-surface p-5 text-sm">
-          <h2 className="font-semibold text-white">Backing & supply</h2>
+        <div className="space-y-3 border border-rule bg-ink-2 p-5 text-sm">
+          <h2 className="text-bone">Backing & supply</h2>
           <KV k="Issued public supply" v={fmtTokens(BigInt(detail.issuedSupplyAtoms))} />
           <KV k="Public cap" v={fmtTokens(BigInt(detail.publicCapAtoms))} />
           <KV k="Remaining capacity" v={fmtTokens(BigInt(detail.remainingCapacityAtoms))} />
@@ -247,46 +247,46 @@ export default function TokenPage() {
           <KV k="Deploy txid" v={<span className="font-mono text-xs">{detail.deployTxid.slice(0, 16)}…</span>} />
         </div>
 
-        <div className="rounded-2xl border border-border bg-surface p-5">
+        <div className="border border-rule bg-ink-2 p-5">
           <div className="mb-4 flex gap-2 text-sm">
             {(["buy", "sell", "transfer", "list"] as const).map((t) => (
-              <button key={t} onClick={() => setTab(t)} className={`rounded-lg px-3 py-1.5 ${tab === t ? "bg-brand text-white" : "text-gray-400 hover:text-white"}`}>
+              <button key={t} onClick={() => setTab(t)} className={`px-3 py-1.5 ${tab === t ?"bg-brand text-white" : "text-gray-400 hover:text-white"}`}>
                 {t === "buy" ? "Buy" : t === "sell" ? "Instant Sell" : t === "transfer" ? "Transfer" : "List for Sale"}
               </button>
             ))}
           </div>
           {!connected ? (
-            <button onClick={() => void connect()} className="w-full rounded-xl bg-brand px-6 py-3 font-semibold text-white hover:bg-brand-bright">Connect wallet</button>
+            <button onClick={() => void connect()} className="w-full bg-signal px-6 py-3 text-bone hover:bg-[#F0A253]">Connect wallet</button>
           ) : (
             <div className="space-y-3">
               {tab !== "list" && (
                 <label className="block">
-                  <span className="text-xs text-gray-400">{tab === "transfer" ? "Amount (display tokens)" : "Amount (whole display tokens)"}</span>
-                  <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 84000000" className="mt-1 w-full rounded-xl border border-border bg-bg px-4 py-2 text-sm text-white outline-none focus:border-brand" />
+                  <span className="text-xs text-bone-dim">{tab === "transfer" ? "Amount (display tokens)" : "Amount (whole display tokens)"}</span>
+                  <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 84000000" className="mt-1 w-full border border-rule bg-bg px-4 py-2 text-sm text-bone outline-none focus:border-brand" />
                 </label>
               )}
               {tab === "list" && (
                 <>
                   <label className="block">
-                    <span className="text-xs text-gray-400">Listed amount (atoms)</span>
-                    <input value={amount} placeholder="Listed amount (atoms)" onChange={(e) => setAmount(e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-bg px-4 py-2 text-sm text-white outline-none focus:border-brand" />
+                    <span className="text-xs text-bone-dim">Listed amount (atoms)</span>
+                    <input value={amount} placeholder="Listed amount (atoms)" onChange={(e) => setAmount(e.target.value)} className="mt-1 w-full border border-rule bg-bg px-4 py-2 text-sm text-bone outline-none focus:border-brand" />
                   </label>
                   <label className="block">
-                    <span className="text-xs text-gray-400">Total asking price (sats)</span>
-                    <input value={price} placeholder="Total asking price (sats)" onChange={(e) => setPrice(e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-bg px-4 py-2 text-sm text-white outline-none focus:border-brand" />
+                    <span className="text-xs text-bone-dim">Total asking price (sats)</span>
+                    <input value={price} placeholder="Total asking price (sats)" onChange={(e) => setPrice(e.target.value)} className="mt-1 w-full border border-rule bg-bg px-4 py-2 text-sm text-bone outline-none focus:border-brand" />
                   </label>
                 </>
               )}
               {tab === "transfer" && (
                 <label className="block">
-                  <span className="text-xs text-gray-400">Recipient scriptPubKey (hex)</span>
-                  <input value={recipient} placeholder="Recipient scriptPubKey" onChange={(e) => setRecipient(e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-bg px-4 py-2 text-sm text-white outline-none focus:border-brand" />
+                  <span className="text-xs text-bone-dim">Recipient scriptPubKey (hex)</span>
+                  <input value={recipient} placeholder="Recipient scriptPubKey" onChange={(e) => setRecipient(e.target.value)} className="mt-1 w-full border border-rule bg-bg px-4 py-2 text-sm text-bone outline-none focus:border-brand" />
                 </label>
               )}
               <button
                 onClick={tab === "buy" ? buy : tab === "sell" ? sell : tab === "transfer" ? transfer : list}
                 disabled={busy}
-                className="w-full rounded-xl bg-brand px-6 py-3 font-semibold text-white hover:bg-brand-bright disabled:opacity-50"
+                className="w-full bg-signal px-6 py-3 text-bone hover:bg-[#F0A253] disabled:opacity-50"
               >
                 {busy ? "Working…" : tab === "buy" ? "Buy from Backing" : tab === "sell" ? "Redeem to Backing" : tab === "transfer" ? "Transfer" : "Sign & Create Listing"}
               </button>
@@ -294,7 +294,7 @@ export default function TokenPage() {
           )}
           {msg && <p className="mt-3 text-sm text-success">{msg}</p>}
           {err && <p className="mt-3 text-sm text-danger">{err}</p>}
-          {txid && <p className="mt-1 font-mono text-xs text-gray-500">{txid}</p>}
+          {txid && <p className="mt-1 font-mono text-xs text-bone-dim">{txid}</p>}
         </div>
       </div>
     </div>
@@ -304,8 +304,8 @@ export default function TokenPage() {
 function KV({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4 border-b border-border/40 py-1.5 last:border-0">
-      <span className="text-gray-500">{k}</span>
-      <span className="text-right text-gray-200">{v}</span>
+      <span className="text-bone-dim">{k}</span>
+      <span className="text-right text-bone">{v}</span>
     </div>
   );
 }

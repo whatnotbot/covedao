@@ -4,6 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { TokenCard, type V3TokenCardData } from "@/components/TokenCard";
 
+/**
+ * The hero states the protocol's actual claim rather than a slogan: state is
+ * committed on-chain and the reader can reproduce it. The numbers under it are
+ * frozen protocol constants, so the first thing a visitor sees is something
+ * verifiable instead of a promise.
+ */
 export default function HomePage() {
   const [tokens, setTokens] = useState<V3TokenCardData[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -19,69 +25,159 @@ export default function HomePage() {
   }, []);
 
   return (
-    <div className="space-y-12">
-      <section className="rounded-3xl border border-border bg-gradient-to-br from-surface via-surface to-brand/10 px-6 py-14 text-center sm:px-10">
-        <h1 className="text-3xl font-bold tracking-tight text-white sm:text-5xl">Bitcoin-native tokens.</h1>
-        <p className="mx-auto mt-4 max-w-xl text-gray-300">
-          Launch Bitcoin-native tokens with deterministic backing. Buy from Cove Backing, redeem back to
-          BTC, transfer directly, or trade fixed-price P2P.
+    <div className="space-y-px">
+      <section className="panel px-6 py-14 sm:px-10 sm:py-20">
+        <p className="eyebrow">CRC-20 · Bitcoin L1</p>
+        <h1 className="mt-5 max-w-3xl text-display text-bone">
+          State-committed
+          <br />
+          tokens.
+        </h1>
+        <p className="mt-6 max-w-xl text-sm leading-relaxed text-bone-dim">
+          Every token&rsquo;s supply and backing are committed into the Taproot output key of a live
+          UTXO. Bitcoin settles the transaction. The indexer is open, deterministic and in this
+          repository — so you can reproduce the state root yourself rather than take our word for it.
         </p>
-        <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <Link href="/launch" className="rounded-xl bg-brand px-6 py-3 font-semibold text-white transition hover:bg-brand-bright">
-            Launch Token
-          </Link>
-          <Link href="/explore" className="rounded-xl border border-border bg-surface px-6 py-3 font-semibold text-gray-200 transition hover:border-brand/60">
-            Explore
-          </Link>
+        <div className="mt-9 flex flex-wrap gap-3">
+          <Link href="/launch" className="btn">Launch a token</Link>
+          <Link href="/explore" className="btn-ghost">Explore</Link>
         </div>
       </section>
 
-      <section>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white">Recent launches</h2>
-          <Link href="/explore" className="text-sm text-gray-400 hover:text-white">View all</Link>
+      <section className="panel px-6 py-8 sm:px-10">
+        <p className="eyebrow">The ledger</p>
+        <div className="mt-5 grid grid-cols-2 gap-px bg-rule sm:grid-cols-4">
+          <Tile value="840M" label="Public supply" />
+          <Tile value="160M" label="Graduation reserve" />
+          <Tile value="0.242" label="BTC at full cap" />
+          <Tile value="20" label="Curve stages" />
         </div>
-        {!loaded ? (
-          <Empty message="Loading tokens…" />
-        ) : tokens.length === 0 ? (
-          <Empty message="No confirmed tokens yet. Be the first to launch one." />
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {tokens.map((t) => (
-              <TokenCard key={t.tokenId} token={t} />
-            ))}
-          </div>
-        )}
       </section>
 
-      <section className="rounded-3xl border border-border bg-surface p-6 sm:p-8">
-        <h2 className="text-xl font-semibold text-white">How Cove works</h2>
-        <div className="mt-4 grid gap-6 sm:grid-cols-3">
-          <Explain title="Buy from Backing" body="Deposit BTC into the deterministic Cove Backing reserve and receive freshly issued tokens." />
-          <Explain title="Redeem to Backing" body="Instant-sell tokens back to the reserve for the deterministic R-delta, minus a protocol fee." />
-          <Explain title="Trade P2P" body="List a real token UTXO for a fixed BTC price and settle atomically in one Bitcoin transaction." />
+      <section className="panel px-6 py-8 sm:px-10">
+        <div className="flex items-baseline justify-between">
+          <p className="eyebrow">Recent launches</p>
+          <Link href="/explore" className="text-label uppercase tracking-label text-bone-dim hover:text-signal">
+            View all →
+          </Link>
         </div>
-        <div className="mt-6 text-sm text-gray-400">
-          <p>Bitcoin enforces UTXO spending, signatures, value conservation and double-spend prevention.</p>
-          <p>Cove clients/indexer validate token ownership lineage and supply/backing state; the Guardian pre-executes Simplicity and the reference policy for backing transitions.</p>
+        <div className="mt-5">
+          {!loaded ? (
+            <Empty message="Reading the chain…" />
+          ) : tokens.length === 0 ? (
+            <Empty message="No confirmed tokens yet." />
+          ) : (
+            <div className="grid gap-px bg-rule sm:grid-cols-2 lg:grid-cols-3">
+              {tokens.map((t) => (
+                <TokenCard key={t.tokenId} token={t} />
+              ))}
+            </div>
+          )}
         </div>
+      </section>
+
+      <section className="panel px-6 py-8 sm:px-10">
+        <p className="eyebrow">How it works</p>
+        <ol className="mt-6 grid gap-px bg-rule sm:grid-cols-3">
+          <Step
+            n="01"
+            title="Buy from backing"
+            body="BTC enters the deterministic reserve and freshly issued tokens come out. The price is a frozen 20-stage integer curve — no oracle, no discretion."
+          />
+          <Step
+            n="02"
+            title="Redeem to backing"
+            body="Sell tokens back to the reserve for the exact R-delta, minus the protocol fee. The Guardian recomputes every amount from canonical state."
+          />
+          <Step
+            n="03"
+            title="Trade peer to peer"
+            body="List a real token UTXO at a fixed BTC price. Buyer and seller both sign SIGHASH_ALL and it settles atomically in one Bitcoin transaction."
+          />
+        </ol>
+      </section>
+
+      <section className="panel px-6 py-8 sm:px-10">
+        <p className="eyebrow">What Bitcoin enforces</p>
+        <div className="mt-5 grid gap-px bg-rule md:grid-cols-2">
+          <Boundary
+            kind="verified"
+            heading="Bitcoin consensus"
+            items={[
+              "The Taproot signature on every spend",
+              "UTXO rules — no double-spend, no BTC inflation",
+              "The successor output exists at the exact value and script committed to",
+            ]}
+          />
+          <Boundary
+            kind="pending"
+            heading="The Guardian — not Bitcoin"
+            items={[
+              "Supply conservation and the issuance curve",
+              "Payment amounts and the recovery profile",
+              "Bitcoin will not reject an invalid Cove transition; the indexer ignores it",
+            ]}
+          />
+        </div>
+        <p className="mt-6 max-w-2xl text-xs leading-relaxed text-bone-dim">
+          Cove is client-validated, like every Bitcoin metaprotocol today — there are no covenants on
+          Bitcoin mainnet; every proposal is still a draft. The difference is that this validator is
+          reproducible: the indexer is public, the state root is deterministic, and two independent
+          operators can check each other.
+        </p>
       </section>
     </div>
   );
 }
 
-function Explain({ title, body }: { title: string; body: string }) {
+function Tile({ value, label }: { value: string; label: string }) {
   return (
-    <div>
-      <div className="font-medium text-white">{title}</div>
-      <p className="mt-1 text-sm text-gray-400">{body}</p>
+    <div className="tile">
+      <div className="tile-value">{value}</div>
+      <div className="tile-label">{label}</div>
+    </div>
+  );
+}
+
+function Step({ n, title, body }: { n: string; title: string; body: string }) {
+  return (
+    <li className="bg-ink-3 px-5 py-5">
+      <span className="text-label tracking-label text-signal">{n}</span>
+      <div className="mt-2 text-sm text-bone">{title}</div>
+      <p className="mt-2 text-xs leading-relaxed text-bone-dim">{body}</p>
+    </li>
+  );
+}
+
+function Boundary({
+  kind,
+  heading,
+  items,
+}: {
+  kind: "verified" | "pending";
+  heading: string;
+  items: string[];
+}) {
+  const chip = kind === "verified" ? "chip chip-verified" : "chip chip-pending";
+  return (
+    <div className="bg-ink-3 px-5 py-5">
+      <span className={chip}>{kind === "verified" ? "Consensus" : "Policy"}</span>
+      <div className="mt-3 text-sm text-bone">{heading}</div>
+      <ul className="mt-3 space-y-2">
+        {items.map((t) => (
+          <li key={t} className="flex gap-2 text-xs leading-relaxed text-bone-dim">
+            <span className="mt-[0.45rem] h-px w-2.5 shrink-0 bg-rule-bright" />
+            <span>{t}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
 function Empty({ message }: { message: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-border bg-surface/40 px-6 py-12 text-center text-gray-400">
+    <div className="border border-dashed border-rule px-6 py-14 text-center text-sm text-bone-dim">
       {message}
     </div>
   );

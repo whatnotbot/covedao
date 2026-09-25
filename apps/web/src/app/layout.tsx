@@ -13,10 +13,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-bg text-gray-200 antialiased">
+      <body className="min-h-screen bg-bg text-bone antialiased">
         <WalletProvider>
           <Header />
-          <main className="mx-auto w-full max-w-6xl px-4 pb-24 pt-6 sm:px-6">{children}</main>
+          <main className="mx-auto w-full max-w-6xl px-4 pb-24 pt-px sm:px-6">{children}</main>
           <StatusBar />
         </WalletProvider>
       </body>

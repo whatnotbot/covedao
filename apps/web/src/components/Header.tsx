@@ -17,33 +17,42 @@ export function Header() {
   const { connected, address, connect } = useWallet();
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-bg/80 backdrop-blur">
-      <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-2 font-semibold text-white">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-sm font-bold">C</span>
-          <span>Cove</span>
+    <header className="sticky top-0 z-40 border-b border-rule bg-ink/95 backdrop-blur">
+      <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
+        <Link href="/" className="group flex items-center gap-2.5">
+          {/* A filled square, not a rounded app icon — the mark is a mark. */}
+          <span className="h-3.5 w-3.5 bg-signal transition-colors group-hover:bg-[#F0A253]" />
+          <span className="text-sm uppercase tracking-label text-bone">Cove</span>
         </Link>
-        <nav className="flex items-center gap-1 sm:gap-2">
-          {nav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`rounded-lg px-3 py-2 text-sm transition ${
-                pathname.startsWith(item.href) ? "bg-surface text-white" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              {item.label}
-            </Link>
-          ))}
+
+        <nav className="flex items-center gap-0.5">
+          {nav.map((item) => {
+            const active = pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={
+                  active
+                    ? "border-b-2 border-signal px-3 py-2 text-label uppercase tracking-label text-bone"
+                    : "border-b-2 border-transparent px-3 py-2 text-label uppercase tracking-label text-bone-dim transition-colors hover:text-bone"
+                }
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+
           {connected ? (
-            <span className="ml-1 hidden rounded-lg bg-surface px-3 py-2 text-xs text-gray-300 sm:inline" title={address}>
+            <span
+              className="ml-3 hidden border border-rule px-2.5 py-1.5 text-label text-bone-dim sm:inline"
+              title={address}
+            >
               {address.slice(0, 6)}…{address.slice(-4)}
             </span>
           ) : (
-            <button
-              onClick={() => void connect()}
-              className="ml-1 rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-bright"
-            >
+            <button onClick={() => void connect()} className="btn ml-3 px-3 py-1.5 text-label">
               Connect
             </button>
           )}

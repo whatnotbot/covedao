@@ -30,24 +30,24 @@ export default function ActivityPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Activity</h1>
-        <p className="text-sm text-gray-400">Canonical confirmed Cove events (never broadcast-as-confirmed).</p>
+        <h1 className="text-2xl text-bone">Activity</h1>
+        <p className="text-sm text-bone-dim">Canonical confirmed Cove events (never broadcast-as-confirmed).</p>
       </div>
       {!loaded ? (
-        <p className="text-gray-400">Loading…</p>
+        <p className="text-bone-dim">Loading…</p>
       ) : events.length === 0 ? (
-        <p className="text-gray-400">No confirmed events yet.</p>
+        <p className="text-bone-dim">No confirmed events yet.</p>
       ) : (
         <div className="space-y-2">
           {events.map((e) => (
-            <div key={e.txid} className="flex items-center justify-between rounded-xl border border-border bg-surface p-3 text-sm">
+            <div key={e.txid} className="flex items-center justify-between border border-rule bg-ink-2 p-3 text-sm">
               <div>
-                <span className="text-gray-200">{label(e.operation)}</span>
-                {e.tokenId && <span className="ml-2 font-mono text-xs text-gray-500">{e.tokenId.slice(0, 12)}…</span>}
+                <span className="text-bone">{label(e.operation)}</span>
+                {e.tokenId && <span className="ml-2 font-mono text-xs text-bone-dim">{e.tokenId.slice(0, 12)}…</span>}
               </div>
               <div className="text-right">
-                <div className="text-xs text-gray-400">height {e.blockHeight}</div>
-                <div className="font-mono text-xs text-gray-600">{e.txid.slice(0, 16)}…</div>
+                <div className="text-xs text-bone-dim">height {e.blockHeight}</div>
+                <div className="font-mono text-xs text-bone-dim">{e.txid.slice(0, 16)}…</div>
               </div>
             </div>
           ))}

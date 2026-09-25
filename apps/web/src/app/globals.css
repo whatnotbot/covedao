@@ -2,39 +2,149 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * Cove — "Ledger" design system.
+ *
+ * Built like an instrument rather than a landing page: monospace throughout,
+ * 1px hairlines, zero rounding, bone panels on ink. Amber is the only accent.
+ * Green/amber/red are reserved for protocol state and never used decoratively,
+ * so a colour on screen always means something.
+ */
+
 :root {
   color-scheme: dark;
 }
 
 html,
 body {
-  background-color: #0a0a0f;
-  color: #e5e7eb;
+  background-color: #0b0b0c;
+  color: #e8e4db;
 }
 
 body {
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: "tnum" 1, "zero" 1; /* lining figures, slashed zero */
 }
 
-@layer utilities {
-  .font-mono-nums {
-    font-variant-numeric: tabular-nums;
+/* Faint engineering grid — enough to read as ruled paper, quiet enough never
+   to compete with the data sitting on it. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
+}
+
+@layer components {
+  .panel {
+    @apply border border-rule bg-ink-2;
+  }
+
+  /* Section eyebrow — uppercase, tracked, small. Structure, not decoration. */
+  .eyebrow {
+    @apply text-label uppercase tracking-label text-bone-dim;
+  }
+
+  /* Stat tile: one number, one label. Numbers are the loudest thing here. */
+  .tile {
+    @apply border border-rule bg-ink-3 px-4 py-3;
+  }
+  .tile-value {
+    @apply text-2xl tabular-nums text-bone;
+  }
+  .tile-label {
+    @apply mt-1 text-label uppercase tracking-label text-bone-dim;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center border border-signal bg-signal px-5 py-2.5
+           text-sm uppercase tracking-wide2 text-ink transition-colors
+           hover:bg-[#F0A253] disabled:opacity-40;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center border border-rule-bright bg-transparent px-5 py-2.5
+           text-sm uppercase tracking-wide2 text-bone transition-colors
+           hover:border-bone-dim hover:bg-ink-3 disabled:opacity-40;
+  }
+
+  .field {
+    @apply w-full border border-rule bg-ink px-3 py-2.5 text-bone
+           placeholder:text-bone-dim/50 focus:border-signal focus:outline-none;
+  }
+
+  /* State chips. Colour here is information, never decoration. */
+  .chip {
+    @apply inline-flex items-center gap-1.5 border px-2 py-0.5 text-label uppercase tracking-label;
+  }
+  .chip-verified {
+    @apply border-verified/40 bg-verified/10 text-verified;
+  }
+  .chip-pending {
+    @apply border-pending/40 bg-pending/10 text-pending;
+  }
+  .chip-rejected {
+    @apply border-rejected/40 bg-rejected/10 text-rejected;
+  }
+
+  /* Hex, txids and scripts — the raw material, shown as such. */
+  .hex {
+    @apply break-all text-xs text-bone-dim;
+  }
+
+  /* Tables read as a ledger: hairline rules, tabular numerals, no zebra. */
+  .ledger-table {
+    @apply w-full text-sm;
+  }
+  .ledger-table th {
+    @apply border-b border-rule-bright pb-2 pr-4 text-left text-label uppercase
+           tracking-label font-normal text-bone-dim;
+  }
+  .ledger-table td {
+    @apply border-b border-rule py-3 pr-4 align-top tabular-nums;
   }
 }
 
-/* Focus visibility for keyboard navigation (WCAG AA intent). */
 :focus-visible {
-  outline: 2px solid #9d86ff;
+  outline: 2px solid #e08a2b;
   outline-offset: 2px;
 }
 
-/* Scrollbar */
+::selection {
+  background: #e08a2b;
+  color: #0b0b0c;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
+::-webkit-scrollbar-track {
+  background: #0b0b0c;
+}
 ::-webkit-scrollbar-thumb {
-  background: #2a2a38;
-  border-radius: 6px;
+  background: #26262a;
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #33333a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

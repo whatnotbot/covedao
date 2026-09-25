@@ -90,8 +90,8 @@ export default function MarketPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">P2P Market</h1>
-        <p className="text-sm text-gray-400">Active fixed-price asks. No fake bids, no synthetic liquidity.</p>
+        <h1 className="text-2xl text-bone">P2P Market</h1>
+        <p className="text-sm text-bone-dim">Active fixed-price asks. No fake bids, no synthetic liquidity.</p>
       </div>
       {!loaded ? (
         <Empty message="Loading listings…" />
@@ -100,20 +100,20 @@ export default function MarketPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {listings.map((l) => (
-            <div key={l.listingId} className="rounded-2xl border border-border bg-surface p-5">
+            <div key={l.listingId} className="border border-rule bg-ink-2 p-5">
               <div className="flex items-center justify-between">
-                <div className="font-mono text-xs text-gray-400">{l.tokenId.slice(0, 12)}…</div>
-                <span className="text-xs text-gray-500">{l.status}</span>
+                <div className="font-mono text-xs text-bone-dim">{l.tokenId.slice(0, 12)}…</div>
+                <span className="text-xs text-bone-dim">{l.status}</span>
               </div>
               <div className="mt-2 space-y-1 text-sm">
-                <div className="flex justify-between"><span className="text-gray-500">Lot</span><span className="text-gray-200">{fmtTokens(BigInt(l.amountAtoms))}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Seller price</span><span className="text-gray-200">{fmtBtc(BigInt(l.totalPriceSats))}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Seller</span><span className="text-gray-400 font-mono text-xs">{l.sellerTokenScript.slice(0, 12)}…</span></div>
+                <div className="flex justify-between"><span className="text-bone-dim">Lot</span><span className="text-bone">{fmtTokens(BigInt(l.amountAtoms))}</span></div>
+                <div className="flex justify-between"><span className="text-bone-dim">Seller price</span><span className="text-bone">{fmtBtc(BigInt(l.totalPriceSats))}</span></div>
+                <div className="flex justify-between"><span className="text-bone-dim">Seller</span><span className="text-bone-dim font-mono text-xs">{l.sellerTokenScript.slice(0, 12)}…</span></div>
               </div>
               <button
                 onClick={() => void buy(l)}
                 disabled={!connected || buying === l.listingId}
-                className="mt-3 w-full rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-bright disabled:opacity-50"
+                className="mt-3 w-full bg-signal px-4 py-2 text-sm text-bone hover:bg-[#F0A253] disabled:opacity-50"
               >
                 {buying === l.listingId ? "Reserving…" : "Buy"}
               </button>
@@ -123,7 +123,7 @@ export default function MarketPage() {
       )}
       {!connected && (
         <div className="text-center">
-          <button onClick={() => void connect()} className="rounded-xl bg-brand px-6 py-3 font-semibold text-white hover:bg-brand-bright">
+          <button onClick={() => void connect()} className="bg-signal px-6 py-3 text-bone hover:bg-[#F0A253]">
             Connect wallet
           </button>
         </div>
@@ -135,5 +135,5 @@ export default function MarketPage() {
 }
 
 function Empty({ message }: { message: string }) {
-  return <div className="rounded-2xl border border-dashed border-border bg-surface/40 px-6 py-12 text-center text-gray-400">{message}</div>;
+  return <div className="border border-dashed border-rule bg-ink-3 px-6 py-12 text-center text-bone-dim">{message}</div>;
 }

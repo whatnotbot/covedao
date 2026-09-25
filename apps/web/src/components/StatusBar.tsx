@@ -38,8 +38,8 @@ export function StatusBar() {
   const coreOk = status.core.reachable;
 
   return (
-    <footer className="border-t border-border bg-bg/90 backdrop-blur" aria-live="polite">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 text-xs text-gray-400 sm:px-6">
+    <footer className="border-t border-rule bg-bg/90 backdrop-blur" aria-live="polite">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 text-xs text-bone-dim sm:px-6">
         <span className="flex items-center gap-1.5">
           <Dot color={coreOk ? "bg-success" : "bg-danger"} /> Bitcoin Core · {coreOk ? `height ${status.core.height}` : "unavailable"}
         </span>
@@ -52,7 +52,7 @@ export function StatusBar() {
         </span>
         <span className="ml-auto flex items-center gap-1.5">
           {status.market.enabled ? <Dot color="bg-success" /> : <Dot color="bg-gray-500" />} market {status.market.enabled ? "enabled" : "disabled"}
-          <span className="text-gray-600">· {status.network}</span>
+          <span className="text-bone-dim">· {status.network}</span>
         </span>
       </div>
     </footer>

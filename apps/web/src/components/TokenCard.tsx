@@ -21,30 +21,56 @@ export function TokenCard({ token }: { token: V3TokenCardData }) {
   const issued = BigInt(token.issuedSupplyAtoms);
   const cap = BigInt(token.publicCapAtoms);
   const atCapacity = issued >= cap;
+  const pct = cap > 0n ? Number((issued * 100n) / cap) : 0;
+
   return (
     <Link
       href={`/token/${token.tokenId}`}
-      className="block rounded-2xl border border-border bg-surface p-5 transition hover:border-brand/60"
+      className="group block bg-ink-3 px-5 py-5 transition-colors hover:bg-ink-2"
     >
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="font-semibold text-white">{token.displayName}</div>
-          <div className="text-xs text-gray-500">${token.ticker}</div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm text-bone transition-colors group-hover:text-signal">
+            {token.ticker}
+          </div>
+          <div className="mt-0.5 truncate text-xs text-bone-dim">{token.displayName}</div>
         </div>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${atCapacity ? "bg-warning/20 text-warning" : "bg-success/20 text-success"}`}>
-          {atCapacity ? "AT CAPACITY" : "ACTIVE"}
+        <span className={atCapacity ? "chip chip-pending shrink-0" : "chip chip-verified shrink-0"}>
+          {atCapacity ? "At cap" : "Open"}
         </span>
       </div>
-      <div className="mt-3 space-y-1 text-xs text-gray-400">
-        <div className="flex justify-between"><span>Issued / cap</span><span className="text-gray-300">{fmtTokens(issued)} / {fmtTokens(cap)}</span></div>
-        <div className="flex justify-between"><span>Backing</span><span className="text-gray-300">{fmtBtc(BigInt(token.backingSats))}</span></div>
-        <div className="flex justify-between"><span>Curve stage</span><span className="text-gray-300">{token.curveStage}</span></div>
-        <div className="flex justify-between"><span>Holders</span><span className="text-gray-300">{token.holderCount}</span></div>
-        {token.bestAskSats ? (
-          <div className="flex justify-between"><span>Best P2P ask</span><span className="text-gray-300">{fmtBtc(BigInt(token.bestAskSats))}</span></div>
-        ) : null}
+
+      {/* Progress against the public cap — the one number deciding whether this
+          token is still mintable, so it gets a bar rather than a row. */}
+      <div className="mt-4">
+        <div className="h-1 w-full bg-rule">
+          <div className="h-1 bg-signal" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="mt-2 flex justify-between text-label uppercase tracking-label text-bone-dim">
+          <span>{fmtTokens(issued)}</span>
+          <span>{fmtTokens(cap)}</span>
+        </div>
       </div>
-      <div className="mt-3 truncate font-mono text-[10px] text-gray-600">{token.tokenId.slice(0, 16)}…</div>
+
+      <dl className="mt-4 space-y-1.5 text-xs">
+        <Row label="Backing" value={fmtBtc(BigInt(token.backingSats))} />
+        <Row label="Stage" value={`${token.curveStage} / 20`} />
+        <Row label="Holders" value={String(token.holderCount)} />
+        {token.bestAskSats ? <Row label="Best ask" value={fmtBtc(BigInt(token.bestAskSats))} /> : null}
+      </dl>
+
+      <div className="hex mt-4 truncate border-t border-rule pt-3">
+        {token.tokenId.slice(0, 24)}…
+      </div>
     </Link>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <dt className="text-bone-dim">{label}</dt>
+      <dd className="tabular-nums text-bone-2">{value}</dd>
+    </div>
   );
 }

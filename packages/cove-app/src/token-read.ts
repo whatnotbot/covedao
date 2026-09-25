@@ -143,8 +143,7 @@ export async function getTokenHolders(db: Database, network: string, tokenId: st
 }
 
 export async function getTokenActivity(db: Database, network: string, tokenId: string, limit = 100) {
-  const rows = await getTokenActivityDb(db, network, tokenId);
-  return rows.slice(0, limit);
+  return getTokenActivityDb(db, network, tokenId, limit);
 }
 
 export { ATOMS_PER_TOKEN };

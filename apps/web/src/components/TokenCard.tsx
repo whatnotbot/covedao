@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { fmtBtc, fmtTokens, fmtInt } from "@/lib/format";
 import { Sparkline } from "./Sparkline";
+import { TokenImage } from "./TokenImage";
 
 export interface V3TokenCardData {
   tokenId: string;
@@ -16,6 +17,7 @@ export interface V3TokenCardData {
   curveStage: number;
   holderCount: number;
   bestAskSats: string | null;
+  imageUrl?: string | null;
   /** Public cap fully minted. Derived server-side; see V3TokenSummary. */
   graduated?: boolean;
 }
@@ -39,11 +41,14 @@ export function TokenCard({
       className="group block bg-ink-3 px-5 py-5 transition-colors hover:bg-ink-2"
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate text-sm text-bone transition-colors group-hover:text-signal">
-            {token.ticker}
+        <div className="flex min-w-0 items-start gap-3">
+          <TokenImage tokenId={token.tokenId} ticker={token.ticker} imageUrl={token.imageUrl} />
+          <div className="min-w-0">
+            <div className="truncate text-sm text-bone transition-colors group-hover:text-signal">
+              {token.ticker}
+            </div>
+            <div className="mt-0.5 truncate text-xs text-bone-dim">{token.displayName}</div>
           </div>
-          <div className="mt-0.5 truncate text-xs text-bone-dim">{token.displayName}</div>
         </div>
         <span className={graduated ? "chip chip-signal shrink-0" : "chip chip-verified shrink-0"}>
           {graduated ? "Graduated" : "Open"}

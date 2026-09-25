@@ -45,6 +45,12 @@ export class V3Store {
           reason: e.reason,
           tokenId: e.tokenId,
           canonical: true,
+          // Null for DEPLOY, TRANSFER and every invalid transaction.
+          amountAtoms: e.curve?.amountAtoms ?? null,
+          grossSats: e.curve?.grossSats ?? null,
+          feeSats: e.curve?.protocolFeeSats ?? null,
+          supplyAfterAtoms: e.curve?.supplyAfterAtoms ?? null,
+          backingAfterSats: e.curve?.backingAfterSats ?? null,
         })),
       );
     }

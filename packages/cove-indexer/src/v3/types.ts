@@ -41,6 +41,22 @@ export interface V3TokenUtxo {
 
 export type V3Operation = "DEPLOY" | "MINT" | "TRANSFER" | "REDEEM";
 
+/**
+ * The economics of a valid curve trade, carried on the event that recorded it.
+ *
+ * A vault buy or sell is a trade at a real price, and this is where that price
+ * comes from. Without it the only price history available was peer-to-peer
+ * fills, so a token still minting had no chart at all.
+ */
+export interface V3CurveTrade {
+  amountAtoms: bigint;
+  /** Satoshis that moved between the buyer/seller and the backing reserve. */
+  grossSats: bigint;
+  protocolFeeSats: bigint;
+  supplyAfterAtoms: bigint;
+  backingAfterSats: bigint;
+}
+
 export interface V3Event {
   txid: string;
   blockHeight: bigint;
@@ -50,6 +66,8 @@ export interface V3Event {
   valid: boolean;
   reason: string | null;
   tokenId: string | null;
+  /** Present only on a valid MINT or REDEEM. */
+  curve?: V3CurveTrade | null;
 }
 
 export interface V3Cursor {

@@ -1,4 +1,4 @@
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, desc } from "drizzle-orm";
 import { schema, type Database } from "@crclaunch/db";
 import { balanceByScript, currentBacking, tokenHolders, tokenUtxosByScript, type TokenDetail } from "./read-models.js";
 
@@ -108,11 +108,26 @@ export async function getTokenDetailDb(db: Database, network: string, tokenId: s
   );
 }
 
-export async function getTokenActivityDb(db: Database, network: string, tokenId: string) {
+/**
+ * One token's confirmed history, newest first.
+ *
+ * Ordering and the limit belong in the query, not in the caller: this used to
+ * return every event a token had ever produced in whatever order the database
+ * felt like, and the caller then sliced the first hundred — which is to say a
+ * hundred arbitrary events, not the hundred most recent.
+ */
+export async function getTokenActivityDb(
+  db: Database,
+  network: string,
+  tokenId: string,
+  limit = 100,
+) {
   return db
     .select()
     .from(schema.coveV3Events)
-    .where(and(eq(schema.coveV3Events.network, network), eq(schema.coveV3Events.tokenId, tokenId), eq(schema.coveV3Events.canonical, true)));
+    .where(and(eq(schema.coveV3Events.network, network), eq(schema.coveV3Events.tokenId, tokenId), eq(schema.coveV3Events.canonical, true)))
+    .orderBy(desc(schema.coveV3Events.blockHeight), desc(schema.coveV3Events.txIndex))
+    .limit(limit);
 }
 
 // keep pure helpers re-exported for tests

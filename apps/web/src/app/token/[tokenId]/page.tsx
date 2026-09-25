@@ -10,6 +10,8 @@ import { DEMO_TOKEN_DETAIL, DEMO_LISTINGS } from "@/lib/demo-tokens";
 import { TokenMarketPanel } from "@/components/TokenMarketPanel";
 import { FeePicker, useFeeRates, type FeeRatesResponse, type FeeTier } from "@/components/FeePicker";
 import { TxStatus } from "@/components/TxStatus";
+import { TokenActivity } from "@/components/TokenActivity";
+import { TokenImage } from "@/components/TokenImage";
 import { unitPriceSats } from "@/lib/ohlc";
 
 interface Detail {
@@ -30,6 +32,9 @@ interface Detail {
   holderCount: number;
   bestAskSats: string | null;
   activeListingCount: number;
+  imageUrl: string | null;
+  websiteUrl: string | null;
+  xUrl: string | null;
 }
 
 function TokenContent() {
@@ -276,10 +281,42 @@ function TokenContent() {
           </p>
         ) : null}
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="eyebrow">Token</p>
-            <h1 className="mt-3 text-4xl text-bone">{detail.ticker}</h1>
-            <p className="mt-1 text-sm text-bone-dim">{detail.displayName}</p>
+          <div className="flex items-start gap-4">
+            <TokenImage
+              tokenId={detail.tokenId}
+              ticker={detail.ticker}
+              imageUrl={detail.imageUrl}
+              size="lg"
+            />
+            <div>
+              <p className="eyebrow">Token</p>
+              <h1 className="mt-3 text-4xl text-bone">{detail.ticker}</h1>
+              <p className="mt-1 text-sm text-bone-dim">{detail.displayName}</p>
+              {detail.websiteUrl || detail.xUrl ? (
+                <div className="mt-3 flex flex-wrap gap-4">
+                  {detail.websiteUrl ? (
+                    <a
+                      href={detail.websiteUrl}
+                      target="_blank"
+                      rel="noreferrer noopener nofollow"
+                      className="text-label uppercase tracking-label text-bone-dim hover:text-signal"
+                    >
+                      Website →
+                    </a>
+                  ) : null}
+                  {detail.xUrl ? (
+                    <a
+                      href={detail.xUrl}
+                      target="_blank"
+                      rel="noreferrer noopener nofollow"
+                      className="text-label uppercase tracking-label text-bone-dim hover:text-signal"
+                    >
+                      X →
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </div>
           <span className={graduated ? "chip chip-signal" : "chip chip-verified"}>
             {graduated ? "Graduated" : "Open"}
@@ -335,6 +372,14 @@ function TokenContent() {
         demo={demo}
         asks={asks}
         explorerBase={process.env.NEXT_PUBLIC_EXPLORER_URL}
+      />
+
+      {/* ── History ──────────────────────────────────────────────────── */}
+      <TokenActivity
+        tokenId={detail.tokenId}
+        ticker={detail.ticker}
+        explorerBase={process.env.NEXT_PUBLIC_EXPLORER_URL}
+        demoRows={demo ? [] : undefined}
       />
 
       {/* ── Actions ──────────────────────────────────────────────────── */}

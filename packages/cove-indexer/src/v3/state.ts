@@ -29,6 +29,7 @@ import type {
   V3BlockInput,
   V3Cursor,
   V3Event,
+  V3CurveTrade,
   V3IndexerConfig,
   V3TokenMeta,
   V3TokenUtxo,
@@ -55,6 +56,8 @@ type ApplyResult = {
   reason: string | null;
   tokenId: string | null;
   undo: UndoOp | null;
+  /** Economics of a valid curve trade; null for DEPLOY and TRANSFER. */
+  curve?: V3CurveTrade | null;
 };
 
 export class V3IndexerState {
@@ -156,6 +159,7 @@ export class V3IndexerState {
       let reason: string | null = null;
       let tokenId: string | null = null;
       let undo: UndoOp | null = null;
+      let curve: V3CurveTrade | null = null;
 
       if (parsed.kind === "INVALID") {
         op = null;
@@ -168,6 +172,7 @@ export class V3IndexerState {
         reason = r.reason;
         tokenId = r.tokenId;
         undo = r.undo;
+        curve = r.curve ?? null;
         if (r.valid && undo) ops.push(undo);
       }
 
@@ -180,6 +185,7 @@ export class V3IndexerState {
         valid,
         reason,
         tokenId,
+        curve,
       };
       events.push(event);
       this.record(event);
@@ -401,6 +407,13 @@ export class V3IndexerState {
       reason: null,
       tokenId: tokenIdHex,
       undo: { kind: "MINT", tokenId: tokenIdHex, priorBacking, createdUtxo },
+      curve: {
+        amountAtoms: envelope.amount,
+        grossSats,
+        protocolFeeSats: feeSats,
+        supplyAfterAtoms: nextState.issuedPublicSupplyAtoms,
+        backingAfterSats: nextState.backingSats,
+      },
     };
   }
 
@@ -576,6 +589,13 @@ export class V3IndexerState {
       reason: null,
       tokenId: tokenIdHex,
       undo: { kind: "REDEEM", tokenId: tokenIdHex, spendingTxid: txid, priorBacking, spentUtxos, createdUtxos },
+      curve: {
+        amountAtoms: envelope.redeemAmount,
+        grossSats,
+        protocolFeeSats: feeSats,
+        supplyAfterAtoms: nextState.issuedPublicSupplyAtoms,
+        backingAfterSats: nextState.backingSats,
+      },
     };
   }
 }

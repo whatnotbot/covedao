@@ -2,7 +2,7 @@ import { ok, fail, handleError } from "@/lib/api";
 import { getV3Services } from "@/lib/v3-server";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { bucketTrades, summarize, BUCKET_MS, type Interval } from "@/lib/ohlc";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNotNull, inArray } from "drizzle-orm";
 import { schema } from "@crclaunch/db";
 
 export const dynamic = "force-dynamic";
@@ -12,10 +12,15 @@ const INTERVALS = Object.keys(BUCKET_MS) as Interval[];
 const MAX_TRADES = 5_000;
 
 /**
- * OHLC price history for one token, derived from settled peer-to-peer trades.
+ * OHLC price history for one token.
  *
- * Only canonical trades count: a fill on a block that was later reorganised out
- * has `canonical = false` and must not appear in a price series.
+ * Two sources, one series: settled peer-to-peer fills, and buys or sells
+ * against the backing vault. The vault trades matter most — a token that has
+ * only ever minted has no peer-to-peer fills at all, and used to render an
+ * empty chart.
+ *
+ * Only canonical records count: anything on a block that was later reorganised
+ * out has `canonical = false` and must not appear in a price series.
  *
  * The time axis is `createdAt` — when the indexer observed the trade — because
  * block timestamps are not currently stored. At one block every ten minutes the
@@ -53,14 +58,41 @@ export async function GET(req: Request, { params }: { params: Promise<{ tokenId:
       .orderBy(asc(schema.coveV3MarketTrades.blockHeight))
       .limit(MAX_TRADES);
 
-    const candles = bucketTrades(
-      rows.map((r) => ({
-        timestamp: r.createdAt.getTime(),
-        amountAtoms: r.amountAtoms,
-        totalPriceSats: r.totalPriceSats,
-      })),
-      interval,
-    );
+    // Curve trades: a valid MINT or REDEEM carries the amount and the satoshis
+    // that moved to or from the reserve, which is exactly a price.
+    const curveRows = await db
+      .select({
+        amountAtoms: schema.coveV3Events.amountAtoms,
+        grossSats: schema.coveV3Events.grossSats,
+        operation: schema.coveV3Events.operation,
+        createdAt: schema.coveV3Events.createdAt,
+      })
+      .from(schema.coveV3Events)
+      .where(
+        and(
+          eq(schema.coveV3Events.network, config.network),
+          eq(schema.coveV3Events.tokenId, tokenId),
+          eq(schema.coveV3Events.canonical, true),
+          eq(schema.coveV3Events.valid, true),
+          inArray(schema.coveV3Events.operation, ["MINT", "REDEEM"]),
+          isNotNull(schema.coveV3Events.grossSats),
+        ),
+      )
+      .orderBy(asc(schema.coveV3Events.blockHeight))
+      .limit(MAX_TRADES);
+
+    const market = rows.map((r) => ({
+      timestamp: r.createdAt.getTime(),
+      amountAtoms: r.amountAtoms,
+      totalPriceSats: r.totalPriceSats,
+    }));
+    const curve = curveRows.map((r) => ({
+      timestamp: r.createdAt.getTime(),
+      amountAtoms: r.amountAtoms!,
+      totalPriceSats: r.grossSats!,
+    }));
+
+    const candles = bucketTrades([...market, ...curve], interval);
 
     return ok({
       tokenId,
@@ -68,7 +100,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ tokenId:
       /** Price unit for every OHLC value below. */
       unit: "sats-per-1m-tokens",
       timeBasis: "indexer-observed",
-      truncated: rows.length >= MAX_TRADES,
+      /** How many of each kind went into the series above. */
+      sources: { market: market.length, curve: curve.length },
+      truncated: rows.length >= MAX_TRADES || curveRows.length >= MAX_TRADES,
       candles,
       summary: summarize(candles),
     });

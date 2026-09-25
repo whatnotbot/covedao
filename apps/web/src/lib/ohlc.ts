@@ -10,9 +10,13 @@
  * never loses precision to intermediate floating point — the same discipline the
  * curve itself uses.
  *
- * Only settled peer-to-peer trades are counted. Curve mints and redemptions are
- * priced by the deterministic stage table rather than by a market, so folding
- * them in here would blur two different kinds of price into one line.
+ * BOTH kinds of trade count: peer-to-peer fills and buys or sells against the
+ * backing vault. A vault trade is priced by the deterministic stage table
+ * rather than by a market, but it is still satoshis someone actually paid for
+ * tokens, and it is the ONLY kind most tokens have — excluding it left every
+ * token that had merely minted with a blank chart, which reads as broken
+ * rather than as new. The API reports the two counts separately so a caller
+ * that wants only market prices can still have them.
  */
 
 const ATOMS_PER_TOKEN = 100_000_000n;

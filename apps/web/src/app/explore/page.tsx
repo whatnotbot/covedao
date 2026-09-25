@@ -7,6 +7,7 @@ import type { V3TokenCardData } from "@/components/TokenCard";
 import { DEMO_TOKENS } from "@/lib/demo-tokens";
 import { fmtBtc, fmtInt, fmtTokens } from "@/lib/format";
 import { Sparkline } from "@/components/Sparkline";
+import { TokenImage } from "@/components/TokenImage";
 import { useSparklines } from "@/lib/use-sparklines";
 
 type SortKey = "progress" | "backing" | "holders" | "newest";
@@ -314,10 +315,20 @@ function TokenTable({
             return (
               <tr key={t.tokenId} className="transition-colors hover:bg-ink-3">
                 <td>
-                  <Link href={`/token/${t.tokenId}`} className="text-bone hover:text-signal">
-                    {t.ticker}
-                  </Link>
-                  <div className="text-xs text-bone-dim">{t.displayName}</div>
+                  <div className="flex items-center gap-3">
+                    <TokenImage
+                      tokenId={t.tokenId}
+                      ticker={t.ticker}
+                      imageUrl={t.imageUrl}
+                      size="sm"
+                    />
+                    <div className="min-w-0">
+                      <Link href={`/token/${t.tokenId}`} className="text-bone hover:text-signal">
+                        {t.ticker}
+                      </Link>
+                      <div className="truncate text-xs text-bone-dim">{t.displayName}</div>
+                    </div>
+                  </div>
                 </td>
                 <td>
                   {t.graduated ?? pct >= 100 ? (

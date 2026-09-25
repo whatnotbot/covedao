@@ -1,0 +1,147 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { fmtBtc, fmtInt, fmtTokens } from "@/lib/format";
+import { unitPriceSats } from "@/lib/ohlc";
+
+/**
+ * One token's confirmed history.
+ *
+ * The API has existed for a while with nothing rendering it. Every row here is
+ * a settled Bitcoin transaction — the amounts are the ones the chain recorded,
+ * not a projection — so this doubles as the thing a holder checks when they
+ * want to know what actually happened to their trade.
+ */
+
+interface ActivityRow {
+  txid: string;
+  blockHeight: string;
+  operation: string | null;
+  valid: boolean;
+  reason: string | null;
+  amountAtoms: string | null;
+  grossSats: string | null;
+  feeSats: string | null;
+  supplyAfterAtoms: string | null;
+  backingAfterSats: string | null;
+}
+
+const LABEL: Record<string, string> = {
+  DEPLOY: "Launch",
+  MINT: "Bought from backing",
+  REDEEM: "Sold to backing",
+  TRANSFER: "Transfer",
+};
+
+export function TokenActivity({
+  tokenId,
+  ticker,
+  explorerBase,
+  demoRows,
+}: {
+  tokenId: string;
+  ticker: string;
+  explorerBase?: string;
+  demoRows?: ActivityRow[];
+}) {
+  const [rows, setRows] = useState<ActivityRow[] | null>(demoRows ?? null);
+
+  useEffect(() => {
+    if (demoRows) return;
+    void fetch(`/api/v3/tokens/${tokenId}/activity`)
+      .then((r) => r.json())
+      .then((j) => setRows(j.ok ? (j.data as ActivityRow[]) : []))
+      .catch(() => setRows([]));
+  }, [tokenId, demoRows]);
+
+  return (
+    <section className="panel px-6 py-8 sm:px-10">
+      <div className="flex items-baseline justify-between">
+        <p className="eyebrow">History</p>
+        <span className="text-label uppercase tracking-label text-bone-dim">
+          Confirmed on Bitcoin
+        </span>
+      </div>
+
+      {rows === null ? (
+        <p className="mt-5 text-sm text-bone-dim">Reading the chain…</p>
+      ) : rows.length === 0 ? (
+        <p className="mt-5 border border-dashed border-rule px-6 py-10 text-center text-sm text-bone-dim">
+          Nothing has settled yet. The first buy will appear here.
+        </p>
+      ) : (
+        <div className="mt-5 overflow-x-auto">
+          <table className="ledger-table">
+            <thead>
+              <tr>
+                <th>Block</th>
+                <th>What</th>
+                <th className="text-right">Amount</th>
+                <th className="text-right">Value</th>
+                <th className="text-right">Price / 1M</th>
+                <th>Transaction</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const isCurveTrade = r.grossSats !== null && r.amountAtoms !== null;
+                const price = isCurveTrade
+                  ? unitPriceSats(r.amountAtoms!, r.grossSats!)
+                  : null;
+                return (
+                  <tr key={r.txid}>
+                    <td className="text-bone-dim">{fmtInt(r.blockHeight)}</td>
+                    <td>
+                      <span className={r.valid ? "text-bone" : "text-rejected"}>
+                        {LABEL[r.operation ?? ""] ?? r.operation ?? "—"}
+                      </span>
+                      {!r.valid && r.reason ? (
+                        <span className="ml-2 text-label uppercase tracking-label text-rejected">
+                          rejected
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="text-right">
+                      {r.amountAtoms ? (
+                        <>
+                          {fmtTokens(r.amountAtoms)}{" "}
+                          <span className="text-bone-dim">{ticker}</span>
+                        </>
+                      ) : (
+                        <span className="text-bone-dim">—</span>
+                      )}
+                    </td>
+                    <td className="text-right">
+                      {r.grossSats ? fmtBtc(r.grossSats) : <span className="text-bone-dim">—</span>}
+                    </td>
+                    <td className="text-right">
+                      {price !== null ? (
+                        `${price.toLocaleString()} sats`
+                      ) : (
+                        <span className="text-bone-dim">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {explorerBase ? (
+                        <a
+                          href={`${explorerBase}/tx/${r.txid}`}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="hex hover:text-signal"
+                        >
+                          {r.txid.slice(0, 12)}…
+                        </a>
+                      ) : (
+                        <span className="hex">{r.txid.slice(0, 12)}…</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}

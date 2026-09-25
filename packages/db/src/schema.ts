@@ -571,6 +571,15 @@ export const coveV3Events = pgTable(
     reason: text("reason"),
     tokenId: text("token_id"),
     canonical: boolean("canonical").notNull().default(true),
+    // Curve-trade detail, present only on a valid MINT or REDEEM. A buy or a
+    // sell against the vault IS a trade at a real price; without these the
+    // chart could only ever plot peer-to-peer fills, so a token that had only
+    // minted showed nothing at all.
+    amountAtoms: atoms("amount_atoms"),
+    grossSats: atoms("gross_sats"),
+    feeSats: atoms("fee_sats"),
+    supplyAfterAtoms: atoms("supply_after_atoms"),
+    backingAfterSats: atoms("backing_after_sats"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

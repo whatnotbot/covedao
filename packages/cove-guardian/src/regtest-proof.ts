@@ -29,10 +29,11 @@ const ECPair = ECPairFactory(ecc);
 
 const WIF = "cPoVxi18CnxHUQjYNpjRM3RYUVFA61wuTNQez7BtRKkfp9Fw6RTW";
 const internalKey = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x42), true)!.subarray(1));
-const MINT_42M = 42_000_000n * 100_000_000n;
-// Real on-chain proof mints 2 full stages (84M) so the 1% platform-fee output
-// clears Bitcoin Core's P2WPKH dust threshold (294 sats) for broadcast.
-const MINT_84M = 84_000_000n * 100_000_000n;
+// Half a stair of the 21M staircase (50 lots).
+const MINT_42M = 50_000n * 100_000_000n;
+// Real on-chain proof mints one full stair (100 lots, 869,200 sats), so the
+// 1% platform-fee output clears Bitcoin Core's P2WPKH dust threshold.
+const MINT_84M = 100_000n * 100_000_000n;
 
 const S0: CoveState = {
   version: 1,
@@ -47,7 +48,7 @@ const RECIPIENT = Buffer.from("5120" + "cc".repeat(32), "hex");
 const PLATFORM_FEE = Buffer.from("0014" + "dd".repeat(20), "hex");
 const BUYER_CHANGE = Buffer.from("0014" + "ee".repeat(20), "hex");
 const MINER_FEE = 1_000n;
-const BUYER_FUND = 1_000_000n; // offline: 1,000,000 sats buyer funding
+const BUYER_FUND = 2_000_000n; // offline: 2,000,000 sats buyer funding
 
 const RPC_URL = process.env.COVE_REGTEST_RPC_URL ?? "http://127.0.0.1:18443";
 const RPC_USER = process.env.COVE_REGTEST_RPC_USER ?? "user";

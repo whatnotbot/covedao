@@ -10,7 +10,8 @@ import {
   CoveAnalyzeError,
 } from "./analyze.js";
 import { buildCanonicalMintWitness, buildCanonicalRedeemWitness } from "./witness.js";
-import { readPsbtOutputs } from "./resolve.js";
+import { readPsbtOutputs, decodeCoveOpReturn } from "./resolve.js";
+import { checkDiscoveryOutput } from "./discoveryOutput.js";
 import {
   type CoveCanonicalView,
   type GuardianV3Network,
@@ -71,6 +72,14 @@ export interface ValidateParams {
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
   redeemFeeBps?: bigint;
+  /**
+   * Ticker the caller expects the advisory crc-20 discovery envelope to carry
+   * (§D1). The canonical view resolves tokens by tokenId and has no ticker
+   * index, so it is declared here. Omit it and a discovery envelope carrying a
+   * `tick` is rejected — the payload must always be exactly the canonical
+   * re-derivation, never merely plausible.
+   */
+  discoveryTicker?: string;
 }
 
 export async function validateMintTransitionV3(params: ValidateParams): Promise<ValidationResult> {
@@ -182,8 +191,17 @@ export async function validateMintTransitionV3(params: ValidateParams): Promise<
     );
   }
 
+  // ── advisory crc-20 discovery envelope (§D1): never read into state, but a
+  //    contradicting payload is refused a signature outright ──
+  const discovery = checkDiscoveryOutput(outputs, decodeCoveOpReturn(params.psbt), params.discoveryTicker);
+  if (discovery.present && !discovery.agrees) {
+    return reject("DISCOVERY_MISMATCH", discovery.reason ?? "discovery envelope mismatch");
+  }
+
   // ── no unexpected outputs (0..4: OP_RETURN, vault, carrier, fee, change) ──
-  if (outputs.length > 5) return reject("UNEXPECTED_OUTPUT", `too many outputs (${outputs.length})`);
+  if (outputs.length > 5 + discovery.allowance) {
+    return reject("UNEXPECTED_OUTPUT", `too many outputs (${outputs.length})`);
+  }
 
   // ── miner fee bounded ──
   if (analysis.minerFeeSats < 0n) {
@@ -362,7 +380,11 @@ export async function validateRedeemTransitionV3(params: ValidateParams): Promis
   // ── no unexpected outputs ──
   //   partial redeem: 0..4 required (change carrier at 4), optional BTC change at 5 → max 6
   //   full redeem:    0..3 required, optional BTC change at 4 → max 5
-  const maxOutputs = changeAtoms > 0n ? 6 : 5;
+  const discovery = checkDiscoveryOutput(outputs, decodeCoveOpReturn(params.psbt), params.discoveryTicker);
+  if (discovery.present && !discovery.agrees) {
+    return reject("DISCOVERY_MISMATCH", discovery.reason ?? "discovery envelope mismatch");
+  }
+  const maxOutputs = (changeAtoms > 0n ? 6 : 5) + discovery.allowance;
   if (outputs.length > maxOutputs) {
     return reject("UNEXPECTED_OUTPUT", `too many outputs (${outputs.length})`);
   }

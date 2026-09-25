@@ -4,7 +4,7 @@ import * as ecc from "tiny-secp256k1";
 import { ECPairFactory } from "ecpair";
 import { s0StateV2, applyMintV2, applyRedeemV2, TOKEN_CARRIER_SATS } from "@crclaunch/cove-covenant";
 import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
-import { CHAIN_BITCOIN_REGTEST, decodeV2 } from "@crclaunch/cove-wire";
+import { CHAIN_BITCOIN_REGTEST, decodeV2, discoveryAgreesWithBinary } from "@crclaunch/cove-wire";
 import { deterministicFee } from "@crclaunch/cove-economics";
 import {
   buildDeployPsbtV3,
@@ -270,5 +270,76 @@ describe("V3 builders (offline)", () => {
     });
     expect(r.redeemFeeSats).toBe(deterministicFee(gross, 50n));
     expect(r.redeemFeeSats).not.toBe(494n); // the dev default (100 bps)
+  });
+});
+
+describe("crc-20 discovery envelope in the built PSBT (§D1)", () => {
+  function mintWith(discoveryEnvelope?: { ticker: string }) {
+    const d = deploy();
+    return buildMintPsbtV3({
+      network: bitcoin.networks.regtest,
+      tokenId: d.tokenId,
+      prevState: d.s0,
+      prevBacking: {
+        txid: "a".repeat(64),
+        vout: 1,
+        script: d.vault.scriptPubKey,
+        valueSats: RESERVE_ANCHOR_SATS,
+      },
+      mintAmountAtoms: 84_000_000n * 100_000_000n,
+      guardianXOnly,
+      recoveryKeyXOnly: recoveryXOnly,
+      buyerInputs: [
+        {
+          txid: "b".repeat(64),
+          vout: 0,
+          script: Buffer.from("0014" + "d".repeat(20), "hex"),
+          valueSats: 1_000_000n,
+        },
+      ],
+      buyerCarrierScript: Buffer.from("0014" + "e".repeat(20), "hex"),
+      buyerChangeScript: Buffer.from("0014" + "e".repeat(20), "hex"),
+      feeScript: Buffer.from("0014" + "f".repeat(20), "hex"),
+      minerFeeSats: 1_000n,
+      discoveryEnvelope,
+    });
+  }
+
+  it("is ABSENT by default — the dual envelope is opt-in", () => {
+    const outs = mintWith().psbt.txOutputs;
+    const nulldata = outs.filter((o) => o.script[0] === 0x6a);
+    expect(nulldata).toHaveLength(1);
+    expect(outs[0]!.script[0]).toBe(0x6a);
+  });
+
+  it("when enabled, appends exactly one extra OP_RETURN as the LAST output", () => {
+    const withOut = mintWith().psbt.txOutputs.length;
+    const outs = mintWith({ ticker: "FROG" }).psbt.txOutputs;
+
+    expect(outs).toHaveLength(withOut + 1);
+
+    const last = outs[outs.length - 1]!;
+    expect(last.script[0]).toBe(0x6a);
+    expect(last.value).toBe(0);
+    expect(Buffer.from(last.script).subarray(2).toString("utf8")).toBe(
+      '{"p":"crc-20","op":"mint","tick":"FROG","amt":"8400000000000000"}',
+    );
+  });
+
+  it("leaves vout 0 and every fixed-index output untouched", () => {
+    const plain = mintWith().psbt.txOutputs;
+    const dual = mintWith({ ticker: "FROG" }).psbt.txOutputs;
+    for (let i = 0; i < plain.length; i++) {
+      expect(Buffer.from(dual[i]!.script).equals(Buffer.from(plain[i]!.script)), `vout ${i}`).toBe(true);
+      expect(dual[i]!.value, `vout ${i} value`).toBe(plain[i]!.value);
+    }
+  });
+
+  it("the appended payload is the canonical re-derivation the Guardian will demand", () => {
+    const outs = mintWith({ ticker: "FROG" }).psbt.txOutputs;
+    const binary = decodeV2(Buffer.from(outs[0]!.script).subarray(2));
+    const payload = Buffer.from(outs[outs.length - 1]!.script).subarray(2);
+    expect(discoveryAgreesWithBinary(payload, binary, "FROG")).toBe(true);
+    expect(discoveryAgreesWithBinary(payload, binary, "DOGE")).toBe(false);
   });
 });

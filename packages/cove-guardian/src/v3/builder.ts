@@ -13,6 +13,8 @@ import {
   computeTokenId,
   encodeDeployV2,
   encodeMintV2,
+  encodeDiscovery,
+  decodeV2,
   encodeRedeemV2,
   encodeTransferV2,
   type TokenIdentityInput,
@@ -126,6 +128,13 @@ export function buildMintPsbtV3(params: {
   minerFeeSats: Sats;
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
+  /**
+   * Emit the advisory `crc-20` discovery envelope as a trailing OP_RETURN
+   * (§D1). OPT-IN: it needs two OP_RETURNs in one transaction, which Bitcoin
+   * Core rejects as `multi-op-return` before v30 relaxed the datacarrier
+   * policy. Leave it off for a deployment that must relay through older nodes.
+   */
+  discoveryEnvelope?: { ticker: string };
 }): MintResult {
   const { nextState, grossSats } = applyMintV2(params.prevState, params.mintAmountAtoms);
   const prevVault = buildBackingVaultV3({
@@ -191,6 +200,17 @@ export function buildMintPsbtV3(params: {
   if (change < 0n) throw new Error("insufficient buyer funds");
   if (change >= 294n) {
     psbt.addOutput({ script: params.buyerChangeScript, value: Number(change) });
+  }
+
+  // Advisory crc-20 discovery envelope, ALWAYS last so every fixed-index output
+  // check above is unaffected. Derived from the same binary envelope the
+  // validator re-derives, so the two can never disagree.
+  if (params.discoveryEnvelope) {
+    const discovery = encodeDiscovery(decodeV2(wire), params.discoveryEnvelope.ticker);
+    psbt.addOutput({
+      script: Buffer.concat([Buffer.from([0x6a, discovery.length]), discovery]),
+      value: 0,
+    });
   }
 
   return {

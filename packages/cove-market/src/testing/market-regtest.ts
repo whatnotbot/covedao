@@ -1,5 +1,6 @@
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
+import { randomBytes } from "node:crypto";
 import { CoreRpcProvider } from "@crclaunch/bitcoin";
 import { createDb, schema } from "@crclaunch/db";
 import { eq } from "drizzle-orm";
@@ -38,6 +39,7 @@ import {
   defaultMarketConfig,
   signBip322P2wpkh,
   listingMessageToSign,
+  reservationMessageToSign,
   getBuyRoutes,
   getSellOptions,
   type ListingV1,
@@ -157,11 +159,11 @@ async function main() {
     mintAmountAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     buyerInputs: [aliceUtxo], buyerCarrierScript: p2wpkh(alice), buyerChangeScript: p2wpkh(alice), feeScript, minerFeeSats: REGTEST_MINER_FEE,
   });
-  const mintSign = validateAndSignMintTransition({ signer, psbt: mint.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const mintSign = await validateAndSignMintTransition({ signer, psbt: mint.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!mintSign.ok) throw new Error(`guardian refused MINT: ${mintSign.reason}`);
   mint.psbt.signInput(1, alice);
   mint.psbt.finalizeInput(1);
-  const mintTxid = await broadcast(orThrow(validateFinalizedMintTransaction({
+  const mintTxid = await broadcast(orThrow(await validateFinalizedMintTransaction({
     rawTxHex: mint.psbt.extractTransaction().toHex(), view: state, network: "regtest", guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript,
   })));
   await mine();
@@ -244,11 +246,19 @@ async function main() {
 
   // reserve → build → buyer sign → seller sign → finalize → broadcast
   const buyerFund = await fund(buyer, 0.2);
+  const reserveNonce = randomBytes(32).toString("hex");
+  const reserveSig = signBip322P2wpkh(
+    buyer.privateKey!,
+    Buffer.from(buyerScript, "hex"),
+    reservationMessageToSign({ version: 1, listingId, reserveNonce, buyerTokenScript: buyerScript }),
+  );
   const fillId = await market.reserveListing({
     listingId,
     buyerTokenScript: buyerScript,
     buyerChangeScript: buyerScript,
     buyerFundInputs: [{ txid: buyerFund.txid, vout: buyerFund.vout, script: buyerFund.script.toString("hex"), valueSats: buyerFund.valueSats }],
+    reserveNonce,
+    signatureB64: reserveSig,
   });
   const psbtB64 = await market.buildFillPsbt(fillId, REGTEST_MINER_FEE);
 

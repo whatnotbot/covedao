@@ -33,21 +33,6 @@ function prevState(supplyTokens: bigint, reserveSats: bigint): CoveState {
   };
 }
 
-/**
- * TypeScript reference result for a witness (true = valid transition).
- *
- * This is the EXACT overlap with the V3 Simplicity MINT predicate (mint.simf):
- *   amount > 0
- *   prevSupply + amount == nextSupply  (no u64 overflow)
- *   nextSupply <= 840,000,000          (no overmint)
- *   prevReserve + contribution == nextReserve  (no u64 overflow)
- *
- * It deliberately does NOT check the geometric20 curve-exactness of
- * `contribution`: the Simplicity predicate receives the curve contribution as a
- * witness and does not implement the full curve. Curve-exactness is a TS-only
- * check enforced by the Guardian's FULL reference policy, not by this
- * differential oracle (see the Phase 4.4 trust model).
- */
 function tsValid(w: MintWitness): boolean {
   if (w.amount <= 0n) return false;
   if (w.prevSupply + w.amount !== w.nextSupply) return false;
@@ -56,13 +41,13 @@ function tsValid(w: MintWitness): boolean {
   return true;
 }
 
-function simplicityValid(w: MintWitness): boolean {
-  return executeMintV3(w).result === "PASS";
+async function simplicityValid(w: MintWitness): Promise<boolean> {
+  return (await executeMintV3(w)).result === "PASS";
 }
 
-function expectAgree(w: MintWitness): void {
+async function expectAgree(w: MintWitness): Promise<void> {
   const ts = tsValid(w);
-  const sim = simplicityValid(w);
+  const sim = await simplicityValid(w);
   const label = JSON.stringify(w, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
   expect(sim, `witness ${label}`).toBe(ts);
 }
@@ -77,8 +62,7 @@ describe("Simplicity CMR is frozen (V3)", () => {
 });
 
 describe("differential: TS validateMint == Simplicity Bit Machine", () => {
-  it.skipIf(!isSimplicityAvailable())("valid mints agree (PASS)", () => {
-    // Deterministic stage-sweep valid vectors.
+  it.skipIf(!isSimplicityAvailable())("valid mints agree (PASS)", async () => {
     const stages: [bigint, bigint][] = [
       [0n, 42_000_000n],
       [42_000_000n, 42_000_000n],
@@ -95,96 +79,60 @@ describe("differential: TS validateMint == Simplicity Bit Machine", () => {
         nextReserve: canonical.nextState.reserveSats,
         contribution: canonical.curveContributionSats,
       };
-      expectAgree(w);
+      await expectAgree(w);
     }
   });
 
-  it.skipIf(!isSimplicityAvailable())("zero amount agrees (FAIL)", () => {
-    expectAgree({
-      amount: 0n,
-      prevSupply: 0n,
-      nextSupply: 0n,
-      prevReserve: 0n,
-      nextReserve: 0n,
-      contribution: 0n,
-    });
+  it.skipIf(!isSimplicityAvailable())("zero amount agrees (FAIL)", async () => {
+    await expectAgree({ amount: 0n, prevSupply: 0n, nextSupply: 0n, prevReserve: 0n, nextReserve: 0n, contribution: 0n });
   });
 
-  it.skipIf(!isSimplicityAvailable())("overmint agrees (FAIL)", () => {
-    expectAgree({
-      amount: 840_000_001n,
-      prevSupply: 0n,
-      nextSupply: 840_000_001n,
-      prevReserve: 0n,
-      nextReserve: 0n,
-      contribution: 0n,
-    });
+  it.skipIf(!isSimplicityAvailable())("overmint agrees (FAIL)", async () => {
+    await expectAgree({ amount: 840_000_001n, prevSupply: 0n, nextSupply: 840_000_001n, prevReserve: 0n, nextReserve: 0n, contribution: 0n });
   });
 
-  it.skipIf(!isSimplicityAvailable())("supply-conservation mutation agrees (FAIL)", () => {
-    expectAgree({
-      amount: 42_000_000n,
-      prevSupply: 0n,
-      nextSupply: 42_000_001n,
-      prevReserve: 0n,
-      nextReserve: 21_000n,
-      contribution: 21_000n,
-    });
+  it.skipIf(!isSimplicityAvailable())("supply-conservation mutation agrees (FAIL)", async () => {
+    await expectAgree({ amount: 42_000_000n, prevSupply: 0n, nextSupply: 42_000_001n, prevReserve: 0n, nextReserve: 21_000n, contribution: 21_000n });
   });
 
-  it.skipIf(!isSimplicityAvailable())("reserve-movement mutation agrees (FAIL)", () => {
-    expectAgree({
-      amount: 42_000_000n,
-      prevSupply: 0n,
-      nextSupply: 42_000_000n,
-      prevReserve: 0n,
-      nextReserve: 21_001n,
-      contribution: 21_000n,
-    });
+  it.skipIf(!isSimplicityAvailable())("reserve-movement mutation agrees (FAIL)", async () => {
+    await expectAgree({ amount: 42_000_000n, prevSupply: 0n, nextSupply: 42_000_000n, prevReserve: 0n, nextReserve: 21_001n, contribution: 21_000n });
   });
 });
 
 describe("V3 overflow enforcement (u64 wraparound must be rejected)", () => {
   const U64MAX = 18446744073709551615n;
 
-  it.skipIf(!isSimplicityAvailable())("supply + amount wrap → MINT FAIL", () => {
-    // prev = u64::MAX, amount = 1: sum wraps to 0. le_64(prev, sum) must fail.
-    expect(
-      executeMintV3({
-        amount: 1n,
-        prevSupply: U64MAX,
-        nextSupply: 0n,
-        prevReserve: 0n,
-        nextReserve: 1n,
-        contribution: 1n,
-      }).result,
-    ).toBe("FAIL");
+  it.skipIf(!isSimplicityAvailable())("supply + amount wrap → MINT FAIL", async () => {
+    expect((await executeMintV3({
+      amount: 1n,
+      prevSupply: U64MAX,
+      nextSupply: 0n,
+      prevReserve: 0n,
+      nextReserve: 1n,
+      contribution: 1n,
+    })).result).toBe("FAIL");
   });
 
-  it.skipIf(!isSimplicityAvailable())("backing + contribution wrap → MINT FAIL", () => {
-    expect(
-      executeMintV3({
-        amount: 1n,
-        prevSupply: 0n,
-        nextSupply: 1n,
-        prevReserve: U64MAX,
-        nextReserve: 0n,
-        contribution: 1n,
-      }).result,
-    ).toBe("FAIL");
+  it.skipIf(!isSimplicityAvailable())("backing + contribution wrap → MINT FAIL", async () => {
+    expect((await executeMintV3({
+      amount: 1n,
+      prevSupply: 0n,
+      nextSupply: 1n,
+      prevReserve: U64MAX,
+      nextReserve: 0n,
+      contribution: 1n,
+    })).result).toBe("FAIL");
   });
 
-  it.skipIf(!isSimplicityAvailable())("exact u64 boundary (no wrap) is handled", () => {
-    // prev = 0, amount = 1: valid at the boundary (no overflow).
-    expect(
-      executeMintV3({
-        amount: 1n,
-        prevSupply: 0n,
-        nextSupply: 1n,
-        prevReserve: 0n,
-        nextReserve: 1n,
-        contribution: 1n,
-      }).result,
-    ).toBe("PASS");
+  it.skipIf(!isSimplicityAvailable())("exact u64 boundary (no wrap) is handled", async () => {
+    expect((await executeMintV3({
+      amount: 1n,
+      prevSupply: 0n,
+      nextSupply: 1n,
+      prevReserve: 0n,
+      nextReserve: 1n,
+      contribution: 1n,
+    })).result).toBe("PASS");
   });
 });

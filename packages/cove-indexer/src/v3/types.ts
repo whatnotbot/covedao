@@ -77,6 +77,9 @@ export interface V3IndexerConfig {
   feeScript: Buffer;
   /** Absolute activation height; Cove ops below this are ignored (§13/§48). */
   genesisHeight: bigint;
+  /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
+  buyFeeBps?: bigint;
+  redeemFeeBps?: bigint;
 }
 
 export interface BlockUndo {

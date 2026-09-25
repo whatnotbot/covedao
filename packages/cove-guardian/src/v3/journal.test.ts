@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   computeGuardianAuditHash,
   canonicalAuditRecordBytes,
+  verifyGuardianAuditChain,
   InMemorySigningJournal,
+  SIGNING_JOURNAL_TTL_MS,
   type GuardianAuditDigestFields,
 } from "./journal.js";
 
@@ -66,5 +68,55 @@ describe("Guardian durable audit + signing journal (§17-§23)", () => {
     );
     expect(results.filter((r) => r === "RESERVED")).toHaveLength(1);
     expect(results.filter((r) => r === "CONFLICT")).toHaveLength(19);
+  });
+
+  it("verifyGuardianAuditChain validates hashes + chaining (§C10)", () => {
+    const f1 = fields();
+    const h1 = computeGuardianAuditHash("0".repeat(64), f1);
+    const f2 = fields({ requestId: "req-2" });
+    const h2 = computeGuardianAuditHash(h1, f2);
+
+    expect(verifyGuardianAuditChain([
+      { previousAuditHash: "0".repeat(64), auditHash: h1, fields: f1 },
+      { previousAuditHash: h1, auditHash: h2, fields: f2 },
+    ])).toBe(true);
+
+    // A tampered recorded auditHash must fail (previously the predicate was dead).
+    expect(verifyGuardianAuditChain([
+      { previousAuditHash: "0".repeat(64), auditHash: "00".repeat(32), fields: f1 },
+    ])).toBe(false);
+
+    // A broken chain (previousAuditHash != prior auditHash) must fail.
+    expect(verifyGuardianAuditChain([
+      { previousAuditHash: "0".repeat(64), auditHash: h1, fields: f1 },
+      { previousAuditHash: "ff".repeat(32), auditHash: h2, fields: f2 },
+    ])).toBe(false);
+
+    // The first link must start from the zero hash.
+    expect(verifyGuardianAuditChain([
+      { previousAuditHash: "aa".repeat(32), auditHash: h1, fields: f1 },
+    ])).toBe(false);
+  });
+
+  it("release un-bricks a reservation so a new digest can reserve (§C1/§C6)", async () => {
+    const j = new InMemorySigningJournal();
+    const outpoint = { network: "regtest", backingTxid: "dd".repeat(32), backingVout: 1 };
+    expect(await j.reserve({ ...outpoint, unsignedTxDigest: "11".repeat(32) })).toBe("RESERVED");
+    await j.release({ ...outpoint, unsignedTxDigest: "11".repeat(32) });
+    expect(await j.committedDigest(outpoint.network, outpoint.backingTxid, outpoint.backingVout)).toBeNull();
+    expect(await j.reserve({ ...outpoint, unsignedTxDigest: "22".repeat(32) })).toBe("RESERVED");
+  });
+
+  it("an expired reservation self-heals (re-reservable with a new digest) (§C1)", async () => {
+    let t = 0;
+    const j = new InMemorySigningJournal(() => t);
+    const outpoint = { network: "regtest", backingTxid: "ee".repeat(32), backingVout: 1 };
+    expect(await j.reserve({ ...outpoint, unsignedTxDigest: "11".repeat(32) })).toBe("RESERVED");
+    // Before expiry, a different digest is a conflict.
+    expect(await j.reserve({ ...outpoint, unsignedTxDigest: "22".repeat(32) })).toBe("CONFLICT");
+    // After expiry, a different digest re-reserves.
+    t = SIGNING_JOURNAL_TTL_MS + 1;
+    expect(await j.reserve({ ...outpoint, unsignedTxDigest: "22".repeat(32) })).toBe("RESERVED");
+    expect(await j.committedDigest(outpoint.network, outpoint.backingTxid, outpoint.backingVout)).toBe("22".repeat(32));
   });
 });

@@ -93,6 +93,7 @@ export {
   computeGuardianAuditHash,
   verifyGuardianAuditChain,
   InMemorySigningJournal,
+  SIGNING_JOURNAL_TTL_MS,
   type GuardianAuditDigestFields,
   type SigningJournalStore,
   type SigningReservation,

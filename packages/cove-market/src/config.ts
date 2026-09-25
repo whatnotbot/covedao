@@ -1,4 +1,5 @@
 import { COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
+import { CHAIN_BITCOIN_REGTEST, CHAIN_BITCOIN_SIGNET, CHAIN_BITCOIN_TESTNET, CHAIN_BITCOIN_MAINNET } from "@crclaunch/cove-wire";
 
 /**
  * Market operational config (§29/§22/§10). NOT Cove protocol constants — these
@@ -7,6 +8,8 @@ import { COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
 export interface MarketConfig {
   enabled: boolean;
   network: "regtest" | "signet" | "testnet" | "mainnet";
+  /** Chain identity this market operates on; listings must match (§M5). */
+  chainIdentity: string;
   p2pFeeBps: bigint;
   feeScript: Buffer;
   reservationTtlSeconds: number;
@@ -16,10 +19,24 @@ export interface MarketConfig {
   maxP2pSettlementSats?: bigint;
 }
 
-export function defaultMarketConfig(network: MarketConfig["network"], feeScript: Buffer): MarketConfig {
+function chainIdentityForNetwork(network: MarketConfig["network"]): string {
+  switch (network) {
+    case "regtest":
+      return CHAIN_BITCOIN_REGTEST;
+    case "signet":
+      return CHAIN_BITCOIN_SIGNET;
+    case "testnet":
+      return CHAIN_BITCOIN_TESTNET;
+    case "mainnet":
+      return CHAIN_BITCOIN_MAINNET;
+  }
+}
+
+export function defaultMarketConfig(network: MarketConfig["network"], feeScript: Buffer, chainIdentity: string = chainIdentityForNetwork(network)): MarketConfig {
   return {
     enabled: true,
     network,
+    chainIdentity,
     p2pFeeBps: COVE_FEE_CONFIG.p2pFeeBps,
     feeScript,
     reservationTtlSeconds: 90,
@@ -37,10 +54,12 @@ export function mainnetMarketConfig(params: {
   p2pFeeBps: number;
   feeScript: Buffer;
   maxP2pSettlementSats: bigint;
+  chainIdentity?: string;
 }): MarketConfig {
   return {
     enabled: true,
     network: "mainnet",
+    chainIdentity: params.chainIdentity ?? CHAIN_BITCOIN_MAINNET,
     p2pFeeBps: BigInt(params.p2pFeeBps),
     feeScript: params.feeScript,
     reservationTtlSeconds: 90,

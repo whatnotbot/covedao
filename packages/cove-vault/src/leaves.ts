@@ -1,4 +1,5 @@
 import * as bitcoin from "bitcoinjs-lib";
+import * as ecc from "tiny-secp256k1";
 
 /**
  * The two Cove vault tapleaves.
@@ -40,6 +41,9 @@ export function buildExecutionLeaf(policyIdentityHash: Buffer, guardianXOnly: Bu
   }
   if (guardianXOnly.length !== 32) {
     throw new Error(`guardianXOnly must be 32 bytes, got ${guardianXOnly.length}`);
+  }
+  if (!ecc.isXOnlyPoint(guardianXOnly)) {
+    throw new Error("guardianXOnly is not on the secp256k1 curve");
   }
   return bitcoin.script.compile([
     policyIdentityHash,

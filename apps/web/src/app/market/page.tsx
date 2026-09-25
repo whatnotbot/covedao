@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useWallet } from "@/components/WalletProvider";
 import { fmtBtc, fmtTokens } from "@/lib/format";
+import { verifyClientIntent } from "@crclaunch/wallets";
 
 interface Listing {
   id: string;
@@ -16,7 +17,7 @@ interface Listing {
 }
 
 export default function MarketPage() {
-  const { connected, script, connect, signPsbt, getUtxos } = useWallet();
+  const { connected, script, connect, signPsbt, signBip322, getUtxos } = useWallet();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [buying, setBuying] = useState<string | null>(null);
@@ -40,10 +41,19 @@ export default function MarketPage() {
     setMsg("");
     try {
       const funding = await getUtxos();
+      // §M4: require a signed nonce to reserve — prepare, sign, then reserve.
+      const pr = await fetch(`/api/v3/market/listings/${listing.listingId}/reserve/prepare`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ buyerTokenScript: script }),
+      });
+      const pj = await pr.json();
+      if (!pj.ok) throw new Error(pj.error?.message ?? "reserve prepare failed");
+      const signatureB64 = await signBip322(pj.data.message);
       const rr = await fetch(`/api/v3/market/listings/${listing.listingId}/reserve`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ buyerTokenScript: script, buyerChangeScript: script, funding }),
+        body: JSON.stringify({ buyerTokenScript: script, buyerChangeScript: script, funding, nonceHex: pj.data.reserveNonce, signatureB64 }),
       });
       const rj = await rr.json();
       if (!rj.ok) throw new Error(rj.error?.message ?? "reserve failed");
@@ -56,6 +66,10 @@ export default function MarketPage() {
       });
       const bj = await br.json();
       if (!bj.ok) throw new Error(bj.error?.message ?? "build failed");
+
+      // §M3: independently re-derive the P2P outputs from the user's own input
+      // before signing (the server-supplied digest alone is circular).
+      if (bj.data.intent) verifyClientIntent(bj.data.psbtBase64, bj.data.intent);
 
       const signed = await signPsbt(bj.data.psbtBase64, "P2P_BUY");
       const sr = await fetch(`/api/v3/market/fills/${fillId}/buyer-signature`, {

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
+import * as ecc from "tiny-secp256k1";
 import { MarketError } from "./errors.js";
 
 /**
@@ -54,7 +55,7 @@ export function validateP2wpkhPartialSig(psbt: bitcoin.Psbt, inputIndex: number)
   if (!isSighashAll(sig)) throw new MarketError("UNSAFE_SIGHASH", `input ${inputIndex} is not SIGHASH_ALL`);
   let ok = false;
   try {
-    ok = psbt.validateSignaturesOfInput(inputIndex, () => true);
+    ok = psbt.validateSignaturesOfInput(inputIndex, (pubkey, msghash, sig) => ecc.verify(msghash, pubkey, sig));
   } catch {
     ok = false;
   }

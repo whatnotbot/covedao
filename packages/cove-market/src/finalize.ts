@@ -60,6 +60,18 @@ export interface P2PFillValidationParams {
   network: "regtest" | "signet" | "testnet" | "mainnet";
 }
 
+/**
+ * Re-check the canary P2P settlement cap against a concrete amount (§P0-6).
+ * Enforced both when a listing is created AND again when the fill is finalized,
+ * so a cap that changed (or a listing that slipped through) cannot settle for
+ * more than the canary allows.
+ */
+export function assertSettlementCap(totalPriceSats: bigint, cap: bigint | null | undefined): void {
+  if (cap != null && totalPriceSats > cap) {
+    throw new MarketError("P2P_SETTLEMENT_CAP_EXCEEDED", `settlement ${totalPriceSats} > canary cap ${cap}`);
+  }
+}
+
 function outpointKey(txid: string, vout: number): string {
   return `${txid}:${vout}`;
 }

@@ -5,7 +5,8 @@ import { ECPairFactory } from "ecpair";
 import type { ListingV1 } from "../types.js";
 import { serializeListingV1 } from "./serialization.js";
 import { listingIdOf, cancellationHashOf, listingMessageToSign } from "./hash.js";
-import { signBip322P2wpkh, verifyBip322P2wpkh, verifyListingAuthorization, verifyCancellationAuthorization } from "./signature.js";
+import { signBip322P2wpkh, verifyBip322P2wpkh, verifyListingAuthorization, verifyCancellationAuthorization, verifyReservationAuthorization } from "./signature.js";
+import { reservationMessageToSign } from "./hash.js";
 import { validateListingShape } from "./validate.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
@@ -81,6 +82,32 @@ describe("market V1 canonical listing (§5-§8)", () => {
     expect(verifyBip322P2wpkh(sellerScript, "WRONG MESSAGE", sig)).toBe(false);
     const otherScript = bitcoin.payments.p2wpkh({ pubkey: ECPair.makeRandom().publicKey, network: bitcoin.networks.regtest }).output!;
     expect(verifyBip322P2wpkh(otherScript, listingMessageToSign(l), sig)).toBe(false);
+  });
+
+  it("rejects a key-A-over-key-B-script forgery (§M2)", () => {
+    const l = listing();
+    const msg = listingMessageToSign(l);
+    const keyB = ECPair.fromPrivateKey(Buffer.alloc(32, 0x52));
+    const scriptB = bitcoin.payments.p2wpkh({ pubkey: keyB.publicKey, network: bitcoin.networks.regtest }).output!;
+    // A valid BIP-322-shaped signature that commits to B's script but whose
+    // witness pubkey is A (0x51) — the old code accepted this forgery because it
+    // never bound the witness pubkey to the script's 20-byte program.
+    const forged = signBip322P2wpkh(Buffer.alloc(32, 0x51), scriptB, msg);
+    expect(verifyBip322P2wpkh(scriptB, msg, forged)).toBe(false);
+  });
+
+  it("reservation authorization verifies the signed nonce and binds the buyer script (§M4)", () => {
+    const buyer = ECPair.fromPrivateKey(Buffer.alloc(32, 0x49));
+    const buyerScript = bitcoin.payments.p2wpkh({ pubkey: buyer.publicKey, network: bitcoin.networks.regtest }).output!;
+    const listingId = "ab".repeat(32);
+    const nonce = "aa".repeat(32);
+    const r = { version: 1 as const, listingId, reserveNonce: nonce, buyerTokenScript: buyerScript.toString("hex") };
+    const sig = signBip322P2wpkh(Buffer.alloc(32, 0x49), buyerScript, reservationMessageToSign(r));
+    expect(verifyReservationAuthorization(r, sig)).toBe(true);
+    // A different nonce changes the message → signature is invalid.
+    expect(verifyReservationAuthorization({ ...r, reserveNonce: "bb".repeat(32) }, sig)).toBe(false);
+    // A different buyer script changes the message → signature is invalid.
+    expect(verifyReservationAuthorization({ ...r, buyerTokenScript: "0014" + "ee".repeat(20) }, sig)).toBe(false);
   });
 
   it("signed cancellation verifies against the listing's seller script", () => {

@@ -10,21 +10,18 @@ import {
   buildMintPsbtV3,
   buildRedeemPsbtV3,
   buildTransferPsbtV2,
-  validateAndSignMintTransition,
-  validateAndSignRedeemTransition,
   validateFinalizedDeployTransaction,
   validateFinalizedMintTransaction,
   validateFinalizedRedeemTransaction,
   validateFinalizedTransferTransaction,
   RESERVE_ANCHOR_SATS,
-  type GuardianV3Signer,
   type ValidatedCoveTransaction,
   type ResolvedInput,
   type GuardianTransitionSigner,
   type TransitionSignRequest,
 } from "@crclaunch/cove-guardian/v3";
 import { loadCanonicalViewSnapshotFromDb, computeHealth, getTokenUtxosByScriptDb } from "@crclaunch/cove-indexer/v3";
-import { grossBuy, grossRedeem, deterministicFee, COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
+import { grossBuy, grossRedeem, deterministicFee } from "@crclaunch/cove-economics";
 import { ATOMS_PER_TOKEN, PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
 import { canonicalTicker, computeTokenId } from "@crclaunch/cove-wire";
 import {
@@ -41,7 +38,7 @@ import {
 } from "@crclaunch/cove-market";
 import { AppError } from "./errors.js";
 import type { V3AppConfig, V3Network } from "./config.js";
-import { checkCoreAgreement } from "./readiness.js";
+import { checkCoreAgreement, verifyMainnetGenesis } from "./readiness.js";
 import { unsignedTxDigest, parsePsbt, btcNetwork, validateInputSignature } from "./psbt.js";
 import { resolveFundingUtxos, type FundingCandidate } from "./funding.js";
 import { createTxSession, requireTxSession, updateTxSession } from "./tx-session.js";
@@ -132,16 +129,15 @@ export class V3AppService {
     readonly db: Database,
     readonly provider: CoreRpcProvider,
     readonly config: V3AppConfig,
-    readonly signer: GuardianV3Signer | null,
-    readonly transitionSigner: GuardianTransitionSigner | null = null,
+    readonly transitionSigner: GuardianTransitionSigner,
     readonly secondaryProvider: CoreRpcProvider | null = null,
   ) {
     this.market = new MarketService(
       db,
       provider,
       config.network === "mainnet"
-        ? mainnetMarketConfig({ p2pFeeBps: config.p2pFeeBps ?? 50, feeScript: config.feeScript, maxP2pSettlementSats: config.maxP2pSettlementSats ?? 0n })
-        : defaultMarketConfig(config.network, config.feeScript),
+        ? mainnetMarketConfig({ p2pFeeBps: config.p2pFeeBps ?? 50, feeScript: config.feeScript, maxP2pSettlementSats: config.maxP2pSettlementSats ?? 0n, chainIdentity: config.chainIdentity })
+        : defaultMarketConfig(config.network, config.feeScript, config.chainIdentity),
     );
   }
 
@@ -151,17 +147,19 @@ export class V3AppService {
     if (!this.config.enabled) throw new AppError("APP_DISABLED", "Cove V3 application is disabled");
   }
 
-  private assertNetwork(network: string): V3Network {
-    if (network === "mainnet" || network === "mainnet-read-only" || network === "mock") {
+  private assertNetwork(): V3Network {
+    // §P0-5: the network gate MUST come from the server-side config, never from
+    // request-body input. A mainnet node is read-only until it is explicitly
+    // activated, and that decision is made at boot, not per request.
+    if (this.config.network === "mainnet") {
       throw new AppError("MAINNET_DISABLED", "mainnet mutation is disabled (Phase 8)");
     }
-    return network as V3Network;
+    return this.config.network;
   }
 
-  private assertMutating(network: string): V3Network {
+  private assertMutating(): V3Network {
     this.assertEnabled();
-    const n = this.assertNetwork(network);
-    return n;
+    return this.assertNetwork();
   }
 
   /** Canary wallet/token allowlist enforcement (§45/§46) — fail closed when set. */
@@ -172,11 +170,6 @@ export class V3AppService {
     if (this.config.canaryAllowedWalletScripts && params.walletScript && !this.config.canaryAllowedWalletScripts.includes(params.walletScript.toLowerCase())) {
       throw new AppError("CANARY_WALLET_NOT_ALLOWED", "wallet script is not in the canary allowlist");
     }
-  }
-
-  private requireSigner(): GuardianV3Signer {
-    if (!this.signer) throw new AppError("GUARDIAN_UNAVAILABLE", "Guardian signer is not configured");
-    return this.signer;
   }
 
   private async requireHealthy(): Promise<void> {
@@ -190,6 +183,16 @@ export class V3AppService {
     if (this.secondaryProvider) {
       const agreement = await checkCoreAgreement(this.provider, this.secondaryProvider);
       if (!agreement.agreed) throw new AppError("CORE_UNAVAILABLE", `Core disagreement: ${agreement.detail ?? "unknown"}`);
+    }
+    // §P1-2: verify each node by mainnet genesis hash (not the chain string,
+    // which cannot distinguish networks). Fail closed on any mismatch.
+    if (this.config.network === "mainnet") {
+      if (!(await verifyMainnetGenesis(this.provider))) {
+        throw new AppError("CORE_UNAVAILABLE", "primary Core is not on Bitcoin mainnet (genesis hash mismatch)");
+      }
+      if (this.secondaryProvider && !(await verifyMainnetGenesis(this.secondaryProvider))) {
+        throw new AppError("CORE_UNAVAILABLE", "secondary Core is not on Bitcoin mainnet (genesis hash mismatch)");
+      }
     }
   }
 
@@ -266,7 +269,6 @@ export class V3AppService {
   }
 
   async buildLaunch(params: {
-    network: string;
     ticker: string;
     nonceHex: string;
     walletScript: string;
@@ -276,7 +278,7 @@ export class V3AppService {
     metadata: TokenMetadataInput;
     idempotencyKey: string;
   }): Promise<{ sessionId: string; psbtBase64: string; intent: IntentV3; tokenId: string }> {
-    this.assertMutating(params.network);
+    this.assertMutating();
     await this.requireHealthy();
     const tokenId = computeTokenId({ chainIdentity: this.config.chainIdentity, policyVersion: 3, ticker: canonicalTicker(params.ticker), tokenNonce: Buffer.from(params.nonceHex, "hex") }).toString("hex");
     this.assertCanaryAllowed({ tokenId, walletScript: params.walletScript });
@@ -364,7 +366,7 @@ export class V3AppService {
     const supply = backing.state.issuedPublicSupplyAtoms;
     if (supply + amountAtoms > PUBLIC_SUPPLY_ATOMS) throw new AppError("TOKEN_AMOUNT_INVALID", "exceeds public cap");
     const gross = grossBuy(supply / ATOMS_PER_TOKEN, amountAtoms / ATOMS_PER_TOKEN);
-    const fee = deterministicFee(gross, COVE_FEE_CONFIG.buyFeeBps);
+    const fee = deterministicFee(gross, this.config.buyFeeBps);
     const next = applyMintV2(backing.state, amountAtoms).nextState;
     const cursor = await this.db.select().from(schema.coveV3Cursor).where(eq(schema.coveV3Cursor.network, this.config.network));
     const c = cursor[0];
@@ -379,7 +381,7 @@ export class V3AppService {
       backingAfterSats: next.backingSats,
       grossSats: gross,
       feeSats: fee,
-      feeBps: COVE_FEE_CONFIG.buyFeeBps,
+      feeBps: this.config.buyFeeBps,
       indexedHeight: c?.height ?? 0n,
       indexedBlockHash: c?.blockHash ?? "",
       expiresAtHeight: (c?.height ?? 0n) + 2n,
@@ -387,7 +389,6 @@ export class V3AppService {
   }
 
   async buildBackingBuy(params: {
-    network: string;
     tokenId: string;
     amountAtoms: bigint;
     quoteBinding: { stateHash: string; backingOutpoint: { txid: string; vout: number }; expiresAtHeight: bigint | null };
@@ -397,10 +398,9 @@ export class V3AppService {
     minerFeeSats: bigint;
     idempotencyKey: string;
   }): Promise<{ sessionId: string; psbtBase64: string; intent: IntentV3 }> {
-    this.assertMutating(params.network);
+    this.assertMutating();
     await this.requireHealthy();
     this.assertCanaryAllowed({ tokenId: params.tokenId, walletScript: params.walletScript });
-    const signer = this.requireSigner();
     if (params.minerFeeSats > this.config.maxMinerFeeSats) throw new AppError("TOKEN_AMOUNT_INVALID", "miner fee exceeds cap");
     const backing = await this.loadBacking(params.tokenId);
     if (backing.stateHash !== params.quoteBinding.stateHash || backing.input.txid !== params.quoteBinding.backingOutpoint.txid || backing.input.vout !== params.quoteBinding.backingOutpoint.vout) {
@@ -425,14 +425,12 @@ export class V3AppService {
       buyerChangeScript: Buffer.from(params.walletScript, "hex"),
       feeScript: this.config.feeScript,
       minerFeeSats: params.minerFeeSats,
+      buyFeeBps: this.config.buyFeeBps,
     });
     const view = await this.loadView(params.tokenId);
     const req: TransitionSignRequest = { psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
-      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats };
-    const signed = this.transitionSigner
-      ? await this.transitionSigner.signMint(req)
-      : validateAndSignMintTransition({ signer, psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
-          recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript });
+      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, buyFeeBps: this.config.buyFeeBps };
+    const signed = await this.transitionSigner.signMint(req);
     if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
     const psbtBase64 = result.psbt.toBase64();
     const digest = unsignedTxDigest(result.psbt);
@@ -482,7 +480,7 @@ export class V3AppService {
     for (let i = 1; i < psbt.data.inputs.length; i++) psbt.finalizeInput(i);
     const rawTxHex = psbt.extractTransaction().toHex();
     const view = await this.loadView(session.tokenId!);
-    const validated = validateFinalizedMintTransaction({
+    const validated = await validateFinalizedMintTransaction({
       rawTxHex,
       view,
       network: this.config.network,
@@ -491,6 +489,7 @@ export class V3AppService {
       recoveryProfile: this.config.recoveryProfile,
       feeScript: this.config.feeScript,
       maxMinerFeeSats: this.config.maxMinerFeeSats,
+      buyFeeBps: this.config.buyFeeBps,
     });
     if (!("rawTxHex" in validated)) throw new AppError("GUARDIAN_REJECTED", validated.reason);
     const txid = await this.broadcast(validated);
@@ -504,7 +503,7 @@ export class V3AppService {
     if (amountAtoms <= 0n || amountAtoms % ATOMS_PER_TOKEN !== 0n) throw new AppError("TOKEN_AMOUNT_INVALID", "redeem requires whole display tokens");
     const backing = await this.loadBacking(tokenId);
     const gross = grossRedeem(backing.state.issuedPublicSupplyAtoms / ATOMS_PER_TOKEN, amountAtoms / ATOMS_PER_TOKEN);
-    const fee = deterministicFee(gross, COVE_FEE_CONFIG.redeemFeeBps);
+    const fee = deterministicFee(gross, this.config.redeemFeeBps);
     const next = applyRedeemV2(backing.state, amountAtoms).nextState;
     return {
       tokenId,
@@ -522,7 +521,6 @@ export class V3AppService {
   }
 
   async buildRedeem(params: {
-    network: string;
     tokenId: string;
     amountAtoms: bigint;
     walletScript: string;
@@ -530,10 +528,9 @@ export class V3AppService {
     minerFeeSats: bigint;
     idempotencyKey: string;
   }): Promise<{ sessionId: string; psbtBase64: string; intent: IntentV3 }> {
-    this.assertMutating(params.network);
+    this.assertMutating();
     await this.requireHealthy();
     this.assertCanaryAllowed({ tokenId: params.tokenId, walletScript: params.walletScript });
-    const signer = this.requireSigner();
     const backing = await this.loadBacking(params.tokenId);
     const tokenUtxos = await getTokenUtxosByScriptDb(this.db, this.config.network, params.walletScript);
     const mine = tokenUtxos.filter((u) => u.tokenId === params.tokenId);
@@ -561,14 +558,12 @@ export class V3AppService {
       sellerChangeScript: Buffer.from(params.walletScript, "hex"),
       feeScript: this.config.feeScript,
       minerFeeSats: params.minerFeeSats,
+      redeemFeeBps: this.config.redeemFeeBps,
     });
     const view = await this.loadView(params.tokenId, selected.map((u) => ({ txid: u.txid, vout: u.vout })));
     const req: TransitionSignRequest = { psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
-      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats };
-    const signed = this.transitionSigner
-      ? await this.transitionSigner.signRedeem(req)
-      : validateAndSignRedeemTransition({ signer, psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
-          recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript });
+      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, redeemFeeBps: this.config.redeemFeeBps };
+    const signed = await this.transitionSigner.signRedeem(req);
     if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
     const psbtBase64 = result.psbt.toBase64();
     const digest = unsignedTxDigest(result.psbt);
@@ -617,7 +612,7 @@ export class V3AppService {
     for (let i = 1; i < psbt.data.inputs.length; i++) psbt.finalizeInput(i);
     const rawTxHex = psbt.extractTransaction().toHex();
     const view = await this.loadView(session.tokenId!);
-    const validated = validateFinalizedRedeemTransaction({
+    const validated = await validateFinalizedRedeemTransaction({
       rawTxHex,
       view,
       network: this.config.network,
@@ -626,6 +621,7 @@ export class V3AppService {
       recoveryProfile: this.config.recoveryProfile,
       feeScript: this.config.feeScript,
       maxMinerFeeSats: this.config.maxMinerFeeSats,
+      redeemFeeBps: this.config.redeemFeeBps,
     });
     if (!("rawTxHex" in validated)) throw new AppError("GUARDIAN_REJECTED", validated.reason);
     const txid = await this.broadcast(validated);
@@ -636,7 +632,6 @@ export class V3AppService {
   // ── transfer ──────────────────────────────────────────────────────────────
 
   async buildTransfer(params: {
-    network: string;
     tokenId: string;
     amountAtoms: bigint;
     recipientScript: string;
@@ -646,7 +641,7 @@ export class V3AppService {
     minerFeeSats: bigint;
     idempotencyKey: string;
   }): Promise<{ sessionId: string; psbtBase64: string; intent: IntentV3 }> {
-    this.assertMutating(params.network);
+    this.assertMutating();
     await this.requireHealthy();
     const tokenUtxos = await getTokenUtxosByScriptDb(this.db, this.config.network, params.walletScript);
     const mine = tokenUtxos.filter((u) => u.tokenId === params.tokenId);
@@ -863,14 +858,26 @@ export class V3AppService {
     return this.db.select().from(schema.coveV3MarketFills).where(eq(schema.coveV3MarketFills.id, fillId));
   }
   async finalizeAndBroadcastFill(fillId: string): Promise<{ txid: string }> {
+    // §P0-6: this was the only mutation with no server-side guard. Gate on
+    // enabled + network (config-driven), health/quorum, and the canary
+    // allowlist before finalizing or broadcasting anything.
+    this.assertMutating();
+    await this.requireHealthy();
+    const fills = await this.getFill(fillId);
+    const fill = fills[0];
+    if (!fill) throw new AppError("STATE_CHANGED", "fill not found");
+    this.assertCanaryAllowed({ tokenId: fill.tokenId, walletScript: fill.buyerTokenScript });
     const validated = await this.market.finalizeP2PFill(fillId);
     return this.market.broadcastP2PFill(validated);
   }
   getBuyRoutes(tokenId: string, amountAtoms: bigint) {
-    return getBuyRoutes(this.db, this.config.network, tokenId, amountAtoms);
+    return getBuyRoutes(this.db, this.config.network, tokenId, amountAtoms, {
+      buyFeeBps: this.config.buyFeeBps,
+      p2pFeeBps: this.market.config.p2pFeeBps,
+    });
   }
   getSellOptions(tokenId: string, walletScript: string) {
-    return getSellOptions(this.db, this.config.network, tokenId, walletScript);
+    return getSellOptions(this.db, this.config.network, tokenId, walletScript, this.config.redeemFeeBps);
   }
   async listListings(opts: { tokenId?: string; limit?: number } = {}) {
     const limit = Math.min(opts.limit ?? 100, 200);

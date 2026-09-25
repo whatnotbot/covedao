@@ -5,7 +5,7 @@ import { ECPairFactory } from "ecpair";
 import { buildTransferPsbtV2 } from "@crclaunch/cove-guardian/v3";
 import { CoveChainView, TOKEN_CARRIER_SATS, s0StateV2 } from "@crclaunch/cove-covenant";
 import { COVE_FEE_CONFIG, deterministicFee } from "@crclaunch/cove-economics";
-import { validateFinalizedP2PFill, type P2PFillTerms } from "./finalize.js";
+import { validateFinalizedP2PFill, assertSettlementCap, type P2PFillTerms } from "./finalize.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 const ECPair = ECPairFactory(ecc);
@@ -147,5 +147,21 @@ describe("validateFinalizedP2PFill (§14)", () => {
     expect(() =>
       validateFinalizedP2PFill({ rawTxHex: hex, terms: buildTerms({ sourceTxid: "99".repeat(32) }), view: view(), network: "regtest" }),
     ).toThrow(/SOURCE_INPUT/);
+  });
+});
+
+describe("assertSettlementCap (§P0-6)", () => {
+  it("allows a settlement at or below the cap", () => {
+    expect(() => assertSettlementCap(10_000_000n, 10_000_000n)).not.toThrow();
+    expect(() => assertSettlementCap(9_999_999n, 10_000_000n)).not.toThrow();
+  });
+
+  it("allows any settlement when no cap is configured (dev/regtest)", () => {
+    expect(() => assertSettlementCap(1_000_000_000_000n, null)).not.toThrow();
+    expect(() => assertSettlementCap(1_000_000_000_000n, undefined)).not.toThrow();
+  });
+
+  it("rejects a settlement above the cap", () => {
+    expect(() => assertSettlementCap(10_000_001n, 10_000_000n)).toThrow(/P2P_SETTLEMENT_CAP_EXCEEDED/);
   });
 });

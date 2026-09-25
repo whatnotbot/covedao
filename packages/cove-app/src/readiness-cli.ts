@@ -1,6 +1,8 @@
 import { resolve } from "node:path";
 import { loadMainnetProfile, hashMainnetProfile } from "@crclaunch/cove-mainnet";
 import { CoreRpcProvider } from "@crclaunch/bitcoin";
+import { createDb } from "@crclaunch/db";
+import { computeHealth } from "@crclaunch/cove-indexer/v3";
 import {
   checkCoreAgreement,
   computeMainnetReadiness,
@@ -8,16 +10,25 @@ import {
   type MainnetReadiness,
   type ReadinessState,
 } from "./readiness.js";
+import { committedHash, evaluateIndexerProbe, probeWorkerLock } from "./readiness-probes.js";
 
 /**
- * Runtime readiness gathering (§49/§50). Loads the canonical profile, contacts
- * primary + secondary Core, the Guardian service (HTTP or an in-process fixture),
- * and computes the ONE readiness result via computeMainnetReadiness. Consumed by
- * the readiness CLI. Never broadcasts.
+ * Runtime readiness gathering (§49/§50, §P1-1). Loads the canonical profile,
+ * contacts primary + secondary Core, the Guardian service, the indexer DB and
+ * the worker's advisory lock, and computes the ONE readiness result via
+ * computeMainnetReadiness. Every signal is a REAL probe compared against a
+ * committed value — nothing is hardcoded true and nothing self-compares.
+ * Never broadcasts.
  */
 
 export interface RuntimeReadinessEnv {
   COVE_V3_MAINNET_PROFILE_PATH?: string;
+  /** Committed hash of the approved mainnet profile (the source of truth). */
+  COVE_V3_MAINNET_PROFILE_HASH?: string;
+  /** Committed expected state root (replay root) the indexer must reach. */
+  COVE_V3_MAINNET_STATE_ROOT?: string;
+  /** Committed release-manifest hash. */
+  COVE_V3_MAINNET_RELEASE_MANIFEST_HASH?: string;
   COVE_BITCOIN_RPC_URL?: string;
   COVE_BITCOIN_RPC_URL_SECONDARY?: string;
   COVE_BITCOIN_RPC_USER?: string;
@@ -25,15 +36,16 @@ export interface RuntimeReadinessEnv {
   COVE_GUARDIAN_ENDPOINT?: string;
   COVE_GUARDIAN_AUTH_TOKEN?: string;
   COVE_V3_CANARY_ACTIVE?: string;
-  /** Fixture mode: treat the Guardian as healthy with the profile's key/hash. */
-  COVE_V3_FIXTURE_GUARDIAN?: string;
+  COVE_DATABASE_URL?: string;
 }
 
 export interface RuntimeReadinessResult {
   state: ReadinessState;
   readiness: MainnetReadiness;
   profileHash: string;
+  expectedProfileHash: string | null;
   profilePath: string;
+  stateRoot: string;
   coreAgreementDetail: string | null;
 }
 
@@ -54,6 +66,11 @@ export async function runRuntimeReadiness(env: RuntimeReadinessEnv): Promise<Run
   const { profile } = loadMainnetProfile(profilePath);
   const profileHash = hashMainnetProfile(profile);
   const canaryActive = ["true", "1", "yes", "on"].includes((env.COVE_V3_CANARY_ACTIVE ?? "").toLowerCase());
+
+  // Committed expected values — fail closed when absent/invalid.
+  const expectedProfileHash = committedHash(env.COVE_V3_MAINNET_PROFILE_HASH);
+  const expectedStateRoot = committedHash(env.COVE_V3_MAINNET_STATE_ROOT);
+  const releaseManifestOk = committedHash(env.COVE_V3_MAINNET_RELEASE_MANIFEST_HASH) !== null;
 
   // ── Core quorum (primary + secondary) ──
   const rpcUser = env.COVE_BITCOIN_RPC_USER ?? "user";
@@ -79,24 +96,28 @@ export async function runRuntimeReadiness(env: RuntimeReadinessEnv): Promise<Run
     } catch { secondaryCoreHealthy = false; coreAgreementDetail = "secondary unreachable"; }
   }
 
-  // ── Guardian (HTTP, or fixture in-process health) ──
+  // ── Indexer + worker (real DB probes) ──
+  let indexerHealthy = false;
+  let stateRootVerified = false;
+  let stateRoot = "";
+  let workerHealthy = false;
+  if (env.COVE_DATABASE_URL) {
+    try {
+      const db = createDb(env.COVE_DATABASE_URL);
+      const health = await computeHealth({ db, network: "mainnet", provider: primary });
+      ({ indexerHealthy, stateRootVerified, stateRoot } = evaluateIndexerProbe(health, expectedStateRoot));
+      workerHealthy = await probeWorkerLock(db, "mainnet");
+    } catch { /* DB/indexer/worker unreachable — fail closed */ }
+  }
+
+  // ── Guardian (HTTP only; no in-process fixture on a mainnet-capable path) ──
   let guardianHealthy = false;
   let guardianProfileHash: string | null = null;
   let guardianXOnly: string | null = null;
   let custodyBackendReady = false;
   let auditHealthy = false;
   let signingJournalHealthy = false;
-  const fixtureGuardian = ["true", "1", "yes", "on"].includes((env.COVE_V3_FIXTURE_GUARDIAN ?? "").toLowerCase());
-  if (fixtureGuardian) {
-    // In-process fixture Guardian (production-profile-regtest): healthy, and its
-    // profile hash + x-only key match the committed profile.
-    guardianHealthy = true;
-    guardianProfileHash = profileHash;
-    guardianXOnly = profile.guardianXOnly;
-    custodyBackendReady = true;
-    auditHealthy = true;
-    signingJournalHealthy = true;
-  } else if (env.COVE_GUARDIAN_ENDPOINT) {
+  if (env.COVE_GUARDIAN_ENDPOINT) {
     try {
       const h = await guardianHealthHttp(env.COVE_GUARDIAN_ENDPOINT, env.COVE_GUARDIAN_AUTH_TOKEN ?? "");
       guardianHealthy = h.reachable;
@@ -111,14 +132,14 @@ export async function runRuntimeReadiness(env: RuntimeReadinessEnv): Promise<Run
   const readiness = computeMainnetReadiness({
     profile,
     profileHash,
-    expectedProfileHash: profileHash,
-    releaseManifestOk: true, // release manifest is a build artifact; verified separately
+    expectedProfileHash: expectedProfileHash ?? "",
+    releaseManifestOk,
     primaryCoreHealthy,
     secondaryCoreHealthy,
     coreAgreement,
-    indexerHealthy: true,
-    stateRootVerified: true,
-    workerHealthy: true,
+    indexerHealthy,
+    stateRootVerified,
+    workerHealthy,
     guardianHealthy,
     guardianProfileHash,
     guardianXOnly,
@@ -132,7 +153,9 @@ export async function runRuntimeReadiness(env: RuntimeReadinessEnv): Promise<Run
     state: deriveReadinessState(readiness),
     readiness,
     profileHash,
+    expectedProfileHash,
     profilePath,
+    stateRoot,
     coreAgreementDetail,
   };
 }

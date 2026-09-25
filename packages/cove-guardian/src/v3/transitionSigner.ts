@@ -40,6 +40,9 @@ export interface TransitionSignRequest {
   recoveryProfile?: VaultRecoveryProfile;
   feeScript: Buffer;
   maxMinerFeeSats?: bigint;
+  /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
+  buyFeeBps?: bigint;
+  redeemFeeBps?: bigint;
 }
 
 export type TransitionSignOutcome =
@@ -56,13 +59,16 @@ export interface GuardianRiskPolicy {
   maxRedeemPayoutSats: bigint;
   maxBackingSats: bigint;
   maxMinerFeeSats: bigint;
-  /** null = any token; otherwise an allowlist of tokenId hex (canary mode). */
-  allowedTokenIds: string[] | null;
+  /** Canary token allowlist (hex). Enforced only when enforceTokenAllowlist is true. */
+  allowedTokenIds: string[];
+  /** True = enforce the token allowlist (mainnet canary). False = any token (regtest/dev). */
+  enforceTokenAllowlist: boolean;
 }
 
 export function checkRiskPolicy(policy: GuardianRiskPolicy, analysis: MintAnalysis | RedeemAnalysis, operation: "MINT" | "REDEEM"): string | null {
   const tokenId = analysis.tokenId.toString("hex");
-  if (policy.allowedTokenIds && !policy.allowedTokenIds.includes(tokenId)) {
+  // Fail closed: an empty allowlist (or a token not in it) means NOBODY.
+  if (policy.enforceTokenAllowlist && !policy.allowedTokenIds.includes(tokenId)) {
     return `token ${tokenId} is not in the canary allowlist`;
   }
   if (analysis.grossSats > policy.maxGrossSats) return `gross ${analysis.grossSats} exceeds cap ${policy.maxGrossSats}`;
@@ -140,9 +146,9 @@ export class LocalGuardianTransitionSigner implements GuardianTransitionSigner {
 
   private async sign(req: TransitionSignRequest, op: "MINT" | "REDEEM"): Promise<TransitionSignOutcome> {
     const guardianXOnly = await this.signer.xOnlyPubkey();
-    const validate = op === "MINT"
+    const validate = await (op === "MINT"
       ? validateMintTransitionV3({ ...req, guardianXOnly })
-      : validateRedeemTransitionV3({ ...req, guardianXOnly });
+      : validateRedeemTransitionV3({ ...req, guardianXOnly }));
     if (!validate.ok) {
       return { ok: false, reason: validate.reason, detail: validate.detail, audit: null };
     }
@@ -195,7 +201,22 @@ export class LocalGuardianTransitionSigner implements GuardianTransitionSigner {
     });
     const leaf = op === "MINT" ? prevVault.mintLeaf : prevVault.redeemLeaf;
     const control = op === "MINT" ? prevVault.mintControlBlock : prevVault.redeemControlBlock;
-    await this.signer.signVaultExecutionLeaf(req.psbt, 0, leaf, control);
+    try {
+      await this.signer.signVaultExecutionLeaf(req.psbt, 0, leaf, control);
+    } catch (e) {
+      // §C6: release the reservation we just committed so a throwable signing
+      // step (e.g. a missing witnessUtxo or an unsupported PSBT version) does
+      // NOT permanently brick the backing outpoint.
+      if (reservation === "RESERVED") {
+        await this.journal.release({
+          network: req.network,
+          backingTxid: record.backingOutpoint.txid,
+          backingVout: record.backingOutpoint.vout,
+          unsignedTxDigest: record.unsignedTxDigest,
+        });
+      }
+      return { ok: false, reason: "SIGNING_FAILED", detail: (e as Error).message, audit: record };
+    }
 
     // 4. Durable after-sign update. A failure here does NOT undo the signature or
     // release the journal reservation (§34): the critical property is that we

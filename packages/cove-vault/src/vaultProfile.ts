@@ -1,4 +1,5 @@
 import * as bitcoin from "bitcoinjs-lib";
+import * as ecc from "tiny-secp256k1";
 
 /**
  * Versioned Cove V3 vault security profiles (§2/§3/§4 of Phase 8). The vault
@@ -30,8 +31,13 @@ const OP_NUMEQUAL = 0x9c;
 
 /** Sort x-only pubkeys lexicographically (raw bytes) — deterministic key order. */
 export function sortRecoveryPubkeys(pubkeys: Buffer[]): Buffer[] {
+  const seen = new Set<string>();
   for (const k of pubkeys) {
     if (k.length !== 32) throw new Error("recovery pubkeys must be 32-byte x-only keys");
+    if (!ecc.isXOnlyPoint(k)) throw new Error("recovery pubkey is not on the secp256k1 curve");
+    const hex = k.toString("hex");
+    if (seen.has(hex)) throw new Error(`duplicate recovery pubkey ${hex}`);
+    seen.add(hex);
   }
   return [...pubkeys].sort((a, b) => Buffer.compare(a, b));
 }
@@ -64,16 +70,25 @@ export function buildThresholdRecoveryLeaf(csvBlocks: number, threshold: number,
 /**
  * Recovery witness stack (excluding script + control block): one signature slot
  * per pubkey in REVERSE key order (the first CHECKSIG consumes the top item).
- * Empty Buffer marks an absent key (CHECKSIG → false).
+ * Empty Buffer marks an absent key (CHECKSIG → false). Exactly `threshold`
+ * non-empty signatures are emitted so the final `OP_<threshold> NUMEQUAL` passes
+ * — if more than `threshold` signatures are supplied they are truncated to the
+ * first `threshold` in sorted-key order (§C8).
  */
 export function buildThresholdRecoveryWitness(params: {
   pubkeys: Buffer[];
   signatures: Map<string, Buffer>;
+  threshold: number;
 }): Buffer[] {
   const keys = sortRecoveryPubkeys(params.pubkeys);
+  const present = keys.filter((k) => params.signatures.has(k.toString("hex")));
+  if (present.length < params.threshold) {
+    throw new Error(`recovery threshold not met: ${present.length}/${params.threshold} signatures`);
+  }
+  const used = new Set(present.slice(0, params.threshold).map((k) => k.toString("hex")));
   const stack: Buffer[] = [];
   for (let i = keys.length - 1; i >= 0; i--) {
-    const sig = params.signatures.get(keys[i]!.toString("hex"));
+    const sig = used.has(keys[i]!.toString("hex")) ? params.signatures.get(keys[i]!.toString("hex")) : undefined;
     stack.push(sig ? Buffer.from(sig) : Buffer.alloc(0));
   }
   return stack;

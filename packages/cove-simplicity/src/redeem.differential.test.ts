@@ -26,9 +26,9 @@ function tsRedeemValid(w: RedeemWitness): boolean {
   return true;
 }
 
-function expectAgree(w: RedeemWitness): void {
+async function expectAgree(w: RedeemWitness): Promise<void> {
   const ts = tsRedeemValid(w);
-  const sim = executeRedeemV3(w).result === "PASS";
+  const sim = (await executeRedeemV3(w)).result === "PASS";
   const label = JSON.stringify(w, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
   expect(sim, `witness ${label}`).toBe(ts);
 }
@@ -40,11 +40,10 @@ describe("REDEEM CMR is frozen (V3)", () => {
 });
 
 describe("differential: TS redeem == Simplicity REDEEM Bit Machine", () => {
-  it.skipIf(!isSimplicityAvailable())("valid redeem agrees (PASS)", () => {
-    // Redeem all 42M from 42M issued; gross = 21,000 sats.
+  it.skipIf(!isSimplicityAvailable())("valid redeem agrees (PASS)", async () => {
     const payout = grossRedeem(42n * M, 42n * M);
     expect(payout).toBe(21_000n);
-    expectAgree({
+    await expectAgree({
       amount: 42n * M,
       oldSupply: 42n * M,
       newSupply: 0n,
@@ -54,10 +53,9 @@ describe("differential: TS redeem == Simplicity REDEEM Bit Machine", () => {
     });
   });
 
-  it.skipIf(!isSimplicityAvailable())("partial redeem agrees (PASS)", () => {
-    // Redeem 10M from 42M.
+  it.skipIf(!isSimplicityAvailable())("partial redeem agrees (PASS)", async () => {
     const payout = grossRedeem(42n * M, 10n * M);
-    expectAgree({
+    await expectAgree({
       amount: 10n * M,
       oldSupply: 42n * M,
       newSupply: 32n * M,
@@ -67,48 +65,20 @@ describe("differential: TS redeem == Simplicity REDEEM Bit Machine", () => {
     });
   });
 
-  it.skipIf(!isSimplicityAvailable())("zero amount agrees (FAIL)", () => {
-    expectAgree({
-      amount: 0n,
-      oldSupply: 42n * M,
-      newSupply: 42n * M,
-      oldBacking: 21_000n,
-      newBacking: 21_000n,
-      payout: 0n,
-    });
+  it.skipIf(!isSimplicityAvailable())("zero amount agrees (FAIL)", async () => {
+    await expectAgree({ amount: 0n, oldSupply: 42n * M, newSupply: 42n * M, oldBacking: 21_000n, newBacking: 21_000n, payout: 0n });
   });
 
-  it.skipIf(!isSimplicityAvailable())("underflow (amount > supply) agrees (FAIL)", () => {
-    expectAgree({
-      amount: 42n * M + 1n,
-      oldSupply: 42n * M,
-      newSupply: 0n,
-      oldBacking: 21_000n,
-      newBacking: 0n,
-      payout: 21_000n,
-    });
+  it.skipIf(!isSimplicityAvailable())("underflow (amount > supply) agrees (FAIL)", async () => {
+    await expectAgree({ amount: 42n * M + 1n, oldSupply: 42n * M, newSupply: 0n, oldBacking: 21_000n, newBacking: 0n, payout: 21_000n });
   });
 
-  it.skipIf(!isSimplicityAvailable())("wrong successor supply agrees (FAIL)", () => {
-    expectAgree({
-      amount: 42n * M,
-      oldSupply: 42n * M,
-      newSupply: 1n,
-      oldBacking: 21_000n,
-      newBacking: 0n,
-      payout: 21_000n,
-    });
+  it.skipIf(!isSimplicityAvailable())("wrong successor supply agrees (FAIL)", async () => {
+    await expectAgree({ amount: 42n * M, oldSupply: 42n * M, newSupply: 1n, oldBacking: 21_000n, newBacking: 0n, payout: 21_000n });
   });
 
-  it.skipIf(!isSimplicityAvailable())("wrong successor backing agrees (FAIL)", () => {
-    expectAgree({
-      amount: 42n * M,
-      oldSupply: 42n * M,
-      newSupply: 0n,
-      oldBacking: 21_000n,
-      newBacking: 1n,
-      payout: 21_000n,
-    });
+  it.skipIf(!isSimplicityAvailable())("wrong successor backing agrees (FAIL)", async () => {
+    await expectAgree({ amount: 42n * M, oldSupply: 42n * M, newSupply: 0n, oldBacking: 21_000n, newBacking: 1n, payout: 21_000n });
   });
 });
 

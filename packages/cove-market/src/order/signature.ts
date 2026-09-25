@@ -3,7 +3,7 @@ import * as ecc from "tiny-secp256k1";
 import { ECPairFactory } from "ecpair";
 import { MarketError } from "../errors.js";
 import type { CancellationV1, ListingV1 } from "../types.js";
-import { cancellationMessageToSign, listingMessageToSign } from "./hash.js";
+import { cancellationMessageToSign, listingMessageToSign, reservationMessageToSign, type ReservationV1 } from "./hash.js";
 
 /**
  * BIP-322 seller authorization (§8). V1 supports P2WPKH (the fixture and the
@@ -98,6 +98,12 @@ export function verifyBip322P2wpkh(scriptPubKey: Buffer, message: string, signat
     const sig = Buffer.from(witness[0]!);
     const pubkey = Buffer.from(witness[1]!);
 
+    // §M2: bind the witness pubkey to the P2WPKH scriptPubKey being proven. The
+    // pubkey comes from the attacker-supplied witness and must hash to the same
+    // 20-byte program the script commits to, or a forgery signs B's script with A's key.
+    if (scriptPubKey.length !== 22 || scriptPubKey[0] !== 0x00 || scriptPubKey[1] !== 0x14) return false;
+    if (!bitcoin.crypto.hash160(pubkey).equals(scriptPubKey.subarray(2))) return false;
+
     const decoded = bitcoin.script.signature.decode(sig);
     if (decoded.hashType !== bitcoin.Transaction.SIGHASH_ALL) return false;
 
@@ -127,4 +133,12 @@ export function verifyCancellationAuthorization(
     throw new MarketError("LISTING_BAD_SIGNATURE", "V1 BIP-322 supports P2WPKH seller scripts only");
   }
   return verifyBip322P2wpkh(Buffer.from(scriptHex, "hex"), cancellationMessageToSign(c), signatureB64);
+}
+
+/** Verify a buyer's reservation authorization (§M4): signed nonce over the listing + buyer script. */
+export function verifyReservationAuthorization(r: ReservationV1, signatureB64: string): boolean {
+  if (!isP2WPKH(r.buyerTokenScript)) {
+    throw new MarketError("LISTING_BAD_SIGNATURE", "V1 BIP-322 supports P2WPKH buyer scripts only");
+  }
+  return verifyBip322P2wpkh(Buffer.from(r.buyerTokenScript, "hex"), reservationMessageToSign(r), signatureB64);
 }

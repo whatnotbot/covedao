@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
+import * as ecc from "tiny-secp256k1";
 import { AppError } from "./errors.js";
 
 /** sha256 of the canonical UNSIGNED transaction bytes. */
@@ -31,7 +32,7 @@ export function validateInputSignature(psbt: bitcoin.Psbt, inputIndex: number): 
   }
   let ok = false;
   try {
-    ok = psbt.validateSignaturesOfInput(inputIndex, () => true);
+    ok = psbt.validateSignaturesOfInput(inputIndex, (pubkey, msghash, sig) => ecc.verify(msghash, pubkey, sig));
   } catch {
     ok = false;
   }

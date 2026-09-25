@@ -30,9 +30,10 @@ export interface GuardianServiceConfig {
   databaseUrl: string;
   network: "regtest" | "signet" | "testnet" | "mainnet";
   custodyBackend: GuardianCustodyBackend;
-  riskPolicy: GuardianRiskPolicy;
-  maxMinerFeeSats: bigint;
 }
+
+/** Fixed miner-fee cap (operational; not profile-driven — there is no canary fee cap). */
+const MAX_MINER_FEE_SATS = 20_000n;
 
 export interface BuiltGuardianService {
   transport: InProcessGuardianTransport;
@@ -53,6 +54,18 @@ export function recoveryProfileFromMainnet(profile: MainnetProfile): VaultRecove
   };
 }
 
+/** Build the risk policy from the COMMITTED profile (never env). Non-null caps are guaranteed by validateMainnetProfile. */
+export function riskPolicyFromProfile(profile: MainnetProfile): GuardianRiskPolicy {
+  return {
+    maxGrossSats: profile.canary.maxSingleBuySats!,
+    maxRedeemPayoutSats: profile.canary.maxSingleRedeemPayoutSats!,
+    maxBackingSats: profile.canary.maxBackingSats!,
+    maxMinerFeeSats: MAX_MINER_FEE_SATS,
+    allowedTokenIds: profile.canary.allowedTokenIds,
+    enforceTokenAllowlist: true,
+  };
+}
+
 export function buildGuardianService(config: GuardianServiceConfig): BuiltGuardianService {
   const { profile, validation } = loadMainnetProfile(config.profilePath);
   if (!validation.ok) {
@@ -66,6 +79,7 @@ export function buildGuardianService(config: GuardianServiceConfig): BuiltGuardi
   const recoveryProfile = recoveryProfileFromMainnet(profile);
   const recoveryKeyXOnly = recoveryProfile.recoveryPubkeys[0]!; // unused for MAINNET1 (2-of-3)
   const feeScript = Buffer.from(profile.feeScript, "hex");
+  const riskPolicy = riskPolicyFromProfile(profile);
 
   const db: Database = createDb(config.databaseUrl);
   const signingBackend: GuardianSigningBackend = custodySigningBackend(config.custodyBackend);
@@ -73,19 +87,23 @@ export function buildGuardianService(config: GuardianServiceConfig): BuiltGuardi
     signingBackend,
     new PostgresSigningJournal(db),
     new PostgresGuardianAudit(db, "COVE_V3_VAULT_PROFILE_MAINNET1"),
-    config.riskPolicy,
+    riskPolicy,
   );
 
   const transport = new InProcessGuardianTransport({
     signer,
     profileHash,
     guardianXOnly,
+    network: config.network,
     decode: (psbtBase64) => ({ psbt: bitcoin.Psbt.fromBase64(psbtBase64) }),
     loadView: async (tokenId) => loadCanonicalViewSnapshotFromDb({ db, network: config.network, tokenId }),
     recoveryKeyXOnly,
     recoveryProfile,
     feeScript,
-    maxMinerFeeSats: config.maxMinerFeeSats,
+    maxMinerFeeSats: MAX_MINER_FEE_SATS,
+    // §P1-4: the fee schedule is the COMMITTED profile's, not the dev defaults.
+    buyFeeBps: BigInt(profile.buyFeeBps!),
+    redeemFeeBps: BigInt(profile.redeemFeeBps!),
   });
 
   return { transport, profile, profileHash, guardianXOnly };

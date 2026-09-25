@@ -19,7 +19,8 @@
     "@crclaunch/cove-covenant": "workspace:*",
     "@crclaunch/cove-simplicity": "workspace:*",
     "@crclaunch/cove-wire": "workspace:*",
-    "@crclaunch/curve": "workspace:*"
+    "@crclaunch/curve": "workspace:*",
+    "tiny-secp256k1": "^2.2.3"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

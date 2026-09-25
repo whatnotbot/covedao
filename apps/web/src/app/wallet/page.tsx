@@ -3,16 +3,17 @@
 import { useEffect, useState } from "react";
 import { useWallet } from "@/components/WalletProvider";
 import { fmtBtc, fmtTokens } from "@/lib/format";
+import { verifyClientIntent } from "@crclaunch/wallets";
 
 interface Portfolio {
   holdings: { tokenId: string; amountAtoms: string; utxoCount: number }[];
   tokenUtxos: { txid: string; vout: number; tokenId: string; amountAtoms: string }[];
   listings: { listingId: string; tokenId: string; amountAtoms: string; totalPriceSats: string; status: string }[];
-  fills: { id: string; listingId: string; status: string; amountAtoms: string; totalPriceSats: string; psbtBase64: string | null; txid: string | null }[];
+  fills: { id: string; listingId: string; tokenId: string; status: string; amountAtoms: string; totalPriceSats: string; marketFeeSats: string; minerFeeSats: string; unsignedTxDigest: string | null; psbtBase64: string | null; txid: string | null }[];
 }
 
 export default function WalletPage() {
-  const { connected, address, connect, signPsbt, signBip322 } = useWallet();
+  const { connected, address, script, connect, signPsbt, signBip322 } = useWallet();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [msg, setMsg] = useState("");
@@ -31,11 +32,27 @@ export default function WalletPage() {
     setLoaded(true);
   }
 
-  async function sellerSign(fill: { id: string; psbtBase64: string | null }) {
+  async function sellerSign(fill: { id: string; listingId: string; tokenId: string; status: string; amountAtoms: string; totalPriceSats: string; marketFeeSats: string; minerFeeSats: string; unsignedTxDigest: string | null; psbtBase64: string | null; txid: string | null }) {
     setErr("");
     if (!fill.psbtBase64) return;
     setBusy(fill.id);
     try {
+      // §M3: re-derive the seller's P2P payout (full price to the seller's own
+      // script) from the fill before signing — never blind-sign the server PSBT.
+      if (fill.unsignedTxDigest) {
+        verifyClientIntent(fill.psbtBase64, {
+          operation: "P2P_SELL",
+          tokenId: fill.tokenId,
+          tokenAmountAtoms: fill.amountAtoms,
+          grossSats: null,
+          protocolFeeSats: fill.marketFeeSats,
+          minerFeeSats: fill.minerFeeSats,
+          netSats: fill.totalPriceSats,
+          walletScript: script,
+          stateHash: null,
+          unsignedTxDigest: fill.unsignedTxDigest,
+        });
+      }
       const signed = await signPsbt(fill.psbtBase64, "P2P_SELL");
       const sr = await fetch(`/api/v3/market/fills/${fill.id}/seller-signature`, {
         method: "POST",

@@ -69,6 +69,9 @@ export interface GuardianSignServiceRequest {
   recoveryProfile?: VaultRecoveryProfile;
   feeScript: Buffer;
   maxMinerFeeSats?: bigint;
+  /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
+  buyFeeBps?: bigint;
+  redeemFeeBps?: bigint;
 }
 export type GuardianSignServiceOutcome = SignedTransitionResult | { ok: false; reason: string; detail: string };
 export interface GuardianSigningService {
@@ -107,12 +110,17 @@ export interface InProcessGuardianTransportOptions {
   signer: GuardianSigningService;
   profileHash: string;
   guardianXOnly: string;
+  /** The SERVICE's configured network (never the client's claimed network). */
+  network: "regtest" | "signet" | "testnet" | "mainnet";
   decode: (psbtBase64: string) => { psbt: bitcoin.Psbt };
   loadView: (tokenId: string) => Promise<CoveCanonicalView>;
   recoveryKeyXOnly: Buffer;
   recoveryProfile?: VaultRecoveryProfile;
   feeScript: Buffer;
   maxMinerFeeSats?: bigint;
+  /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
+  buyFeeBps?: bigint;
+  redeemFeeBps?: bigint;
 }
 
 /** In-process transport (tests/fixtures): calls the signing service directly. */
@@ -135,11 +143,15 @@ export class InProcessGuardianTransport implements GuardianTransport {
     const { psbt } = this.opts.decode(req.psbtBase64);
     const view = await this.opts.loadView(req.tokenId);
     const base = {
-      network: req.network,
+      // §C3: journal/validation must use the SERVICE's configured network, never
+      // the client-supplied `req.network` (a caller-controlled field).
+      network: this.opts.network,
       recoveryKeyXOnly: this.opts.recoveryKeyXOnly,
       recoveryProfile: this.opts.recoveryProfile,
       feeScript: this.opts.feeScript,
       maxMinerFeeSats: this.opts.maxMinerFeeSats,
+      buyFeeBps: this.opts.buyFeeBps,
+      redeemFeeBps: this.opts.redeemFeeBps,
     };
     const outcome = req.operation === "MINT"
       ? await this.opts.signer.signMint({ psbt, view, ...base })
@@ -164,11 +176,21 @@ export class InProcessGuardianTransport implements GuardianTransport {
  * production). Enforces a timeout and throws on non-2xx.
  */
 export class HttpGuardianTransport implements GuardianTransport {
-  constructor(
-    private readonly endpoint: string,
-    private readonly authToken: string,
-    private readonly timeoutMs = 10_000,
-  ) {}
+  private readonly endpoint: string;
+  private readonly authToken: string;
+  private readonly timeoutMs: number;
+  constructor(endpoint: string, authToken: string, timeoutMs = 10_000) {
+    // §C15: enforce TLS in production. Local loopback is the only allowed
+    // non-https exception (dev/integration).
+    const url = new URL(endpoint);
+    const local = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
+    if (url.protocol !== "https:" && !local) {
+      throw new Error("HttpGuardianTransport requires an https:// endpoint (or localhost for dev)");
+    }
+    this.endpoint = endpoint;
+    this.authToken = authToken;
+    this.timeoutMs = timeoutMs;
+  }
   async health(): Promise<GuardianHealthWire> {
     return (await this.request("GET", "/health")) as GuardianHealthWire;
   }

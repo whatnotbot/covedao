@@ -76,19 +76,30 @@ export function computeGuardianAuditHash(previousAuditHash: string, fields: Guar
     .digest("hex");
 }
 
-/** Verify a hash chain from a list of (previousHash, fields) pairs. */
-export function verifyGuardianAuditChain(head: { previousAuditHash: string; fields: GuardianAuditDigestFields }[]): boolean {
-  for (const link of head) {
+/**
+ * Verify a hash chain from a list of (previousAuditHash, auditHash, fields).
+ * Returns false unless every link's recomputed hash equals its recorded
+ * auditHash AND each link's previousAuditHash equals the prior link's auditHash
+ * (first link must chain from the zero hash). §C10.
+ */
+export function verifyGuardianAuditChain(head: { previousAuditHash: string; auditHash: string; fields: GuardianAuditDigestFields }[]): boolean {
+  for (let i = 0; i < head.length; i++) {
+    const link = head[i]!;
     const expected = computeGuardianAuditHash(link.previousAuditHash, link.fields);
-    if (expected !== link.fields.unsignedTxDigest && expected.length !== 64) return false;
-    if (link.previousAuditHash === "0".repeat(64)) continue;
-    // chaining is verified by the caller comparing each link's auditHash to the
-    // next link's previousAuditHash; this helper only validates each hash shape.
+    if (expected !== link.auditHash) return false;
+    if (i === 0) {
+      if (link.previousAuditHash !== "0".repeat(64)) return false;
+    } else if (link.previousAuditHash !== head[i - 1]!.auditHash) {
+      return false;
+    }
   }
   return true;
 }
 
 export type SigningReservation = "RESERVED" | "IDEMPOTENT" | "CONFLICT";
+
+/** A build-time reservation self-heals after this TTL so an abandoned checkout cannot brick a token (§C1). */
+export const SIGNING_JOURNAL_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 /** Durable per-backing-outpoint signing journal (double-sign protection). */
 export interface SigningJournalStore {
@@ -96,24 +107,49 @@ export interface SigningJournalStore {
    * Reserve a backing outpoint for `unsignedTxDigest`. CONFLICT means a
    * DIFFERENT digest was already committed (never sign); IDEMPOTENT means the
    * SAME digest was already committed (may recover the same signing result).
+   * A reservation whose TTL has elapsed is treated as absent and re-reserved.
    */
   reserve(params: { network: string; backingTxid: string; backingVout: number; unsignedTxDigest: string }): Promise<SigningReservation>;
   committedDigest(network: string, backingTxid: string, backingVout: number): Promise<string | null>;
+  /**
+   * Release a reservation (only if it still matches `unsignedTxDigest`). Used to
+   * un-brick an abandoned build and to roll back when signing throws (§C1/§C6).
+   */
+  release(params: { network: string; backingTxid: string; backingVout: number; unsignedTxDigest: string }): Promise<void>;
 }
 
 /** In-memory journal (tests). A Map keyed by network:txid:vout. */
 export class InMemorySigningJournal implements SigningJournalStore {
-  private map = new Map<string, string>();
+  private map = new Map<string, { digest: string; expiresAt: number }>();
+  constructor(private readonly clock: () => number = () => Date.now()) {}
+
+  private now(): number {
+    return this.clock();
+  }
+
   async reserve(params: { network: string; backingTxid: string; backingVout: number; unsignedTxDigest: string }): Promise<SigningReservation> {
     const key = `${params.network}:${params.backingTxid}:${params.backingVout}`;
     const existing = this.map.get(key);
-    if (existing === undefined) {
-      this.map.set(key, params.unsignedTxDigest);
-      return "RESERVED";
+    if (existing !== undefined && existing.expiresAt > this.now()) {
+      return existing.digest === params.unsignedTxDigest ? "IDEMPOTENT" : "CONFLICT";
     }
-    return existing === params.unsignedTxDigest ? "IDEMPOTENT" : "CONFLICT";
+    this.map.set(key, { digest: params.unsignedTxDigest, expiresAt: this.now() + SIGNING_JOURNAL_TTL_MS });
+    return "RESERVED";
   }
+
   async committedDigest(network: string, backingTxid: string, backingVout: number): Promise<string | null> {
-    return this.map.get(`${network}:${backingTxid}:${backingVout}`) ?? null;
+    const key = `${network}:${backingTxid}:${backingVout}`;
+    const existing = this.map.get(key);
+    if (existing !== undefined && existing.expiresAt <= this.now()) {
+      this.map.delete(key);
+      return null;
+    }
+    return existing?.digest ?? null;
+  }
+
+  async release(params: { network: string; backingTxid: string; backingVout: number; unsignedTxDigest: string }): Promise<void> {
+    const key = `${params.network}:${params.backingTxid}:${params.backingVout}`;
+    const existing = this.map.get(key);
+    if (existing?.digest === params.unsignedTxDigest) this.map.delete(key);
   }
 }

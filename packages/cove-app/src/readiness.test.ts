@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CoreRpcProvider } from "@crclaunch/bitcoin";
 import type { MainnetProfile } from "@crclaunch/cove-mainnet";
-import { checkCoreAgreement, computeMainnetReadiness, deriveReadinessState, type MainnetReadinessInput } from "./readiness.js";
+import { checkCoreAgreement, computeMainnetReadiness, deriveReadinessState, verifyMainnetGenesis, BITCOIN_MAINNET_GENESIS_HASH, type MainnetReadinessInput } from "./readiness.js";
 
 function mockCore(chain: string, blocks: number, hashes: Map<number, string>): CoreRpcProvider {
   return {
@@ -16,8 +16,8 @@ const profile: MainnetProfile = {
   activationHeight: 900_000n,
   policyVersion: 3,
   vaultProfileVersion: "COVE_V3_VAULT_PROFILE_MAINNET1",
-  guardianXOnly: "11".repeat(32),
-  recovery: { threshold: 2, pubkeys: ["21".repeat(32), "31".repeat(32), "41".repeat(32)], csvBlocks: 2016 },
+  guardianXOnly: "12".repeat(32),
+  recovery: { threshold: 2, pubkeys: ["15".repeat(32), "77".repeat(32), "88".repeat(32)], csvBlocks: 2016 },
   feeScript: "0014" + "55".repeat(20),
   buyFeeBps: 100,
   redeemFeeBps: 100,
@@ -52,7 +52,7 @@ function readyInput(overrides: Partial<MainnetReadinessInput> = {}): MainnetRead
     workerHealthy: true,
     guardianHealthy: true,
     guardianProfileHash: "ab".repeat(32),
-    guardianXOnly: "11".repeat(32),
+    guardianXOnly: "12".repeat(32),
     custodyBackendReady: true,
     auditHealthy: true,
     signingJournalHealthy: true,
@@ -85,6 +85,15 @@ describe("core quorum + readiness aggregator (§27-§30)", () => {
     const r = await checkCoreAgreement(a, b);
     expect(r.agreed).toBe(false);
     expect(r.detail).toContain("chain mismatch");
+  });
+
+  it("verifyMainnetGenesis asserts the mainnet genesis hash, not the chain string", async () => {
+    const good = mockCore("main", 100, new Map([[0, BITCOIN_MAINNET_GENESIS_HASH]]));
+    const bad = mockCore("main", 100, new Map([[0, "00".repeat(32)]]));
+    const unreachable = { getBlockHash: async () => { throw new Error("down"); } } as unknown as CoreRpcProvider;
+    expect(await verifyMainnetGenesis(good)).toBe(true);
+    expect(await verifyMainnetGenesis(bad)).toBe(false);
+    expect(await verifyMainnetGenesis(unreachable)).toBe(false);
   });
 
   it("readiness requires EVERY runtime health signal before CANARY", () => {

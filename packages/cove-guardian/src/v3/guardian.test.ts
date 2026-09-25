@@ -17,6 +17,9 @@ import {
 } from "./builder.js";
 import { GuardianV3Signer } from "./signer.js";
 import { validateAndSignMintTransition, validateAndSignRedeemTransition } from "./guardian.js";
+import { LocalGuardianTransitionSigner, type GuardianRiskPolicy } from "./transitionSigner.js";
+import { InMemorySigningJournal } from "./journal.js";
+import type { AuditRecord } from "./types.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 const ECPair = ECPairFactory(ecc);
@@ -47,6 +50,9 @@ function setOutputValue(psbt: bitcoin.Psbt, vout: number, value: number): void {
 }
 function setOutputScript(psbt: bitcoin.Psbt, vout: number, script: Buffer): void {
   (psbt as any).__CACHE.__TX.outs[vout].script = script;
+}
+function setInputValue(psbt: bitcoin.Psbt, index: number, value: number): void {
+  psbt.data.inputs[index]!.witnessUtxo!.value = value;
 }
 
 const DEPLOY_TXID = "aa".repeat(32);
@@ -107,10 +113,10 @@ function signMint(psbt: bitcoin.Psbt, view: CoveChainView) {
   });
 }
 
-describe("Production Guardian V3 — validateAndSignMintTransition", () => {
-  it.skipIf(!isSimplicityAvailable())("valid MINT: Simplicity PASS + reference PASS + signs", () => {
+describe("Production Guardian V3 — validateAndSignMintTransition", async () => {
+  it.skipIf(!isSimplicityAvailable())("valid MINT: Simplicity PASS + reference PASS + signs", async () => {
     const { view, mint } = mintSetup();
-    const r = signMint(mint.psbt, view);
+    const r = await signMint(mint.psbt, view);
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.expectedCmr).toBe(r.actualCmr);
@@ -120,68 +126,68 @@ describe("Production Guardian V3 — validateAndSignMintTransition", () => {
     }
   });
 
-  it("wrong backing outpoint → refused, zero signatures", () => {
+  it("wrong backing outpoint → refused, zero signatures", async () => {
     const { view, deploy } = mintSetup();
     const bad = mintSetup({
       prevBacking: { txid: "bb".repeat(32), vout: 1, script: deploy.vault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS },
     });
-    const r = signMint(bad.mint.psbt, view);
+    const r = await signMint(bad.mint.psbt, view);
     expect(r.ok).toBe(false);
     expect(input0HasSignature(bad.mint.psbt)).toBe(false);
   });
 
-  it("wrong backing value → refused, zero signatures", () => {
+  it("wrong backing value → refused, zero signatures", async () => {
     const { view, deploy } = mintSetup();
     const bad = mintSetup({
       prevBacking: { txid: DEPLOY_TXID, vout: 1, script: deploy.vault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS + 1n },
     });
-    const r = signMint(bad.mint.psbt, view);
+    const r = await signMint(bad.mint.psbt, view);
     expect(r.ok).toBe(false);
     expect(input0HasSignature(bad.mint.psbt)).toBe(false);
   });
 
-  it("mutated amount (wire) → refused, zero signatures", () => {
+  it("mutated amount (wire) → refused, zero signatures", async () => {
     const { view, mint, deploy } = mintSetup();
     const wire = encodeMintV2({ tokenId: deploy.tokenId, amount: MINT_AMOUNT + 100_000_000n, recipientVout: 2 });
     setOutputScript(mint.psbt, 0, opReturn(wire));
-    const r = signMint(mint.psbt, view);
+    const r = await signMint(mint.psbt, view);
     expect(r.ok).toBe(false);
     expect(input0HasSignature(mint.psbt)).toBe(false);
   });
 
-  it("successor backing +1 sat → refused, zero signatures", () => {
+  it("successor backing +1 sat → refused, zero signatures", async () => {
     const { view, mint } = mintSetup();
     setOutputValue(mint.psbt, 1, Number(RESERVE_ANCHOR_SATS + 49_350n + 1n));
-    const r = signMint(mint.psbt, view);
+    const r = await signMint(mint.psbt, view);
     expect(r.ok).toBe(false);
     expect(input0HasSignature(mint.psbt)).toBe(false);
   });
 
-  it("protocol fee +1 sat → refused, zero signatures", () => {
+  it("protocol fee +1 sat → refused, zero signatures", async () => {
     const { view, mint } = mintSetup();
     setOutputValue(mint.psbt, 3, 495);
-    const r = signMint(mint.psbt, view);
+    const r = await signMint(mint.psbt, view);
     expect(r.ok).toBe(false);
     expect(input0HasSignature(mint.psbt)).toBe(false);
   });
 
-  it("fee destination mutated → refused, zero signatures", () => {
+  it("fee destination mutated → refused, zero signatures", async () => {
     const { view, mint } = mintSetup();
     setOutputScript(mint.psbt, 3, Buffer.from("0014" + "e".repeat(20), "hex"));
-    const r = signMint(mint.psbt, view);
+    const r = await signMint(mint.psbt, view);
     expect(r.ok).toBe(false);
     expect(input0HasSignature(mint.psbt)).toBe(false);
   });
 
-  it("carrier value +1 sat → refused, zero signatures", () => {
+  it("carrier value +1 sat → refused, zero signatures", async () => {
     const { view, mint } = mintSetup();
     setOutputValue(mint.psbt, 2, Number(TOKEN_CARRIER_SATS + 1n));
-    const r = signMint(mint.psbt, view);
+    const r = await signMint(mint.psbt, view);
     expect(r.ok).toBe(false);
     expect(input0HasSignature(mint.psbt)).toBe(false);
   });
 
-  it("wrong tap leaf (REDEEM leaf) → refused, zero signatures", () => {
+  it("wrong tap leaf (REDEEM leaf) → refused, zero signatures", async () => {
     const { view, mint, deploy } = mintSetup();
     const prevVault = buildBackingVaultV3({
       state: deploy.s0,
@@ -193,30 +199,59 @@ describe("Production Guardian V3 — validateAndSignMintTransition", () => {
     const leaf = mint.psbt.data.inputs[0]!.tapLeafScript![0]!;
     leaf.script = prevVault.redeemLeaf.script;
     leaf.controlBlock = prevVault.redeemControlBlock;
-    const r = signMint(mint.psbt, view);
+    const r = await signMint(mint.psbt, view);
     expect(r.ok).toBe(false);
     expect(input0HasSignature(mint.psbt)).toBe(false);
   });
 
-  it("excessive miner fee → refused, zero signatures", () => {
+  it("excessive miner fee → refused, zero signatures", async () => {
     const { view } = mintSetup();
     const bad = mintSetup({ minerFeeSats: 25_000n });
-    const r = signMint(bad.mint.psbt, view);
+    const r = await signMint(bad.mint.psbt, view);
     expect(r.ok).toBe(false);
     expect(input0HasSignature(bad.mint.psbt)).toBe(false);
   });
 
-  it("extra output → refused, zero signatures", () => {
+  it("negative miner fee (outputs exceed inputs) → refused, zero signatures (§C13)", async () => {
+    const { view, mint } = mintSetup();
+    setInputValue(mint.psbt, 1, 0); // buyer contributes nothing → totalIn < totalOut
+    const r = await signMint(mint.psbt, view);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("NEGATIVE_MINER_FEE");
+    expect(input0HasSignature(mint.psbt)).toBe(false);
+  });
+
+  it.skipIf(!isSimplicityAvailable())("releases the journal reservation when signing throws (§C6)", async () => {
+    const { view, mint } = mintSetup();
+    const journal = new InMemorySigningJournal();
+    const backend = {
+      xOnlyPubkey: async () => guardianXOnly,
+      signVaultExecutionLeaf: async () => { throw new Error("no witnessUtxo"); },
+    };
+    const policy: GuardianRiskPolicy = { maxGrossSats: 1_000_000n, maxRedeemPayoutSats: 1_000_000n, maxBackingSats: 100_000_000n, maxMinerFeeSats: 20_000n, allowedTokenIds: [], enforceTokenAllowlist: false };
+    const audit = {
+      async writeBeforeSign(_r: AuditRecord) { return { auditHash: "0".repeat(64) }; },
+      async writeAfterSign() {},
+    };
+    const local = new LocalGuardianTransitionSigner(backend, journal, audit, policy);
+    const out = await local.signMint({ psbt: mint.psbt, view, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.reason).toBe("SIGNING_FAILED");
+    // Reservation released → the backing outpoint is not bricked.
+    expect(await journal.committedDigest("regtest", DEPLOY_TXID, 1)).toBeNull();
+  });
+
+  it("extra output → refused, zero signatures", async () => {
     const { view, mint } = mintSetup();
     mint.psbt.addOutput({ script: p2wpkh(ECPair.makeRandom()), value: 1_000 });
-    const r = signMint(mint.psbt, view);
+    const r = await signMint(mint.psbt, view);
     expect(r.ok).toBe(false);
     expect(input0HasSignature(mint.psbt)).toBe(false);
   });
 
-  it("mainnet → refused (MAINNET_DISABLED), zero signatures", () => {
+  it("mainnet → refused (MAINNET_DISABLED), zero signatures", async () => {
     const { view, mint } = mintSetup();
-    const r = validateAndSignMintTransition({
+    const r = await validateAndSignMintTransition({
       signer,
       psbt: mint.psbt,
       view,
@@ -229,7 +264,7 @@ describe("Production Guardian V3 — validateAndSignMintTransition", () => {
   });
 });
 
-describe("Production Guardian V3 — validateAndSignRedeemTransition", () => {
+describe("Production Guardian V3 — validateAndSignRedeemTransition", async () => {
   function redeemSetup(): { view: CoveChainView; redeem: ReturnType<typeof buildRedeemPsbtV3>; tokenId: Buffer } {
     const { view, mint, deploy } = mintSetup();
     const mintTxid = "ff".repeat(32);
@@ -267,9 +302,9 @@ describe("Production Guardian V3 — validateAndSignRedeemTransition", () => {
     return { view, redeem, tokenId: deploy.tokenId };
   }
 
-  it.skipIf(!isSimplicityAvailable())("valid REDEEM: Simplicity PASS + reference PASS + signs", () => {
+  it.skipIf(!isSimplicityAvailable())("valid REDEEM: Simplicity PASS + reference PASS + signs", async () => {
     const { view, redeem } = redeemSetup();
-    const r = validateAndSignRedeemTransition({
+    const r = await validateAndSignRedeemTransition({
       signer,
       psbt: redeem.psbt,
       view,
@@ -285,10 +320,10 @@ describe("Production Guardian V3 — validateAndSignRedeemTransition", () => {
     }
   });
 
-  it("seller payout +1 sat → refused, zero signatures", () => {
+  it("seller payout +1 sat → refused, zero signatures", async () => {
     const { view, redeem } = redeemSetup();
     setOutputValue(redeem.psbt, 2, Number(48_856n + 1n));
-    const r = validateAndSignRedeemTransition({
+    const r = await validateAndSignRedeemTransition({
       signer,
       psbt: redeem.psbt,
       view,
@@ -300,7 +335,7 @@ describe("Production Guardian V3 — validateAndSignRedeemTransition", () => {
     expect(input0HasSignature(redeem.psbt)).toBe(false);
   });
 
-  it("forged token input (wrong outpoint) → refused, zero signatures", () => {
+  it("forged token input (wrong outpoint) → refused, zero signatures", async () => {
     const { view, mint, deploy } = mintSetup();
     const mintTxid = "ff".repeat(32);
     view.mint({
@@ -328,7 +363,7 @@ describe("Production Guardian V3 — validateAndSignRedeemTransition", () => {
       feeScript,
       minerFeeSats: 1_000n,
     });
-    const r = validateAndSignRedeemTransition({
+    const r = await validateAndSignRedeemTransition({
       signer,
       psbt: forged.psbt,
       view,

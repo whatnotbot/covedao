@@ -35,6 +35,9 @@ export interface AnalyzeParams {
   psbt: bitcoin.Psbt;
   view: CoveCanonicalView;
   network: GuardianV3Network;
+  /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
+  buyFeeBps?: bigint;
+  redeemFeeBps?: bigint;
 }
 
 function assertAllowedNetwork(_network: GuardianV3Network): void {
@@ -82,7 +85,7 @@ export function analyzeMintTransitionV3(params: AnalyzeParams): MintAnalysis {
     throw new CoveAnalyzeError("REFERENCE_POLICY_REJECTED", (e as Error).message);
   }
 
-  const protocolFeeSats = deterministicFee(grossSats, COVE_FEE_CONFIG.buyFeeBps);
+  const protocolFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps);
   const outputs = readPsbtOutputs(params.psbt);
   const totalIn = inputs.reduce((s, i) => s + i.valueSats, 0n);
   const totalOut = outputs.reduce((s, o) => s + o.value, 0n);
@@ -163,7 +166,7 @@ export function analyzeRedeemTransitionV3(params: AnalyzeParams): RedeemAnalysis
     throw new CoveAnalyzeError("REFERENCE_POLICY_REJECTED", (e as Error).message);
   }
 
-  const protocolFeeSats = deterministicFee(grossSats, COVE_FEE_CONFIG.redeemFeeBps);
+  const protocolFeeSats = deterministicFee(grossSats, params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps);
   const netPayoutSats = grossSats - protocolFeeSats;
   const outputs = readPsbtOutputs(params.psbt);
   const totalIn = inputs.reduce((s, i) => s + i.valueSats, 0n);

@@ -1,15 +1,17 @@
 import { ok, handleError, readJson, strField, bigintField } from "@/lib/api";
 import { assertV3Enabled } from "@/lib/v3-server";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
+    const limited = checkRateLimit(req, "build-launch");
+    if (limited) return limited;
     const { app } = assertV3Enabled();
     const body = await readJson(req);
     const funding = (body.funding ?? []) as { txid: string; vout: number }[];
     const result = await app.buildLaunch({
-      network: strField(body, "network"),
       ticker: strField(body, "ticker"),
       nonceHex: strField(body, "nonceHex"),
       walletScript: strField(body, "walletScript"),

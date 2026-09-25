@@ -33,6 +33,9 @@ export interface SignTransitionParams {
   recoveryProfile?: VaultRecoveryProfile;
   feeScript: Buffer;
   maxMinerFeeSats?: bigint;
+  /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
+  buyFeeBps?: bigint;
+  redeemFeeBps?: bigint;
   auditSink?: AuditSink;
 }
 
@@ -93,11 +96,11 @@ function buildAudit(params: {
   };
 }
 
-export function validateAndSignMintTransition(
+export async function validateAndSignMintTransition(
   params: SignTransitionParams,
-): SignTransitionOutcome {
+): Promise<SignTransitionOutcome> {
   const guardianXOnly = params.signer.xOnlyPubkey();
-  const v = validateMintTransitionV3({
+  const v = await validateMintTransitionV3({
     psbt: params.psbt,
     view: params.view,
     network: params.network,
@@ -106,6 +109,8 @@ export function validateAndSignMintTransition(
       recoveryProfile: params.recoveryProfile,
     feeScript: params.feeScript,
     maxMinerFeeSats: params.maxMinerFeeSats,
+    buyFeeBps: params.buyFeeBps,
+    redeemFeeBps: params.redeemFeeBps,
   });
 
   const analysis = v.ok ? (v.analysis as MintAnalysis) : null;
@@ -159,11 +164,11 @@ export function validateAndSignMintTransition(
   };
 }
 
-export function validateAndSignRedeemTransition(
+export async function validateAndSignRedeemTransition(
   params: SignTransitionParams,
-): SignTransitionOutcome {
+): Promise<SignTransitionOutcome> {
   const guardianXOnly = params.signer.xOnlyPubkey();
-  const v = validateRedeemTransitionV3({
+  const v = await validateRedeemTransitionV3({
     psbt: params.psbt,
     view: params.view,
     network: params.network,
@@ -172,6 +177,8 @@ export function validateAndSignRedeemTransition(
       recoveryProfile: params.recoveryProfile,
     feeScript: params.feeScript,
     maxMinerFeeSats: params.maxMinerFeeSats,
+    buyFeeBps: params.buyFeeBps,
+    redeemFeeBps: params.redeemFeeBps,
   });
 
   const analysis = v.ok ? (v.analysis as RedeemAnalysis) : null;

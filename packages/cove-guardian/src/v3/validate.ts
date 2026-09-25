@@ -68,9 +68,12 @@ export interface ValidateParams {
   recoveryProfile?: VaultRecoveryProfile;
   feeScript: Buffer;
   maxMinerFeeSats?: bigint;
+  /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
+  buyFeeBps?: bigint;
+  redeemFeeBps?: bigint;
 }
 
-export function validateMintTransitionV3(params: ValidateParams): ValidationResult {
+export async function validateMintTransitionV3(params: ValidateParams): Promise<ValidationResult> {
   const maxMinerFee = params.maxMinerFeeSats ?? 20_000n;
 
   // Mainnet requires the MAINNET1 recovery profile (fail closed; §36).
@@ -169,7 +172,7 @@ export function validateMintTransitionV3(params: ValidateParams): ValidationResu
   const settlement = checkFeeSettlement(
     analysis.protocolFeeSats,
     params.feeScript,
-    COVE_FEE_CONFIG.buyFeeBps,
+    params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps,
   );
   if (!settlement.isStandard) {
     return reject(
@@ -183,6 +186,9 @@ export function validateMintTransitionV3(params: ValidateParams): ValidationResu
   if (outputs.length > 5) return reject("UNEXPECTED_OUTPUT", `too many outputs (${outputs.length})`);
 
   // ── miner fee bounded ──
+  if (analysis.minerFeeSats < 0n) {
+    return reject("NEGATIVE_MINER_FEE", `miner fee ${analysis.minerFeeSats} is negative`);
+  }
   if (analysis.minerFeeSats > maxMinerFee) {
     return reject("MINER_FEE_EXCEEDED", `miner fee ${analysis.minerFeeSats} > ${maxMinerFee}`);
   }
@@ -197,7 +203,7 @@ export function validateMintTransitionV3(params: ValidateParams): ValidationResu
   if (!w.ok) return reject("WITNESS_CONSTRUCTION_FAILED", w.detail);
 
   // ── REAL Simplicity execution ──
-  const sim = executeMintV3(w.witness);
+  const sim = await executeMintV3(w.witness);
   if (sim.failure === "CMR_MISMATCH") {
     return reject("CMR_MISMATCH", `compiled CMR ${sim.actualCmr} != ${sim.expectedCmr}`);
   }
@@ -210,7 +216,7 @@ export function validateMintTransitionV3(params: ValidateParams): ValidationResu
   return { ok: true, analysis, simplicity: sim };
 }
 
-export function validateRedeemTransitionV3(params: ValidateParams): ValidationResult {
+export async function validateRedeemTransitionV3(params: ValidateParams): Promise<ValidationResult> {
   const maxMinerFee = params.maxMinerFeeSats ?? 20_000n;
 
   // Mainnet requires the MAINNET1 recovery profile (fail closed; §36).
@@ -319,7 +325,7 @@ export function validateRedeemTransitionV3(params: ValidateParams): ValidationRe
   const settlement = checkFeeSettlement(
     analysis.protocolFeeSats,
     params.feeScript,
-    COVE_FEE_CONFIG.redeemFeeBps,
+    params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps,
   );
   if (!settlement.isStandard) {
     return reject(
@@ -373,6 +379,9 @@ export function validateRedeemTransitionV3(params: ValidateParams): ValidationRe
   }
 
   // ── miner fee bounded ──
+  if (analysis.minerFeeSats < 0n) {
+    return reject("NEGATIVE_MINER_FEE", `miner fee ${analysis.minerFeeSats} is negative`);
+  }
   if (analysis.minerFeeSats > maxMinerFee) {
     return reject("MINER_FEE_EXCEEDED", `miner fee ${analysis.minerFeeSats} > ${maxMinerFee}`);
   }
@@ -387,7 +396,7 @@ export function validateRedeemTransitionV3(params: ValidateParams): ValidationRe
   if (!w.ok) return reject("WITNESS_CONSTRUCTION_FAILED", w.detail);
 
   // ── REAL Simplicity execution ──
-  const sim = executeRedeemV3(w.witness);
+  const sim = await executeRedeemV3(w.witness);
   if (sim.failure === "CMR_MISMATCH") {
     return reject("CMR_MISMATCH", `compiled CMR ${sim.actualCmr} != ${sim.expectedCmr}`);
   }

@@ -44,9 +44,13 @@ uploads/
 .cove-proof.json
 .cove-mutinynet-proof.json
 .cove-mainnet-canary.json
+.cove-v3-mainnet-profile.json
 
 # Forensic reference clones + fetched tx data (third-party)
 .forensics/
 
 # Rust build artifacts
 target/
+
+# Local scratch (GitHub page dump)
+fr.html

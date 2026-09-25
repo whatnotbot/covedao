@@ -11,9 +11,13 @@ import {
   type MainnetProfile,
 } from "./profile.js";
 
-const K1 = "11".repeat(32);
+// Recovery/Guardian keys MUST be on the secp256k1 curve — an off-curve x-only
+// key yields a tapleaf no signature can satisfy. ("11".repeat(32) is NOT on the
+// curve and was silently accepted before the isXOnlyKey check.)
+const K1 = "12".repeat(32);
 const K2 = "22".repeat(32);
 const K3 = "33".repeat(32);
+const OFF_CURVE_KEY = "11".repeat(32);
 
 function completeProfile(overrides: Partial<MainnetProfile> = {}): MainnetProfile {
   return {
@@ -140,5 +144,100 @@ describe("canonical mainnet profile", () => {
     expect(isStandardMainnetScript("76a914" + "c".repeat(40) + "88ac")).toBe(true); // P2PKH
     expect(isStandardMainnetScript("6a")).toBe(false);
     expect(isStandardMainnetScript("")).toBe(false);
+  });
+});
+
+function fullJson(): Record<string, unknown> {
+  return {
+    profileVersion: 1,
+    chainIdentity: "bitcoin-mainnet",
+    activationHeight: "900000",
+    policyVersion: 3,
+    vaultProfileVersion: "COVE_V3_VAULT_PROFILE_MAINNET1",
+    guardianXOnly: "44".repeat(32),
+    recovery: { threshold: 2, pubkeys: [K1, K2, K3], csvBlocks: 2016 },
+    feeScript: "0014" + "e".repeat(40),
+    buyFeeBps: 100,
+    redeemFeeBps: 100,
+    p2pFeeBps: 100,
+    carrierSats: String(TOKEN_CARRIER_SATS),
+    anchorSats: String(RESERVE_ANCHOR_SATS),
+    maxProtocolSupplyAtoms: String(PUBLIC_SUPPLY_ATOMS),
+    reserveAllocationAtoms: String(GRADUATION_RESERVE_ATOMS),
+    mintCmr: MINT_CMR,
+    redeemCmr: REDEEM_CMR,
+    canary: {
+      allowedWalletScripts: ["0014" + "a".repeat(40)],
+      allowedTokenIds: ["ab".repeat(32)],
+      maxBackingSats: "1000000000",
+      maxSingleBuySats: "50000000",
+      maxSingleRedeemPayoutSats: "50000000",
+      maxP2pSettlementSats: "10000000",
+    },
+  };
+}
+
+describe("strict profile parser (§P1-3)", () => {
+  it("parses a complete profile", () => {
+    const p = parseMainnetProfileJson(JSON.stringify(fullJson()));
+    expect(validateMainnetProfile(p).ok).toBe(true);
+  });
+
+  it("rejects a deleted frozen version/identity field (no hardcoded literal)", () => {
+    for (const key of ["profileVersion", "chainIdentity", "policyVersion", "vaultProfileVersion"]) {
+      const j = fullJson();
+      delete j[key];
+      expect(() => parseMainnetProfileJson(JSON.stringify(j))).toThrow();
+    }
+  });
+
+  it("rejects a mismatched version/identity literal", () => {
+    expect(() => parseMainnetProfileJson(JSON.stringify({ ...fullJson(), chainIdentity: "bitcoin-signet" }))).toThrow(/chainIdentity/);
+    expect(() => parseMainnetProfileJson(JSON.stringify({ ...fullJson(), policyVersion: 4 }))).toThrow(/policyVersion/);
+    expect(() => parseMainnetProfileJson(JSON.stringify({ ...fullJson(), vaultProfileVersion: "OTHER" }))).toThrow(/vaultProfileVersion/);
+  });
+
+  it("rejects a deleted frozen protocol field (no constant fallback)", () => {
+    for (const key of ["carrierSats", "anchorSats", "maxProtocolSupplyAtoms", "reserveAllocationAtoms", "mintCmr", "redeemCmr"]) {
+      const j = fullJson();
+      delete j[key];
+      expect(() => parseMainnetProfileJson(JSON.stringify(j))).toThrow(new RegExp(key));
+    }
+  });
+
+  it("rejects an off-curve guardianXOnly (unspendable execution leaves)", () => {
+    const r = validateMainnetProfile(completeProfile({ guardianXOnly: OFF_CURVE_KEY }));
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/INVALID_GUARDIAN_KEY/);
+  });
+
+  it("rejects an off-curve recovery pubkey (unspendable recovery leaf)", () => {
+    const r = validateMainnetProfile(
+      completeProfile({ recovery: { threshold: 2, pubkeys: [OFF_CURVE_KEY, K2, K3], csvBlocks: 2016 } }),
+    );
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/INVALID_RECOVERY_KEY/);
+  });
+
+  it("rejects the Guardian key appearing in the recovery set", () => {
+    const r = validateMainnetProfile(
+      completeProfile({ guardianXOnly: K2, recovery: { threshold: 2, pubkeys: [K1, K2, K3], csvBlocks: 2016 } }),
+    );
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/GUARDIAN_KEY_IN_RECOVERY_SET/);
+  });
+
+  it("accepts on-curve keys", () => {
+    expect(validateMainnetProfile(completeProfile()).ok).toBe(true);
+  });
+
+  it("rejects unknown keys at every scope", () => {
+    expect(() => parseMainnetProfileJson(JSON.stringify({ ...fullJson(), evil: 1 }))).toThrow(/unknown profile key/);
+    const withRecoveryEvil = fullJson() as unknown as { recovery: Record<string, unknown> };
+    withRecoveryEvil.recovery.evil = 1;
+    expect(() => parseMainnetProfileJson(JSON.stringify(withRecoveryEvil))).toThrow(/unknown recovery key/);
+    const withCanaryEvil = fullJson() as unknown as { canary: Record<string, unknown> };
+    withCanaryEvil.canary.evil = 1;
+    expect(() => parseMainnetProfileJson(JSON.stringify(withCanaryEvil))).toThrow(/unknown canary key/);
   });
 });

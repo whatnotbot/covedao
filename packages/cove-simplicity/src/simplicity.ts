@@ -1,4 +1,5 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -107,13 +108,13 @@ export interface SimplicityExecOptions {
   binaryPath?: string | null;
 }
 
-function executeStrict(
+async function executeStrict(
   policy: "MINT" | "REDEEM",
   rustPolicy: "mint" | "redeem",
   witness: string,
   expectedCmr: string,
   opts: SimplicityExecOptions,
-): SimplicityExecutionResult {
+): Promise<SimplicityExecutionResult> {
   const base: SimplicityExecutionResult = {
     policy,
     expectedCmr,
@@ -127,13 +128,15 @@ function executeStrict(
     return { ...base, failure: "SIMPLICITY_BINARY_MISSING" };
   }
 
+  const execFileAsync = promisify(execFile);
   let stdout: string;
   try {
-    stdout = execFileSync(bin, ["exec", rustPolicy, witness], {
+    const out = await execFileAsync(bin, ["exec", rustPolicy, witness], {
       encoding: "utf8",
       maxBuffer: 1_000_000,
       timeout: opts.timeoutMs ?? SIMPLICITY_TIMEOUT_MS,
     });
+    stdout = out.stdout as string;
   } catch (e) {
     const err = e as NodeJS.ErrnoException & {
       killed?: boolean;
@@ -177,7 +180,7 @@ function executeStrict(
 export function executeMintV3(
   witness: MintWitness,
   opts: SimplicityExecOptions = {},
-): SimplicityExecutionResult {
+): Promise<SimplicityExecutionResult> {
   return executeStrict("MINT", "mint", mintWitnessString(witness), MINT_CMR, opts);
 }
 
@@ -188,6 +191,6 @@ export function executeMintV3(
 export function executeRedeemV3(
   witness: RedeemWitness,
   opts: SimplicityExecOptions = {},
-): SimplicityExecutionResult {
+): Promise<SimplicityExecutionResult> {
   return executeStrict("REDEEM", "redeem", redeemWitnessString(witness), REDEEM_CMR, opts);
 }

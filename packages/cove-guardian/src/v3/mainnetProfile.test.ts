@@ -29,7 +29,7 @@ const MAINNET1 = {
 };
 
 describe("production-profile MINT path (§137) — MAINNET1 vault through the Guardian", () => {
-  it.skipIf(!isSimplicityAvailable())("builds + validates + signs a MINT against a 2-of-3 MAINNET1 vault", () => {
+  it.skipIf(!isSimplicityAvailable())("builds + validates + signs a MINT against a 2-of-3 MAINNET1 vault", async () => {
     const tokenId = Buffer.from("ab".repeat(32), "hex");
     const s0 = s0StateV2({ tokenId: tokenId.toString("hex") });
 
@@ -75,7 +75,7 @@ describe("production-profile MINT path (§137) — MAINNET1 vault through the Gu
     );
 
     const signer = GuardianV3Signer.fromPrivateKey(Buffer.alloc(32, 0x42));
-    const out = validateAndSignMintTransition({
+    const out = await validateAndSignMintTransition({
       signer,
       psbt: mint.psbt,
       view,

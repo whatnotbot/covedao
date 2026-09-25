@@ -53,4 +53,14 @@ describe("unsigned-tx digest + PSBT mutation detection (§12)", () => {
     // Unsigned input must be rejected.
     expect(() => validateP2wpkhPartialSig(psbt, 0)).toThrow(/no partial signature/);
   });
+
+  it("rejects a structurally-valid but cryptographically-wrong signature (§M1)", () => {
+    const psbt = build();
+    psbt.signInput(1, buyer);
+    // Replace the buyer's partial sig with a VALID DER signature over a DIFFERENT
+    // message signed by the SAME key — the old `() => true` validator accepted this.
+    const wrongSig = bitcoin.script.signature.encode(buyer.sign(Buffer.alloc(32, 0xaa)), bitcoin.Transaction.SIGHASH_ALL);
+    psbt.data.inputs[1]!.partialSig![0]!.signature = wrongSig;
+    expect(() => validateP2wpkhPartialSig(psbt, 1)).toThrow(/signature invalid/);
+  });
 });

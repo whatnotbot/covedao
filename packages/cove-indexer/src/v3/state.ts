@@ -342,7 +342,7 @@ export class V3IndexerState {
     } catch (e) {
       return { op: "MINT", valid: false, reason: `REFERENCE_REJECTED: ${(e as Error).message}`, tokenId: tokenIdHex, undo: null };
     }
-    const feeSats = deterministicFee(grossSats, COVE_FEE_CONFIG.buyFeeBps);
+    const feeSats = deterministicFee(grossSats, this.config.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps);
     const nextVault = buildBackingVaultV3({
       state: nextState,
       guardianXOnly: this.config.guardianXOnly,
@@ -506,7 +506,7 @@ export class V3IndexerState {
     } catch (e) {
       return { op: "REDEEM", valid: false, reason: `REFERENCE_REJECTED: ${(e as Error).message}`, tokenId: tokenIdHex, undo: null };
     }
-    const feeSats = deterministicFee(grossSats, COVE_FEE_CONFIG.redeemFeeBps);
+    const feeSats = deterministicFee(grossSats, this.config.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps);
     const netPayoutSats = grossSats - feeSats;
     const nextVault = buildBackingVaultV3({
       state: nextState,

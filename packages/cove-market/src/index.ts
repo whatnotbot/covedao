@@ -11,16 +11,21 @@ export { serializeListingV1 } from "./order/serialization.js";
 export {
   LISTING_DOMAIN,
   CANCEL_DOMAIN,
+  RESERVE_DOMAIN,
   listingIdOf,
   cancellationHashOf,
   listingMessageToSign,
   cancellationMessageToSign,
+  reservationHashOf,
+  reservationMessageToSign,
+  type ReservationV1,
 } from "./order/hash.js";
 export {
   signBip322P2wpkh,
   verifyBip322P2wpkh,
   verifyListingAuthorization,
   verifyCancellationAuthorization,
+  verifyReservationAuthorization,
 } from "./order/signature.js";
 export { validateListingShape } from "./order/validate.js";
 export { defaultMarketConfig, mainnetMarketConfig, type MarketConfig } from "./config.js";

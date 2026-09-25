@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import * as ecc from "tiny-secp256k1";
 import { TOKEN_CARRIER_SATS, RESERVE_ANCHOR_SATS } from "@crclaunch/cove-covenant";
 import { MINT_CMR, REDEEM_CMR } from "@crclaunch/cove-simplicity";
 import { CHAIN_BITCOIN_MAINNET, COVE_POLICY_V3 } from "@crclaunch/cove-wire";
@@ -71,6 +72,18 @@ export interface MainnetProfileValidationResult {
 
 const HEX64 = /^[0-9a-f]{64}$/i;
 
+/**
+ * An x-only key must be 32 hex-encoded bytes AND a point on secp256k1. A hex
+ * string that is well-formed but off-curve produces a tapleaf no signature can
+ * ever satisfy — and because the keys derive the vault address, the defect is
+ * undetectable after funding. Curve-check here, at profile validation, so an
+ * unspendable vault can never be committed (§C8).
+ */
+function isXOnlyKey(hex: string): boolean {
+  if (!HEX64.test(hex)) return false;
+  return ecc.isXOnlyPoint(Buffer.from(hex, "hex"));
+}
+
 /** x-only pubkeys must be 32 bytes; canonical order is lexicographic (raw hex). */
 function normalizePubkeys(pubkeys: string[]): string[] {
   return [...pubkeys].sort((a, b) => (a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0));
@@ -125,13 +138,16 @@ export function validateMainnetProfile(p: MainnetProfile): MainnetProfileValidat
 
   // Guardian public key.
   if (p.guardianXOnly === null) fail("OWNER_DECISION_REQUIRED: guardianXOnly");
-  else if (!HEX64.test(p.guardianXOnly)) fail("INVALID_GUARDIAN_KEY");
+  else if (!isXOnlyKey(p.guardianXOnly)) fail("INVALID_GUARDIAN_KEY");
 
   // Recovery 2-of-3.
   if (p.recovery.threshold !== 2) fail(`INVALID_RECOVERY_THRESHOLD: ${p.recovery.threshold} != 2`);
   if (p.recovery.pubkeys.length === 0) fail("OWNER_DECISION_REQUIRED: recovery.pubkeys");
   else if (p.recovery.pubkeys.length !== 3) fail(`INVALID_RECOVERY_KEYS: expected 3, got ${p.recovery.pubkeys.length}`);
-  for (const k of p.recovery.pubkeys) if (!HEX64.test(k)) fail(`INVALID_RECOVERY_KEY: ${k.slice(0, 12)}…`);
+  for (const k of p.recovery.pubkeys) if (!isXOnlyKey(k)) fail(`INVALID_RECOVERY_KEY: ${k.slice(0, 12)}…`);
+  if (p.guardianXOnly !== null && p.recovery.pubkeys.some((k) => k.toLowerCase() === p.guardianXOnly!.toLowerCase())) {
+    fail("GUARDIAN_KEY_IN_RECOVERY_SET");
+  }
   if (new Set(p.recovery.pubkeys.map((k) => k.toLowerCase())).size !== p.recovery.pubkeys.length) fail("DUPLICATE_RECOVERY_KEYS");
   if (!csvValid(p.recovery.csvBlocks)) fail(p.recovery.csvBlocks === null ? "OWNER_DECISION_REQUIRED: recovery.csvBlocks" : `INVALID_RECOVERY_CSV: ${p.recovery.csvBlocks}`);
 
@@ -225,39 +241,37 @@ export function hashMainnetProfile(p: MainnetProfile): string {
 
 // ── JSON wire format (bigint fields are decimal STRINGS in JSON) ────────────
 
-interface RawProfileJson {
-  profileVersion?: unknown;
-  chainIdentity?: unknown;
-  activationHeight?: unknown;
-  policyVersion?: unknown;
-  vaultProfileVersion?: unknown;
-  guardianXOnly?: unknown;
-  recovery?: { threshold?: unknown; pubkeys?: unknown; csvBlocks?: unknown };
-  feeScript?: unknown;
-  buyFeeBps?: unknown;
-  redeemFeeBps?: unknown;
-  p2pFeeBps?: unknown;
-  carrierSats?: unknown;
-  anchorSats?: unknown;
-  maxProtocolSupplyAtoms?: unknown;
-  reserveAllocationAtoms?: unknown;
-  mintCmr?: unknown;
-  redeemCmr?: unknown;
-  canary?: {
-    allowedWalletScripts?: unknown;
-    allowedTokenIds?: unknown;
-    maxBackingSats?: unknown;
-    maxSingleBuySats?: unknown;
-    maxSingleRedeemPayoutSats?: unknown;
-    maxP2pSettlementSats?: unknown;
-  };
+const PROFILE_KEYS = new Set([
+  "profileVersion", "chainIdentity", "activationHeight", "policyVersion", "vaultProfileVersion",
+  "guardianXOnly", "recovery", "feeScript", "buyFeeBps", "redeemFeeBps", "p2pFeeBps",
+  "carrierSats", "anchorSats", "maxProtocolSupplyAtoms", "reserveAllocationAtoms",
+  "mintCmr", "redeemCmr", "canary",
+]);
+const RECOVERY_KEYS = new Set(["threshold", "pubkeys", "csvBlocks"]);
+const CANARY_KEYS = new Set([
+  "allowedWalletScripts", "allowedTokenIds", "maxBackingSats",
+  "maxSingleBuySats", "maxSingleRedeemPayoutSats", "maxP2pSettlementSats",
+]);
+
+function assertNoUnknownKeys(obj: Record<string, unknown>, allowed: Set<string>, scope: string): void {
+  for (const k of Object.keys(obj)) {
+    if (!allowed.has(k)) throw new Error(`unknown ${scope} key: "${k}"`);
+  }
 }
 
-function bigintOr(value: unknown, fallback: bigint): bigint {
-  if (typeof value === "string") { const n = BigInt(value); return n; }
+function requiredString(value: unknown, key: string): string {
+  if (typeof value !== "string") throw new Error(`profile field "${key}" must be a string`);
+  return value;
+}
+function requiredInt(value: unknown, key: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value)) throw new Error(`profile field "${key}" must be an integer`);
+  return value;
+}
+function requiredBigint(value: unknown, key: string): bigint {
+  if (typeof value === "string" && value !== "") return BigInt(value);
   if (typeof value === "number" && Number.isInteger(value)) return BigInt(value);
   if (typeof value === "bigint") return value;
-  return fallback;
+  throw new Error(`profile field "${key}" must be a bigint`);
 }
 function optBigint(value: unknown): bigint | null {
   if (value === null || value === undefined) return null;
@@ -278,9 +292,24 @@ function strArray(value: unknown): string[] {
 
 /** Parse the canonical JSON wire format into a typed MainnetProfile. */
 export function parseMainnetProfileJson(text: string): MainnetProfile {
-  const raw = JSON.parse(text) as RawProfileJson;
-  const r = raw.recovery ?? {};
-  const c = raw.canary ?? {};
+  const raw = JSON.parse(text) as Record<string, unknown>;
+  assertNoUnknownKeys(raw, PROFILE_KEYS, "profile");
+  const r = (raw.recovery ?? {}) as Record<string, unknown>;
+  const c = (raw.canary ?? {}) as Record<string, unknown>;
+  assertNoUnknownKeys(r, RECOVERY_KEYS, "recovery");
+  assertNoUnknownKeys(c, CANARY_KEYS, "canary");
+
+  // Frozen identity/version fields are read from the file and MUST match the
+  // committed protocol values — never hardcoded, never defaulted.
+  const profileVersion = requiredInt(raw.profileVersion, "profileVersion");
+  if (profileVersion !== 1) throw new Error(`profileVersion must be 1, got ${profileVersion}`);
+  const chainIdentity = requiredString(raw.chainIdentity, "chainIdentity");
+  if (chainIdentity !== "bitcoin-mainnet") throw new Error(`chainIdentity must be "bitcoin-mainnet", got "${chainIdentity}"`);
+  const policyVersion = requiredInt(raw.policyVersion, "policyVersion");
+  if (policyVersion !== 3) throw new Error(`policyVersion must be 3, got ${policyVersion}`);
+  const vaultProfileVersion = requiredString(raw.vaultProfileVersion, "vaultProfileVersion");
+  if (vaultProfileVersion !== "COVE_V3_VAULT_PROFILE_MAINNET1") throw new Error(`vaultProfileVersion must be "COVE_V3_VAULT_PROFILE_MAINNET1", got "${vaultProfileVersion}"`);
+
   const profile: MainnetProfile = {
     profileVersion: 1,
     chainIdentity: "bitcoin-mainnet",
@@ -289,7 +318,7 @@ export function parseMainnetProfileJson(text: string): MainnetProfile {
     vaultProfileVersion: "COVE_V3_VAULT_PROFILE_MAINNET1",
     guardianXOnly: raw.guardianXOnly == null ? null : String(raw.guardianXOnly),
     recovery: {
-      threshold: typeof r.threshold === "number" ? r.threshold : 2,
+      threshold: requiredInt(r.threshold, "recovery.threshold"),
       pubkeys: normalizePubkeys(strArray(r.pubkeys)),
       csvBlocks: optNum(r.csvBlocks),
     },
@@ -297,12 +326,14 @@ export function parseMainnetProfileJson(text: string): MainnetProfile {
     buyFeeBps: optNum(raw.buyFeeBps),
     redeemFeeBps: optNum(raw.redeemFeeBps),
     p2pFeeBps: optNum(raw.p2pFeeBps),
-    carrierSats: bigintOr(raw.carrierSats, TOKEN_CARRIER_SATS),
-    anchorSats: bigintOr(raw.anchorSats, RESERVE_ANCHOR_SATS),
-    maxProtocolSupplyAtoms: bigintOr(raw.maxProtocolSupplyAtoms, PUBLIC_SUPPLY_ATOMS),
-    reserveAllocationAtoms: bigintOr(raw.reserveAllocationAtoms, GRADUATION_RESERVE_ATOMS),
-    mintCmr: raw.mintCmr == null ? MINT_CMR : String(raw.mintCmr),
-    redeemCmr: raw.redeemCmr == null ? REDEEM_CMR : String(raw.redeemCmr),
+    // Frozen protocol verification surface: REQUIRED, never fall back to code
+    // constants (a deleted field must change the hash, not silently re-derive).
+    carrierSats: requiredBigint(raw.carrierSats, "carrierSats"),
+    anchorSats: requiredBigint(raw.anchorSats, "anchorSats"),
+    maxProtocolSupplyAtoms: requiredBigint(raw.maxProtocolSupplyAtoms, "maxProtocolSupplyAtoms"),
+    reserveAllocationAtoms: requiredBigint(raw.reserveAllocationAtoms, "reserveAllocationAtoms"),
+    mintCmr: requiredString(raw.mintCmr, "mintCmr"),
+    redeemCmr: requiredString(raw.redeemCmr, "redeemCmr"),
     canary: {
       allowedWalletScripts: strArray(c.allowedWalletScripts),
       allowedTokenIds: strArray(c.allowedTokenIds),

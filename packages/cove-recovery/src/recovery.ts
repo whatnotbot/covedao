@@ -111,7 +111,7 @@ export function finalizeRecovery(draft: RecoveryDraft): string {
   if (draft.signatures.size < draft.threshold) {
     throw new Error(`recovery threshold not met (${draft.signatures.size}/${draft.threshold})`);
   }
-  const stack = buildThresholdRecoveryWitness({ pubkeys: draft.pubkeys, signatures: draft.signatures });
+  const stack = buildThresholdRecoveryWitness({ pubkeys: draft.pubkeys, signatures: draft.signatures, threshold: draft.threshold });
   const witness = [...stack, draft.vault.recoveryLeaf.script, draft.vault.recoveryControlBlock];
   const tx = draft.unsignedTx;
   tx.setWitness(0, witness);

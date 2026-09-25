@@ -1,7 +1,6 @@
 import { eq, and, or, inArray } from "drizzle-orm";
 import { schema, type Database } from "@crclaunch/db";
 import { getTokenUtxosByScriptDb, getBalanceByScriptDb } from "@crclaunch/cove-indexer/v3";
-import { listTxSessionsByScript } from "./tx-session.js";
 
 /**
  * Wallet portfolio (§54/§55/§68). Balance is DERIVED from canonical unspent V3
@@ -51,8 +50,9 @@ export async function getWalletPortfolio(db: Database, network: string, walletSc
       ),
     );
 
-  const sessions = await listTxSessionsByScript(db, network, walletScript);
-
+  // §M7: off-chain tx sessions are NOT part of the public projection — they leak
+  // coordination state for any address. Balance authority is the canonical UTXO
+  // set only.
   return {
     walletScript,
     holdings,
@@ -65,7 +65,6 @@ export async function getWalletPortfolio(db: Database, network: string, walletSc
     })),
     listings,
     fills,
-    sessions,
   };
 }
 

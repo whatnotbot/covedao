@@ -114,8 +114,15 @@ output of step 3.
 
 ## 5. Runtime readiness
 
+The runtime probe is fail-closed: it compares against **committed** hashes and
+contacts the real indexer DB + worker lock, so pass all of these in:
+
 ```bash
 COVE_V3_MAINNET_PROFILE_PATH=.cove-v3-mainnet-profile.json \
+COVE_V3_MAINNET_PROFILE_HASH=<committed-profile-hash> \
+COVE_V3_MAINNET_STATE_ROOT=<committed-replay-state-root> \
+COVE_V3_MAINNET_RELEASE_MANIFEST_HASH=<committed-release-manifest-hash> \
+COVE_DATABASE_URL=postgres://… \
 COVE_BITCOIN_RPC_URL=http://primary-core \
 COVE_BITCOIN_RPC_URL_SECONDARY=http://secondary-core \
 COVE_GUARDIAN_ENDPOINT=http://guardian-host:4391 \
@@ -123,8 +130,16 @@ COVE_GUARDIAN_AUTH_TOKEN=<token> \
 pnpm cove:v3-mainnet-readiness --runtime
 ```
 
-Expected: primary/secondary Core, Core agreement, Guardian (reachable / profile
-hash / key), custody backend, audit, signing journal all `PASS`, and:
+- `COVE_V3_MAINNET_PROFILE_HASH` is the hash of the committed profile (from step 3);
+  a missing or mismatched hash ⇒ `DISABLED` (the CLI no longer self-compares).
+- `COVE_V3_MAINNET_STATE_ROOT` is the committed replay state root the indexer must
+  reach; `COVE_V3_MAINNET_RELEASE_MANIFEST_HASH` is the committed release-manifest hash.
+- `COVE_DATABASE_URL` lets the CLI probe the indexer health/state root and the
+  worker's advisory lock (a real worker-health signal, not an assertion).
+
+Expected: primary/secondary Core, Core agreement, indexer health, state root,
+worker, Guardian (reachable / profile hash / key), custody backend, audit,
+signing journal all `PASS`, and:
 
 ```
 READY_FOR_CONTROLLED_MAINNET_CANARY
@@ -135,8 +150,11 @@ READY_FOR_CONTROLLED_MAINNET_CANARY
 1. Arm the canary (`canaryActive = true`) — the stage moves to `CANARY_ACTIVE`
    and `mutationsEnabled` flips true.
 2. Perform the **first** canary op — a single DEPLOY of the precomputed tokenId,
-   then a single MINT to your own wallet — using the app's mutation path (which
-   enforces the allowlist + caps and signs through the remote Guardian).
+   then a single MINT to your own wallet — using the app's mutation path. That
+   path enforces the canary wallet/token allowlist at the app layer, and the
+   Guardian signer enforces the token allowlist **and** the caps (single-buy /
+   single-redeem-payout / backing) inside the signing boundary, signing only
+   through the remote Guardian — a compromised web/API cannot bypass either.
 3. Watch the durable audit + signing journal and the backing invariant.
 
 Do **not** proceed to public deposits — the allowlist is still you, and the

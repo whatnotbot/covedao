@@ -1,10 +1,13 @@
 import { ok, handleError, readJson, strField } from "@/lib/api";
 import { assertV3Enabled } from "@/lib/v3-server";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
+    const limited = checkRateLimit(req, "submit-transfer");
+    if (limited) return limited;
     const { app } = assertV3Enabled();
     const body = await readJson(req);
     const result = await app.submitTransfer({ sessionId: strField(body, "sessionId"), signedPsbtBase64: strField(body, "signedPsbtBase64") });

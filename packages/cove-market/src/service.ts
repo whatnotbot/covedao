@@ -11,12 +11,13 @@ import { MarketError } from "./errors.js";
 import type { MarketConfig } from "./config.js";
 import type { ListingV1, CancellationV1 } from "./types.js";
 import { listingIdOf, cancellationHashOf } from "./order/hash.js";
-import { verifyListingAuthorization, verifyCancellationAuthorization } from "./order/signature.js";
+import { verifyListingAuthorization, verifyCancellationAuthorization, verifyReservationAuthorization } from "./order/signature.js";
 import { validateListingShape } from "./order/validate.js";
 import { unsignedTxDigest, parsePsbt, validateP2wpkhPartialSig, partialSigOfInput } from "./psbt.js";
 import {
   validateFinalizedP2PFill,
   broadcastValidatedP2PFill,
+  assertSettlementCap,
   type ValidatedP2PFill,
   type P2PFillTerms,
 } from "./finalize.js";
@@ -40,6 +41,10 @@ export interface ReserveListingInput {
   buyerTokenScript: string; // hex
   buyerChangeScript: string; // hex
   buyerFundInputs: BuyerFundInput[];
+  /** 32-byte hex nonce the buyer signed (§M4). */
+  reserveNonce: string;
+  /** BIP-322 signature over the reservation message (§M4). */
+  signatureB64: string;
 }
 
 type ListingSelect = typeof schema.coveV3MarketListings.$inferSelect;
@@ -137,6 +142,11 @@ export class MarketService {
   }
 
   async createListing(input: CreateListingInput): Promise<string> {
+    // §M5: a listing must commit to THIS market's chain identity, not another
+    // network's (which would let a foreign-chain signature/state pass through).
+    if (input.chainIdentity !== this.config.chainIdentity) {
+      throw new MarketError("CHAIN_IDENTITY_MISMATCH", `listing chainIdentity ${input.chainIdentity} != server ${this.config.chainIdentity}`);
+    }
     await assertMarketReady({ db: this.db, config: this.config, provider: this.provider });
     validateListingShape(input);
 
@@ -148,9 +158,7 @@ export class MarketService {
     if (input.totalPriceSats < dustThreshold(asBuffer(input.sellerPayoutScript))) {
       throw new MarketError("SELLER_PAYOUT_DUST", "seller payout below relay dust");
     }
-    if (this.config.maxP2pSettlementSats != null && input.totalPriceSats > this.config.maxP2pSettlementSats) {
-      throw new MarketError("P2P_SETTLEMENT_CAP_EXCEEDED", `settlement ${input.totalPriceSats} > canary cap ${this.config.maxP2pSettlementSats}`);
-    }
+    assertSettlementCap(input.totalPriceSats, this.config.maxP2pSettlementSats);
     const marketFee = deterministicFee(input.totalPriceSats, this.config.p2pFeeBps);
     if (marketFee < dustThreshold(this.config.feeScript)) {
       throw new MarketError("MARKET_FEE_DUST", "p2p fee below relay dust");
@@ -246,6 +254,11 @@ export class MarketService {
   }
 
   async reserveListing(input: ReserveListingInput): Promise<string> {
+    // §M4: require a signed nonce — an unsigned reserve lets anyone lock every
+    // listing for free (denial-of-service).
+    if (!verifyReservationAuthorization({ version: 1, listingId: input.listingId, reserveNonce: input.reserveNonce, buyerTokenScript: input.buyerTokenScript }, input.signatureB64)) {
+      throw new MarketError("LISTING_BAD_SIGNATURE", "reservation BIP-322 signature invalid");
+    }
     await assertMarketReady({ db: this.db, config: this.config, provider: this.provider });
     const tip = BigInt(await this.provider.getBestHeight());
 
@@ -412,6 +425,8 @@ export class MarketService {
     if (!fill.psbtBase64) throw new MarketError("STATE_CHANGED", "fill has no PSBT");
     const listing = await this.loadListing(fill.listingId);
     if (!listing) throw new MarketError("STATE_CHANGED", "listing not found");
+    // Re-check the canary cap at fill time (§P0-6), not just at listing creation.
+    assertSettlementCap(listing.totalPriceSats, this.config.maxP2pSettlementSats);
 
     const psbt = parsePsbt(fill.psbtBase64, btcNetwork(this.config.network));
     psbt.finalizeAllInputs();
@@ -568,7 +583,9 @@ export class MarketService {
       .where(
         and(
           eq(schema.coveV3MarketFills.network, this.config.network),
-          eq(schema.coveV3MarketFills.status, "RESERVED"),
+          // §M4: reclaim stuck fills at ANY non-terminal stage — a BUYER_SIGNED
+          // fill that never finalizes must not lock the listing forever.
+          inArray(schema.coveV3MarketFills.status, ["RESERVED", "PSBT_BUILT", "BUYER_SIGNED", "SELLER_SIGNED"]),
           lte(schema.coveV3MarketFills.reservationExpiresAt, now),
         ),
       );

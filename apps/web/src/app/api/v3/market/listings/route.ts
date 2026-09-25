@@ -1,6 +1,7 @@
 import { ok, handleError, readJson, strField } from "@/lib/api";
 import { getV3Services, assertV3Enabled } from "@/lib/v3-server";
 import type { ListingV1 } from "@crclaunch/cove-market";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const limited = checkRateLimit(req, "create-listing");
+    if (limited) return limited;
     const { app } = assertV3Enabled();
     const body = await readJson(req);
     const listing = body.listing as ListingV1;

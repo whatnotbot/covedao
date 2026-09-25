@@ -5,6 +5,7 @@ import { ECPairFactory } from "ecpair";
 import { s0StateV2, applyMintV2, applyRedeemV2, TOKEN_CARRIER_SATS } from "@crclaunch/cove-covenant";
 import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
 import { CHAIN_BITCOIN_REGTEST, decodeV2 } from "@crclaunch/cove-wire";
+import { deterministicFee } from "@crclaunch/cove-economics";
 import {
   buildDeployPsbtV3,
   buildMintPsbtV3,
@@ -222,5 +223,52 @@ describe("V3 builders (offline)", () => {
     const env = decodeV2(r.psbt.txOutputs[0]!.script.subarray(2));
     expect(env.op).toBe(4); // REDEEM
     expect((env as { redeemAmount: bigint }).redeemAmount).toBe(mintAmountAtoms);
+  });
+
+  it("MINT: protocol fee schedule is parameterized (profile-driven), not the dev default", () => {
+    const d = deploy();
+    const mintAmountAtoms = 84_000_000n * 100_000_000n;
+    const gross = applyMintV2(d.s0, mintAmountAtoms).grossSats;
+    const mint = buildMintPsbtV3({
+      network: bitcoin.networks.regtest,
+      tokenId: d.tokenId,
+      prevState: d.s0,
+      prevBacking: { txid: "a".repeat(64), vout: 1, script: d.vault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS },
+      mintAmountAtoms,
+      guardianXOnly,
+      recoveryKeyXOnly: recoveryXOnly,
+      buyerInputs: [{ txid: "b".repeat(64), vout: 0, script: Buffer.from("0014" + "d".repeat(20), "hex"), valueSats: 1_000_000n }],
+      buyerCarrierScript: Buffer.from("0014" + "e".repeat(20), "hex"),
+      buyerChangeScript: Buffer.from("0014" + "e".repeat(20), "hex"),
+      feeScript: Buffer.from("0014" + "f".repeat(20), "hex"),
+      minerFeeSats: 1_000n,
+      buyFeeBps: 50n,
+    });
+    expect(mint.buyFeeSats).toBe(deterministicFee(gross, 50n));
+    expect(mint.buyFeeSats).not.toBe(494n); // the dev default (100 bps)
+  });
+
+  it("REDEEM: protocol fee schedule is parameterized (profile-driven), not the dev default", () => {
+    const d = deploy();
+    const minted = applyMintV2(d.s0, 84_000_000n * 100_000_000n);
+    const gross = applyRedeemV2(minted.nextState, 84_000_000n * 100_000_000n).grossSats;
+    const r = buildRedeemPsbtV3({
+      network: bitcoin.networks.regtest,
+      tokenId: d.tokenId,
+      prevState: minted.nextState,
+      prevBacking: { txid: "e".repeat(64), vout: 1, script: buildBackingVaultV3({ state: minted.nextState, guardianXOnly, recoveryKeyXOnly: recoveryXOnly }).scriptPubKey, valueSats: RESERVE_ANCHOR_SATS + minted.nextState.backingSats },
+      redeemAmountAtoms: 84_000_000n * 100_000_000n,
+      tokenInputs: [{ txid: "f".repeat(64), vout: 1, script: Buffer.from("0014" + "e".repeat(20), "hex"), valueSats: TOKEN_CARRIER_SATS }],
+      tokenInputTotalAtoms: 84_000_000n * 100_000_000n,
+      guardianXOnly,
+      recoveryKeyXOnly: recoveryXOnly,
+      sellerPayoutScript: Buffer.from("0014" + "e".repeat(20), "hex"),
+      sellerChangeScript: Buffer.from("0014" + "e".repeat(20), "hex"),
+      feeScript: Buffer.from("0014" + "f".repeat(20), "hex"),
+      minerFeeSats: 1_000n,
+      redeemFeeBps: 50n,
+    });
+    expect(r.redeemFeeSats).toBe(deterministicFee(gross, 50n));
+    expect(r.redeemFeeSats).not.toBe(494n); // the dev default (100 bps)
   });
 });

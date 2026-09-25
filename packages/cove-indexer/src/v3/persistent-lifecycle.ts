@@ -156,12 +156,12 @@ async function main() {
     mintAmountAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     buyerInputs: [aliceUtxo], buyerCarrierScript: p2wpkh(alice), buyerChangeScript: p2wpkh(alice), feeScript, minerFeeSats: REGTEST_MINER_FEE,
   });
-  const mintSign = validateAndSignMintTransition({ signer, psbt: mint1.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const mintSign = await validateAndSignMintTransition({ signer, psbt: mint1.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!mintSign.ok) throw new Error(`guardian refused MINT: ${mintSign.reason}`);
   mint1.psbt.signInput(1, alice);
   mint1.psbt.finalizeInput(1);
   const mintHex = mint1.psbt.extractTransaction().toHex();
-  const mintVal = orThrow(validateFinalizedMintTransaction({ rawTxHex: mintHex, view: state, network: "regtest", guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript }));
+  const mintVal = orThrow(await validateFinalizedMintTransaction({ rawTxHex: mintHex, view: state, network: "regtest", guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript }));
   const mintTxid = await broadcast(mintVal);
   await mine();
   {
@@ -202,12 +202,12 @@ async function main() {
     tokenInputTotalAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     sellerPayoutScript: p2wpkh(bob), sellerChangeScript: p2wpkh(bob), feeScript, minerFeeSats: REGTEST_MINER_FEE,
   });
-  const redeemSign = validateAndSignRedeemTransition({ signer, psbt: redeem.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const redeemSign = await validateAndSignRedeemTransition({ signer, psbt: redeem.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!redeemSign.ok) throw new Error(`guardian refused REDEEM: ${redeemSign.reason}`);
   redeem.psbt.signInput(1, bob);
   redeem.psbt.finalizeInput(1);
   const redeemHex = redeem.psbt.extractTransaction().toHex();
-  const redeemVal = orThrow(validateFinalizedRedeemTransaction({ rawTxHex: redeemHex, view: state, network: "regtest", guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript }));
+  const redeemVal = orThrow(await validateFinalizedRedeemTransaction({ rawTxHex: redeemHex, view: state, network: "regtest", guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript }));
   const redeemTxid = await broadcast(redeemVal);
   await mine();
   {
@@ -224,12 +224,12 @@ async function main() {
     mintAmountAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     buyerInputs: [aliceRebuy], buyerCarrierScript: p2wpkh(alice), buyerChangeScript: p2wpkh(alice), feeScript, minerFeeSats: REGTEST_MINER_FEE,
   });
-  const rebuySign = validateAndSignMintTransition({ signer, psbt: mint2.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const rebuySign = await validateAndSignMintTransition({ signer, psbt: mint2.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!rebuySign.ok) throw new Error(`guardian refused RE-BUY: ${rebuySign.reason}`);
   mint2.psbt.signInput(1, alice);
   mint2.psbt.finalizeInput(1);
   const mint2Hex = mint2.psbt.extractTransaction().toHex();
-  const mint2Val = orThrow(validateFinalizedMintTransaction({ rawTxHex: mint2Hex, view: state, network: "regtest", guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript }));
+  const mint2Val = orThrow(await validateFinalizedMintTransaction({ rawTxHex: mint2Hex, view: state, network: "regtest", guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript }));
   const mint2Txid = await broadcast(mint2Val);
   await mine();
   {
@@ -288,7 +288,7 @@ async function main() {
     mintAmountAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     buyerInputs: [newBuyerFund], buyerCarrierScript: p2wpkh(newBuyer), buyerChangeScript: p2wpkh(newBuyer), feeScript, minerFeeSats: REGTEST_MINER_FEE,
   });
-  const snapSign = validateAndSignMintTransition({ signer, psbt: mint3.psbt, view: snapshot, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const snapSign = await validateAndSignMintTransition({ signer, psbt: mint3.psbt, view: snapshot, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!snapSign.ok) throw new Error(`snapshot-driven Guardian refused: ${snapSign.reason}`);
   console.log(`✓ DB snapshot → Guardian signed (Simplicity PASS, CMR ${snapSign.actualCmr.slice(0, 8)}…)`);
 

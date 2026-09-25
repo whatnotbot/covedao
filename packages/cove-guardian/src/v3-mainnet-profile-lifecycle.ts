@@ -183,7 +183,8 @@ async function main(): Promise<void> {
     maxRedeemPayoutSats: 1_000_000n,
     maxBackingSats: 100_000_000_000_000n,
     maxMinerFeeSats: 20_000n,
-    allowedTokenIds: null,
+    allowedTokenIds: [],
+    enforceTokenAllowlist: false,
   };
   const transitionSigner = new LocalGuardianTransitionSigner(localSigningBackend(signer), journal, audit, riskPolicy);
 
@@ -254,7 +255,7 @@ async function main(): Promise<void> {
   mint1.psbt.signInput(1, alice);
   mint1.psbt.finalizeInput(1);
   const mint1Hex = mint1.psbt.extractTransaction().toHex();
-  const mint1Val = orThrow(validateFinalizedMintTransaction({
+  const mint1Val = orThrow(await validateFinalizedMintTransaction({
     rawTxHex: mint1Hex, view, network: "regtest", guardianXOnly, recoveryKeyXOnly,
     recoveryProfile: MAINNET1_PROFILE, feeScript,
   }), "MINT");
@@ -306,7 +307,7 @@ async function main(): Promise<void> {
   redeem.psbt.signInput(1, alice);
   redeem.psbt.finalizeInput(1);
   const redeemHex = redeem.psbt.extractTransaction().toHex();
-  const redeemVal = orThrow(validateFinalizedRedeemTransaction({
+  const redeemVal = orThrow(await validateFinalizedRedeemTransaction({
     rawTxHex: redeemHex, view, network: "regtest", guardianXOnly, recoveryKeyXOnly,
     recoveryProfile: MAINNET1_PROFILE, feeScript,
   }), "REDEEM");
@@ -352,7 +353,7 @@ async function main(): Promise<void> {
   mint2.psbt.signInput(1, alice);
   mint2.psbt.finalizeInput(1);
   const mint2Hex = mint2.psbt.extractTransaction().toHex();
-  const mint2Val = orThrow(validateFinalizedMintTransaction({
+  const mint2Val = orThrow(await validateFinalizedMintTransaction({
     rawTxHex: mint2Hex, view, network: "regtest", guardianXOnly, recoveryKeyXOnly,
     recoveryProfile: MAINNET1_PROFILE, feeScript,
   }), "RE-BUY");

@@ -28,27 +28,27 @@ function fakeBinary(body: string): string {
 }
 
 describe("Simplicity strict executor (fail-closed failure injection)", () => {
-  it("A. missing binary → SIMPLICITY_BINARY_MISSING, no PASS", () => {
-    const r = executeMintV3(VALID, { binaryPath: null });
+  it("A. missing binary → SIMPLICITY_BINARY_MISSING, no PASS", async () => {
+    const r = await executeMintV3(VALID, { binaryPath: null });
     expect(r.result).toBe("FAIL");
     expect(r.failure).toBe("SIMPLICITY_BINARY_MISSING");
   });
 
-  it("B. malformed JSON → SIMPLICITY_MALFORMED_RESULT, no PASS", () => {
-    const r = executeMintV3(VALID, { binaryPath: fakeBinary(`echo 'this is not json'`) });
+  it("B. malformed JSON → SIMPLICITY_MALFORMED_RESULT, no PASS", async () => {
+    const r = await executeMintV3(VALID, { binaryPath: fakeBinary(`echo 'this is not json'`) });
     expect(r.result).toBe("FAIL");
     expect(r.failure).toBe("SIMPLICITY_MALFORMED_RESULT");
   });
 
-  it("B2. JSON missing result field → SIMPLICITY_MALFORMED_RESULT", () => {
-    const r = executeMintV3(VALID, { binaryPath: fakeBinary(`echo '{"cmr":"${MINT_CMR}"}'`) });
+  it("B2. JSON missing result field → SIMPLICITY_MALFORMED_RESULT", async () => {
+    const r = await executeMintV3(VALID, { binaryPath: fakeBinary(`echo '{"cmr":"${MINT_CMR}"}'`) });
     expect(r.result).toBe("FAIL");
     expect(r.failure).toBe("SIMPLICITY_MALFORMED_RESULT");
   });
 
-  it("C. mutated CMR → CMR_MISMATCH, no PASS", () => {
+  it("C. mutated CMR → CMR_MISMATCH, no PASS", async () => {
     const wrong = "00".repeat(32);
-    const r = executeMintV3(VALID, {
+    const r = await executeMintV3(VALID, {
       binaryPath: fakeBinary(`echo '{"cmr":"${wrong}","result":"PASS"}'`),
     });
     expect(r.result).toBe("FAIL");
@@ -56,16 +56,16 @@ describe("Simplicity strict executor (fail-closed failure injection)", () => {
     expect(r.actualCmr).toBe(wrong);
   });
 
-  it("G. old V1 CMR substituted → CMR_MISMATCH, no PASS", () => {
-    const r = executeMintV3(VALID, {
+  it("G. old V1 CMR substituted → CMR_MISMATCH, no PASS", async () => {
+    const r = await executeMintV3(VALID, {
       binaryPath: fakeBinary(`echo '{"cmr":"${MINT_CMR_V1}","result":"PASS"}'`),
     });
     expect(r.result).toBe("FAIL");
     expect(r.failure).toBe("CMR_MISMATCH");
   });
 
-  it("D. Bit Machine FAIL → SIMPLICITY_REJECTED, no PASS", () => {
-    const r = executeMintV3(VALID, {
+  it("D. Bit Machine FAIL → SIMPLICITY_REJECTED, no PASS", async () => {
+    const r = await executeMintV3(VALID, {
       binaryPath: fakeBinary(`echo '{"cmr":"${MINT_CMR}","result":"FAIL"}'`),
     });
     expect(r.result).toBe("FAIL");
@@ -73,8 +73,8 @@ describe("Simplicity strict executor (fail-closed failure injection)", () => {
     expect(r.actualCmr).toBe(MINT_CMR);
   });
 
-  it("E. timeout → SIMPLICITY_TIMEOUT, no PASS", () => {
-    const r = executeMintV3(VALID, {
+  it("E. timeout → SIMPLICITY_TIMEOUT, no PASS", async () => {
+    const r = await executeMintV3(VALID, {
       binaryPath: fakeBinary(`sleep 2`),
       timeoutMs: 100,
     });
@@ -82,22 +82,22 @@ describe("Simplicity strict executor (fail-closed failure injection)", () => {
     expect(r.failure).toBe("SIMPLICITY_TIMEOUT");
   });
 
-  it("F. nonzero process exit → SIMPLICITY_EXECUTION_ERROR, no PASS", () => {
-    const r = executeMintV3(VALID, { binaryPath: fakeBinary(`exit 3`) });
+  it("F. nonzero process exit → SIMPLICITY_EXECUTION_ERROR, no PASS", async () => {
+    const r = await executeMintV3(VALID, { binaryPath: fakeBinary(`exit 3`) });
     expect(r.result).toBe("FAIL");
     expect(r.failure).toBe("SIMPLICITY_EXECUTION_ERROR");
   });
 
-  it("nonexistent binary path → SIMPLICITY_EXECUTION_ERROR", () => {
-    const r = executeMintV3(VALID, { binaryPath: "/nonexistent/cove-simplicity" });
+  it("nonexistent binary path → SIMPLICITY_EXECUTION_ERROR", async () => {
+    const r = await executeMintV3(VALID, { binaryPath: "/nonexistent/cove-simplicity" });
     expect(r.result).toBe("FAIL");
     expect(r.failure).toBe("SIMPLICITY_EXECUTION_ERROR");
   });
 });
 
 describe("Simplicity strict executor (real binary, happy path)", () => {
-  it.skipIf(!isSimplicityAvailable())("valid witness PASSes with exact frozen CMR", () => {
-    const r = executeMintV3(VALID);
+  it.skipIf(!isSimplicityAvailable())("valid witness PASSes with exact frozen CMR", async () => {
+    const r = await executeMintV3(VALID);
     expect(r.policy).toBe("MINT");
     expect(r.expectedCmr).toBe(MINT_CMR);
     expect(r.actualCmr).toBe(MINT_CMR);

@@ -149,7 +149,8 @@ async function main(): Promise<void> {
     maxRedeemPayoutSats: 1_000_000n,
     maxBackingSats: 100_000_000_000_000n,
     maxMinerFeeSats: 20_000n,
-    allowedTokenIds: profile.canary.allowedTokenIds.length > 0 ? profile.canary.allowedTokenIds : null,
+    allowedTokenIds: profile.canary.allowedTokenIds,
+    enforceTokenAllowlist: true,
   };
   const service = new LocalGuardianTransitionSigner(
     custodySigningBackend(custody),
@@ -162,6 +163,7 @@ async function main(): Promise<void> {
     signer: service,
     profileHash,
     guardianXOnly: profile.guardianXOnly,
+    network: "regtest",
     decode: (psbtBase64) => ({ psbt: bitcoin.Psbt.fromBase64(psbtBase64) }),
     loadView: async () => view,
     recoveryKeyXOnly,
@@ -215,7 +217,7 @@ async function main(): Promise<void> {
   mint1.psbt.signInput(1, alice);
   mint1.psbt.finalizeInput(1);
   const mint1Hex = mint1.psbt.extractTransaction().toHex();
-  const mint1Val = orThrow(validateFinalizedMintTransaction({ rawTxHex: mint1Hex, view, network: "regtest", guardianXOnly, recoveryKeyXOnly, recoveryProfile, feeScript }), "MINT");
+  const mint1Val = orThrow(await validateFinalizedMintTransaction({ rawTxHex: mint1Hex, view, network: "regtest", guardianXOnly, recoveryKeyXOnly, recoveryProfile, feeScript }), "MINT");
   const mint1Txid = await broadcast(mint1Val);
   await rpc.generateToAddress(1, mineAddr);
   assert(mint1.grossSats === 49_350n, `mint gross ${mint1.grossSats}`);
@@ -257,7 +259,7 @@ async function main(): Promise<void> {
   redeem.psbt.signInput(1, bob);
   redeem.psbt.finalizeInput(1);
   const redeemHex = redeem.psbt.extractTransaction().toHex();
-  const redeemVal = orThrow(validateFinalizedRedeemTransaction({ rawTxHex: redeemHex, view, network: "regtest", guardianXOnly, recoveryKeyXOnly, recoveryProfile, feeScript }), "REDEEM");
+  const redeemVal = orThrow(await validateFinalizedRedeemTransaction({ rawTxHex: redeemHex, view, network: "regtest", guardianXOnly, recoveryKeyXOnly, recoveryProfile, feeScript }), "REDEEM");
   const redeemTxid = await broadcast(redeemVal);
   await rpc.generateToAddress(1, mineAddr);
   assert(redeem.grossSats === 49_350n, `redeem gross ${redeem.grossSats}`);
@@ -278,7 +280,7 @@ async function main(): Promise<void> {
   mint2.psbt.signInput(1, alice);
   mint2.psbt.finalizeInput(1);
   const mint2Hex = mint2.psbt.extractTransaction().toHex();
-  const mint2Val = orThrow(validateFinalizedMintTransaction({ rawTxHex: mint2Hex, view, network: "regtest", guardianXOnly, recoveryKeyXOnly, recoveryProfile, feeScript }), "RE-BUY");
+  const mint2Val = orThrow(await validateFinalizedMintTransaction({ rawTxHex: mint2Hex, view, network: "regtest", guardianXOnly, recoveryKeyXOnly, recoveryProfile, feeScript }), "RE-BUY");
   const mint2Txid = await broadcast(mint2Val);
   await rpc.generateToAddress(1, mineAddr);
   view.mint({ tokenId, nextState: mint2.nextState, prevBackingOutpoint: { txid: redeemTxid, vout: 1 }, nextBackingOutpoint: { txid: mint2Txid, vout: 1 }, recipientOutpoint: { txid: mint2Txid, vout: 2 }, recipientScript: p2wpkhScript(alice), amountAtoms: MINT_AMOUNT });

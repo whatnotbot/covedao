@@ -11,7 +11,7 @@ import { GuardianV3Signer } from "./signer.js";
 import { localSigningBackend } from "./custody.js";
 import { LocalGuardianTransitionSigner, RemoteGuardianTransitionSigner, type GuardianRiskPolicy, type DurableAuditSink } from "./transitionSigner.js";
 import { InMemorySigningJournal } from "./journal.js";
-import { InProcessGuardianTransport, type GuardianTransport } from "./guardianApi.js";
+import { InProcessGuardianTransport, HttpGuardianTransport, type GuardianTransport } from "./guardianApi.js";
 import type { AuditRecord } from "./types.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
@@ -31,7 +31,7 @@ const MAINNET1: VaultRecoveryProfile = {
   recoveryThreshold: 2,
   recoveryPubkeys: [xonly(0x51), xonly(0x52), xonly(0x53)],
 };
-const riskPolicy: GuardianRiskPolicy = { maxGrossSats: 1_000_000n, maxRedeemPayoutSats: 1_000_000n, maxBackingSats: 100_000_000_000_000n, maxMinerFeeSats: 20_000n, allowedTokenIds: null };
+const riskPolicy: GuardianRiskPolicy = { maxGrossSats: 1_000_000n, maxRedeemPayoutSats: 1_000_000n, maxBackingSats: 100_000_000_000_000n, maxMinerFeeSats: 20_000n, allowedTokenIds: [], enforceTokenAllowlist: false };
 const PROFILE_HASH = "ab".repeat(32);
 
 const memoryAudit: DurableAuditSink = {
@@ -70,6 +70,7 @@ function transportFor(view: CoveChainView): InProcessGuardianTransport {
     signer: service,
     profileHash: PROFILE_HASH,
     guardianXOnly: guardianXOnlyHex,
+    network: "regtest",
     decode: (psbtBase64) => ({ psbt: bitcoin.Psbt.fromBase64(psbtBase64) }),
     loadView: async () => view,
     recoveryKeyXOnly,
@@ -146,5 +147,40 @@ describe("remote Guardian client (§24)", () => {
       });
       expect(conflict).toBe("CONFLICT");
     }
+  });
+
+  it("uses the service's configured network, not the client's claimed network (§C3)", async () => {
+    let receivedNetwork: string | undefined;
+    const signer = {
+      signMint: async (req: { network: string }) => { receivedNetwork = req.network; return { ok: false as const, reason: "x", detail: "x" }; },
+      signRedeem: async () => ({ ok: false as const, reason: "x", detail: "x" }),
+    };
+    const transport = new InProcessGuardianTransport({
+      signer,
+      profileHash: PROFILE_HASH,
+      guardianXOnly: guardianXOnlyHex,
+      network: "mainnet", // the SERVICE's configured network
+      decode: (psbtBase64) => ({ psbt: bitcoin.Psbt.fromBase64(psbtBase64) }),
+      loadView: async () => new CoveChainView(),
+      recoveryKeyXOnly,
+      recoveryProfile: MAINNET1,
+      feeScript,
+      maxMinerFeeSats: 1_000n,
+    });
+    const empty = new bitcoin.Psbt({ network: bitcoin.networks.regtest });
+    await transport.sign({
+      requestId: "x",
+      operation: "MINT",
+      network: "regtest", // the CLIENT's claimed network (must be ignored)
+      psbtBase64: empty.toBase64(),
+      tokenId: "ab".repeat(32),
+    });
+    expect(receivedNetwork).toBe("mainnet");
+  });
+
+  it("enforces https for the HTTP transport (§C15)", () => {
+    expect(() => new HttpGuardianTransport("http://guardian.example.com", "t")).toThrow(/https/);
+    expect(() => new HttpGuardianTransport("https://guardian.example.com", "t")).not.toThrow();
+    expect(() => new HttpGuardianTransport("http://localhost:4391", "t")).not.toThrow();
   });
 });

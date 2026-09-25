@@ -875,6 +875,8 @@ export const coveV3SigningJournal = pgTable(
     unsignedTxDigest: text("unsigned_tx_digest").notNull(),
     signatureHash: text("signature_hash"),
     committedAt: timestamp("committed_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Build-time reservation self-heals after this TTL (§C1). */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (t) => [uniqueIndex("cove_v3_signing_journal_outpoint_uq").on(t.network, t.backingTxid, t.backingVout)],
 );

@@ -55,7 +55,7 @@ describe("MAINNET1 threshold recovery profile (§3-§6)", () => {
 
   it("builds the recovery witness with one slot per sorted key (empty = absent)", () => {
     const sigs = new Map<string, Buffer>([[K1.toString("hex"), Buffer.alloc(64, 0xaa)]]);
-    const w = buildThresholdRecoveryWitness({ pubkeys: [K1, K2, K3], signatures: sigs });
+    const w = buildThresholdRecoveryWitness({ pubkeys: [K1, K2, K3], signatures: sigs, threshold: 1 });
     expect(w.length).toBe(3);
     // Exactly one non-empty slot (the signed key); the rest are empty vectors.
     const nonEmpty = w.filter((x) => x.length === 64);
@@ -66,5 +66,27 @@ describe("MAINNET1 threshold recovery profile (§3-§6)", () => {
     const sorted = sortRecoveryPubkeys([K1, K2, K3]);
     const signedIndex = sorted.findIndex((k) => k.equals(K1));
     expect(w[w.length - 1 - signedIndex]!.length).toBe(64);
+  });
+
+  it("truncates the recovery witness to exactly the threshold (§C8)", () => {
+    // All three sign for a 2-of-3 profile: the witness must emit exactly 2
+    // non-empty slots, otherwise OP_2 NUMEQUAL compares 3 != 2 and fails.
+    const sigs = new Map<string, Buffer>([
+      [K1.toString("hex"), Buffer.alloc(64, 0xaa)],
+      [K2.toString("hex"), Buffer.alloc(64, 0xbb)],
+      [K3.toString("hex"), Buffer.alloc(64, 0xcc)],
+    ]);
+    const w = buildThresholdRecoveryWitness({ pubkeys: [K1, K2, K3], signatures: sigs, threshold: 2 });
+    expect(w.filter((x) => x.length === 64)).toHaveLength(2);
+    expect(w.filter((x) => x.length === 0)).toHaveLength(1);
+  });
+
+  it("rejects duplicate recovery keys in the builder (§C8)", () => {
+    expect(() => buildThresholdRecoveryLeaf(144, 2, [K1, K2, K1])).toThrow(/duplicate recovery pubkey/);
+  });
+
+  it("rejects an off-curve recovery key in the builder (§C8)", () => {
+    const offCurve = Buffer.alloc(32); // x=0 is not on the curve
+    expect(() => buildThresholdRecoveryLeaf(144, 2, [K1, K2, offCurve])).toThrow(/not on the secp256k1 curve/);
   });
 });

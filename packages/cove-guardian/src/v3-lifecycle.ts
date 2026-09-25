@@ -326,7 +326,7 @@ async function main(): Promise<void> {
     feeScript,
     minerFeeSats: MINER_FEE,
   });
-  const mintSign = validateAndSignMintTransition({
+  const mintSign = await validateAndSignMintTransition({
     signer,
     psbt: mint1.psbt,
     view,
@@ -347,7 +347,7 @@ async function main(): Promise<void> {
   mint1.psbt.signInput(1, alice);
   mint1.psbt.finalizeInput(1);
   const mint1Hex = mint1.psbt.extractTransaction().toHex();
-  const mint1Fin = validateFinalizedMintTransaction({
+  const mint1Fin = await validateFinalizedMintTransaction({
     rawTxHex: mint1Hex,
     view,
     network: "regtest",
@@ -433,7 +433,7 @@ async function main(): Promise<void> {
     feeScript,
     minerFeeSats: MINER_FEE,
   });
-  const redeemSign = validateAndSignRedeemTransition({
+  const redeemSign = await validateAndSignRedeemTransition({
     signer,
     psbt: redeem.psbt,
     view,
@@ -454,7 +454,7 @@ async function main(): Promise<void> {
   redeem.psbt.signInput(1, bob);
   redeem.psbt.finalizeInput(1);
   const redeemHex = redeem.psbt.extractTransaction().toHex();
-  const redeemFin = validateFinalizedRedeemTransaction({
+  const redeemFin = await validateFinalizedRedeemTransaction({
     rawTxHex: redeemHex,
     view,
     network: "regtest",
@@ -506,7 +506,7 @@ async function main(): Promise<void> {
     feeScript,
     minerFeeSats: MINER_FEE,
   });
-  const rebuySign = validateAndSignMintTransition({
+  const rebuySign = await validateAndSignMintTransition({
     signer,
     psbt: mint2.psbt,
     view,
@@ -527,7 +527,7 @@ async function main(): Promise<void> {
   mint2.psbt.signInput(1, alice);
   mint2.psbt.finalizeInput(1);
   const mint2Hex = mint2.psbt.extractTransaction().toHex();
-  const mint2Fin = validateFinalizedMintTransaction({
+  const mint2Fin = await validateFinalizedMintTransaction({
     rawTxHex: mint2Hex,
     view,
     network: "regtest",

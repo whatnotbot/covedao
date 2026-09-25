@@ -151,12 +151,12 @@ async function main() {
     mintAmountAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     buyerInputs: [aliceUtxo], buyerCarrierScript: p2wpkh(alice), buyerChangeScript: p2wpkh(alice), feeScript, minerFeeSats: MINER_FEE,
   });
-  const mintSign = validateAndSignMintTransition({ signer, psbt: mint1.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const mintSign = await validateAndSignMintTransition({ signer, psbt: mint1.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!mintSign.ok) throw new Error(`guardian refused MINT: ${mintSign.reason}`);
   mint1.psbt.signInput(1, alice);
   mint1.psbt.finalizeInput(1);
   const mintHex = mint1.psbt.extractTransaction().toHex();
-  const mintVal = orThrow(validateFinalizedMintTransaction({ rawTxHex: mintHex, view: state, network: "regtest", guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript }));
+  const mintVal = orThrow(await validateFinalizedMintTransaction({ rawTxHex: mintHex, view: state, network: "regtest", guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript }));
   await broadcastValidated(mintVal);
   await mineIndex();
   console.log(`✓ MINT indexed supply=${state.backing.get(tokenId.toString("hex"))!.state.issuedPublicSupplyAtoms} backing=${state.backing.get(tokenId.toString("hex"))!.state.backingSats}`);
@@ -189,12 +189,12 @@ async function main() {
     tokenInputTotalAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     sellerPayoutScript: p2wpkh(bob), sellerChangeScript: p2wpkh(bob), feeScript, minerFeeSats: MINER_FEE,
   });
-  const redeemSign = validateAndSignRedeemTransition({ signer, psbt: redeem.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const redeemSign = await validateAndSignRedeemTransition({ signer, psbt: redeem.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!redeemSign.ok) throw new Error(`guardian refused REDEEM: ${redeemSign.reason}`);
   redeem.psbt.signInput(1, bob);
   redeem.psbt.finalizeInput(1);
   const redeemHex = redeem.psbt.extractTransaction().toHex();
-  const redeemVal = orThrow(validateFinalizedRedeemTransaction({ rawTxHex: redeemHex, view: state, network: "regtest", guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript }));
+  const redeemVal = orThrow(await validateFinalizedRedeemTransaction({ rawTxHex: redeemHex, view: state, network: "regtest", guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript }));
   await broadcastValidated(redeemVal);
   await mineIndex();
   console.log(`✓ REDEEM indexed supply=0 backing=0 tokenUtxos=${state.tokenUtxos.size}`);

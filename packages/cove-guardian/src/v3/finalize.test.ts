@@ -111,31 +111,31 @@ describe("finalize — full/partial redeem BTC change layout (§3)", () => {
     network: "regtest" as const,
   });
 
-  it.skipIf(!isSimplicityAvailable())("full redeem, no BTC change (4 outputs) → valid", () => {
+  it.skipIf(!isSimplicityAvailable())("full redeem, no BTC change (4 outputs) → valid", async () => {
     const s = mintedSetup();
     const raw = redeemRaw(MINT_AMOUNT, 1_000n);
-    const r = validateFinalizedRedeemTransaction({ rawTxHex: raw, view: s.view, ...base() });
+    const r = await validateFinalizedRedeemTransaction({ rawTxHex: raw, view: s.view, ...base() });
     expect("ok" in r).toBe(false);
     if (!("ok" in r)) expect(r.operation).toBe("REDEEM");
   });
 
-  it.skipIf(!isSimplicityAvailable())("full redeem with BTC change (5 outputs) → valid", () => {
+  it.skipIf(!isSimplicityAvailable())("full redeem with BTC change (5 outputs) → valid", async () => {
     const s = mintedSetup();
     // miner fee 500 → seller BTC change = 1000 - 500 = 500 sats at vout 4.
     const raw = redeemRaw(MINT_AMOUNT, 500n);
-    const r = validateFinalizedRedeemTransaction({ rawTxHex: raw, view: s.view, ...base() });
+    const r = await validateFinalizedRedeemTransaction({ rawTxHex: raw, view: s.view, ...base() });
     expect("ok" in r).toBe(false);
   });
 
-  it.skipIf(!isSimplicityAvailable())("partial redeem + token change carrier (5 outputs) → valid", () => {
+  it.skipIf(!isSimplicityAvailable())("partial redeem + token change carrier (5 outputs) → valid", async () => {
     const s = mintedSetup();
     // Redeem 60M (leave 24M change): gross 37,350 → fee 374 clears P2WPKH dust.
     const raw = redeemRaw(60_000_000n * 100_000_000n, 0n);
-    const r = validateFinalizedRedeemTransaction({ rawTxHex: raw, view: s.view, ...base() });
+    const r = await validateFinalizedRedeemTransaction({ rawTxHex: raw, view: s.view, ...base() });
     expect("ok" in r).toBe(false);
   });
 
-  it.skipIf(!isSimplicityAvailable())("full redeem with 6 outputs → rejected (UNEXPECTED_OUTPUT)", () => {
+  it.skipIf(!isSimplicityAvailable())("full redeem with 6 outputs → rejected (UNEXPECTED_OUTPUT)", async () => {
     const s = mintedSetup();
     const bob = ECPair.makeRandom({ network: bitcoin.networks.regtest });
     const redeem = buildRedeemPsbtV3({
@@ -155,7 +155,7 @@ describe("finalize — full/partial redeem BTC change layout (§3)", () => {
     });
     const tx = unsignedTransaction(redeem.psbt);
     tx.outs.push({ script: p2wpkh(ECPair.makeRandom()), value: 1000 });
-    const r = validateFinalizedRedeemTransaction({
+    const r = await validateFinalizedRedeemTransaction({
       rawTxHex: tx.toHex(),
       view: s.view,
       ...base(),
@@ -166,10 +166,10 @@ describe("finalize — full/partial redeem BTC change layout (§3)", () => {
 });
 
 describe("finalize — branded ValidatedCoveTransaction", () => {
-  it.skipIf(!isSimplicityAvailable())("valid MINT finalize returns a branded object", () => {
+  it.skipIf(!isSimplicityAvailable())("valid MINT finalize returns a branded object", async () => {
     const s = deploySetup();
     const raw = unsignedTransaction(s.mint.psbt).toHex();
-    const r = validateFinalizedMintTransaction({
+    const r = await validateFinalizedMintTransaction({
       rawTxHex: raw,
       view: s.view,
       network: "regtest",

@@ -2,7 +2,8 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { ECPairFactory } from "ecpair";
 import { CHAIN_BITCOIN_REGTEST, CHAIN_BITCOIN_SIGNET, CHAIN_BITCOIN_TESTNET, CHAIN_BITCOIN_MAINNET } from "@crclaunch/cove-wire";
-import { loadMainnetProfile, type MainnetProfile } from "@crclaunch/cove-mainnet";
+import { loadMainnetProfile, hashMainnetProfile, type MainnetProfile } from "@crclaunch/cove-mainnet";
+import { COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
 import { AppError } from "./errors.js";
 import type { VaultRecoveryProfile } from "@crclaunch/cove-vault";
 
@@ -18,6 +19,8 @@ export interface V3AppConfig {
   coreRpcUrl: string;
   coreRpcUser: string;
   coreRpcPassword: string;
+  /** Optional secondary Core URL for the two-node quorum (§29/§P1-2). */
+  coreRpcUrlSecondary?: string;
   feeScript: Buffer;
   guardianXOnly: Buffer;
   recoveryKeyXOnly: Buffer;
@@ -33,11 +36,21 @@ export interface V3AppConfig {
   canaryAllowedWalletScripts?: string[];
   /** P2P fee bps (mainnet: from the profile). */
   p2pFeeBps?: number;
+  /** Protocol backing-buy fee, basis points (§P1-4; mainnet: from the profile). */
+  buyFeeBps: bigint;
+  /** Protocol backing-redeem fee, basis points (§P1-4; mainnet: from the profile). */
+  redeemFeeBps: bigint;
   /** Canary P2P settlement cap (mainnet: from the profile). */
   maxP2pSettlementSats?: bigint;
   maxMinerFeeSats: bigint;
   maxListingBlocks: bigint;
   reservationTtlSeconds: number;
+  /** Committed profile hash (mainnet) — used to verify the remote Guardian (§P1-2/C4). */
+  mainnetProfileHash?: string;
+  /** Remote Guardian service endpoint (mainnet). */
+  guardianEndpoint?: string;
+  /** Remote Guardian service bearer token (mainnet). */
+  guardianAuthToken?: string;
 }
 
 const REGTEST_GUARDIAN_PRIV = Buffer.alloc(32, 0x42);
@@ -125,6 +138,7 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
     env.COVE_BITCOIN_RPC_URL ?? env.COVE_REGTEST_RPC_URL ?? env.BITCOIN_RPC_URL ?? "http://127.0.0.1:18443";
   const coreRpcUser = env.COVE_BITCOIN_RPC_USER ?? env.COVE_REGTEST_RPC_USER ?? env.BITCOIN_RPC_USER ?? "user";
   const coreRpcPassword = env.COVE_BITCOIN_RPC_PASSWORD ?? env.COVE_REGTEST_RPC_PASSWORD ?? env.BITCOIN_RPC_PASSWORD ?? "pass";
+  const coreRpcUrlSecondary = env.COVE_BITCOIN_RPC_URL_SECONDARY;
 
   // Mainnet: public profile ONLY. Any local private-key env var is fatal (§15).
   if (network === "mainnet") {
@@ -140,6 +154,7 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
       coreRpcUrl,
       coreRpcUser,
       coreRpcPassword,
+      coreRpcUrlSecondary,
       feeScript: Buffer.from(profile.feeScript!, "hex"),
       guardianXOnly: Buffer.from(profile.guardianXOnly!, "hex"),
       recoveryKeyXOnly: recoveryProfile.recoveryPubkeys[0]!, // unused for MAINNET1
@@ -149,10 +164,15 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
       canaryAllowedTokenIds: profile.canary.allowedTokenIds,
       canaryAllowedWalletScripts: profile.canary.allowedWalletScripts,
       p2pFeeBps: profile.p2pFeeBps ?? undefined,
+      buyFeeBps: BigInt(profile.buyFeeBps!),
+      redeemFeeBps: BigInt(profile.redeemFeeBps!),
       maxP2pSettlementSats: profile.canary.maxP2pSettlementSats ?? undefined,
       maxMinerFeeSats: 20_000n,
       maxListingBlocks: 21_000n,
       reservationTtlSeconds: 90,
+      mainnetProfileHash: hashMainnetProfile(profile),
+      guardianEndpoint: env.COVE_GUARDIAN_ENDPOINT,
+      guardianAuthToken: env.COVE_GUARDIAN_AUTH_TOKEN,
     };
   }
 
@@ -171,11 +191,14 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
     coreRpcUrl,
     coreRpcUser,
     coreRpcPassword,
+    coreRpcUrlSecondary,
     feeScript: p2wpkh(feePriv),
     guardianXOnly: xonly(guardianPriv ?? recoveryPriv),
     recoveryKeyXOnly: xonly(recoveryPriv),
     guardianPrivateKey: guardianPriv,
     activationHeight: 0n,
+    buyFeeBps: COVE_FEE_CONFIG.buyFeeBps,
+    redeemFeeBps: COVE_FEE_CONFIG.redeemFeeBps,
     maxMinerFeeSats: 20_000n,
     maxListingBlocks: 21_000n,
     reservationTtlSeconds: 90,

@@ -124,6 +124,8 @@ export function buildMintPsbtV3(params: {
   buyerChangeScript: Buffer;
   feeScript: Buffer; // Cove protocol fee destination
   minerFeeSats: Sats;
+  /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
+  buyFeeBps?: bigint;
 }): MintResult {
   const { nextState, grossSats } = applyMintV2(params.prevState, params.mintAmountAtoms);
   const prevVault = buildBackingVaultV3({
@@ -140,7 +142,7 @@ export function buildMintPsbtV3(params: {
       recoveryProfile: params.recoveryProfile,
     network: params.network,
   });
-  const buyFeeSats = deterministicFee(grossSats, COVE_FEE_CONFIG.buyFeeBps);
+  const buyFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps);
   const wire = encodeMintV2({
     tokenId: params.tokenId,
     amount: params.mintAmountAtoms,
@@ -316,6 +318,8 @@ export function buildRedeemPsbtV3(params: {
   sellerChangeScript: Buffer;
   feeScript: Buffer;
   minerFeeSats: Sats;
+  /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
+  redeemFeeBps?: bigint;
 }): RedeemResult {
   const { nextState, grossSats } = applyRedeemV2(params.prevState, params.redeemAmountAtoms);
   const prevVault = buildBackingVaultV3({
@@ -332,7 +336,7 @@ export function buildRedeemPsbtV3(params: {
       recoveryProfile: params.recoveryProfile,
     network: params.network,
   });
-  const redeemFeeSats = deterministicFee(grossSats, COVE_FEE_CONFIG.redeemFeeBps);
+  const redeemFeeSats = deterministicFee(grossSats, params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps);
   const netSats = grossSats - redeemFeeSats;
   const changeAtoms = params.tokenInputTotalAtoms - params.redeemAmountAtoms;
   if (changeAtoms < 0n) throw new Error("redeem exceeds token input");

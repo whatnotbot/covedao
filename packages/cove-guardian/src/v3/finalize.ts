@@ -59,6 +59,9 @@ export interface FinalizeParams {
   maxMinerFeeSats?: bigint;
   /** Resolved prevouts for EVERY input, captured independently before signing. */
   prevouts?: Map<string, ResolvedPrevout>;
+  /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
+  buyFeeBps?: bigint;
+  redeemFeeBps?: bigint;
 }
 
 const MAX_MINER_FEE = 20_000n;
@@ -183,7 +186,7 @@ export function validateFinalizedDeployTransaction(params: {
   return validated(params.rawTxHex, tx.getId(), "DEPLOY", tokenId.toString("hex"));
 }
 
-export function validateFinalizedMintTransaction(params: FinalizeParams): FinalValidationResult {
+export async function validateFinalizedMintTransaction(params: FinalizeParams): Promise<FinalValidationResult> {
   const maxMinerFee = params.maxMinerFeeSats ?? MAX_MINER_FEE;
   const parsed = parseTx(params.rawTxHex);
   if (!(parsed instanceof bitcoin.Transaction)) return parsed;
@@ -229,7 +232,7 @@ export function validateFinalizedMintTransaction(params: FinalizeParams): FinalV
   } catch (e) {
     return reject(`REFERENCE_POLICY_REJECTED: ${(e as Error).message}`);
   }
-  const protocolFeeSats = deterministicFee(grossSats, COVE_FEE_CONFIG.buyFeeBps);
+  const protocolFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps);
 
   const nextVault = buildBackingVaultV3({
     state: nextState,
@@ -254,7 +257,7 @@ export function validateFinalizedMintTransaction(params: FinalizeParams): FinalV
   if (!feeOut || BigInt(feeOut.value) !== protocolFeeSats || !feeOut.script.equals(params.feeScript)) {
     return reject("FEE_MISMATCH");
   }
-  const settlement = checkFeeSettlement(protocolFeeSats, params.feeScript, COVE_FEE_CONFIG.buyFeeBps);
+  const settlement = checkFeeSettlement(protocolFeeSats, params.feeScript, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps);
   if (!settlement.isStandard) return reject("PROTOCOL_FEE_DUST");
   if (tx.outs.length > 5) return reject("UNEXPECTED_OUTPUT");
 
@@ -268,13 +271,13 @@ export function validateFinalizedMintTransaction(params: FinalizeParams): FinalV
     canonicalGrossSats: grossSats,
   });
   if (!w.ok) return reject("WITNESS_CONSTRUCTION_FAILED");
-  const sim = executeMintV3(w.witness);
+  const sim = await executeMintV3(w.witness);
   if (sim.result !== "PASS") return reject(sim.failure ?? "SIMPLICITY_REJECTED");
 
   return validated(params.rawTxHex, tx.getId(), "MINT", tokenId.toString("hex"));
 }
 
-export function validateFinalizedRedeemTransaction(params: FinalizeParams): FinalValidationResult {
+export async function validateFinalizedRedeemTransaction(params: FinalizeParams): Promise<FinalValidationResult> {
   const maxMinerFee = params.maxMinerFeeSats ?? MAX_MINER_FEE;
   const parsed = parseTx(params.rawTxHex);
   if (!(parsed instanceof bitcoin.Transaction)) return parsed;
@@ -335,7 +338,7 @@ export function validateFinalizedRedeemTransaction(params: FinalizeParams): Fina
   } catch (e) {
     return reject(`REFERENCE_POLICY_REJECTED: ${(e as Error).message}`);
   }
-  const protocolFeeSats = deterministicFee(grossSats, COVE_FEE_CONFIG.redeemFeeBps);
+  const protocolFeeSats = deterministicFee(grossSats, params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps);
   const netPayoutSats = grossSats - protocolFeeSats;
 
   const nextVault = buildBackingVaultV3({
@@ -358,7 +361,7 @@ export function validateFinalizedRedeemTransaction(params: FinalizeParams): Fina
   if (!feeOut || BigInt(feeOut.value) !== protocolFeeSats || !feeOut.script.equals(params.feeScript)) {
     return reject("FEE_MISMATCH");
   }
-  const settlement = checkFeeSettlement(protocolFeeSats, params.feeScript, COVE_FEE_CONFIG.redeemFeeBps);
+  const settlement = checkFeeSettlement(protocolFeeSats, params.feeScript, params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps);
   if (!settlement.isStandard) return reject("PROTOCOL_FEE_DUST");
 
   // Freeze the canonical layout (§3):
@@ -393,7 +396,7 @@ export function validateFinalizedRedeemTransaction(params: FinalizeParams): Fina
     canonicalGrossSats: grossSats,
   });
   if (!w.ok) return reject("WITNESS_CONSTRUCTION_FAILED");
-  const sim = executeRedeemV3(w.witness);
+  const sim = await executeRedeemV3(w.witness);
   if (sim.result !== "PASS") return reject(sim.failure ?? "SIMPLICITY_REJECTED");
 
   return validated(params.rawTxHex, tx.getId(), "REDEEM", tokenId.toString("hex"));

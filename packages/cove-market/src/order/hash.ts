@@ -8,6 +8,7 @@ import type { CancellationV1, ListingV1 } from "../types.js";
  */
 export const LISTING_DOMAIN = "Cove/Market/Listing/v1";
 export const CANCEL_DOMAIN = "Cove/Market/Cancel/v1";
+export const RESERVE_DOMAIN = "Cove/Market/Reserve/v1";
 
 export function listingIdOf(l: ListingV1): string {
   return taggedHash(LISTING_DOMAIN, serializeListingV1(l)).toString("hex");
@@ -29,4 +30,27 @@ export function listingMessageToSign(l: ListingV1): string {
 
 export function cancellationMessageToSign(c: CancellationV1): string {
   return `COVE_MARKET_CANCEL_V1:${cancellationHashOf(c)}`;
+}
+
+/** A buyer's reservation authorization (§M4): binds the listing + nonce + buyer script. */
+export interface ReservationV1 {
+  version: 1;
+  listingId: string;
+  reserveNonce: string; // 64-hex
+  buyerTokenScript: string; // hex scriptPubKey
+}
+
+export function reservationHashOf(r: ReservationV1): string {
+  const buf = Buffer.concat([
+    Buffer.from([r.version]),
+    Buffer.from(r.listingId, "hex"),
+    Buffer.from(r.reserveNonce, "hex"),
+    Buffer.from(r.buyerTokenScript, "hex"),
+  ]);
+  return taggedHash(RESERVE_DOMAIN, buf).toString("hex");
+}
+
+/** Exact message the buyer signs (BIP-322) to authorize a reservation. */
+export function reservationMessageToSign(r: ReservationV1): string {
+  return `COVE_MARKET_RESERVE_V1:${reservationHashOf(r)}`;
 }

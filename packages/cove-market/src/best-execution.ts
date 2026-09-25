@@ -26,6 +26,12 @@ export type BuyRoute =
   | { kind: "backing"; amountAtoms: bigint; totalCostSats: bigint; breakdown: BackingBuyBreakdown }
   | { kind: "p2p"; amountAtoms: bigint; totalCostSats: bigint; breakdown: P2PBuyBreakdown };
 
+/** Protocol fee schedule a buy-route quote must use (matches what the fill charges). */
+export interface BuyRouteFees {
+  buyFeeBps: bigint;
+  p2pFeeBps: bigint;
+}
+
 export interface SellOption {
   kind: "backing" | "listable-utxo";
   amountAtoms: bigint;
@@ -48,6 +54,7 @@ export async function getBuyRoutes(
   network: string,
   tokenId: string,
   amountAtoms: bigint,
+  fees: BuyRouteFees = { buyFeeBps: COVE_FEE_CONFIG.buyFeeBps, p2pFeeBps: COVE_FEE_CONFIG.p2pFeeBps },
 ): Promise<BuyRoute[]> {
   const routes: BuyRoute[] = [];
 
@@ -66,12 +73,12 @@ export async function getBuyRoutes(
     const supplyAtoms = backing[0]?.supplyAtoms ?? 0n;
     if (supplyAtoms + amountAtoms <= PUBLIC_SUPPLY_ATOMS) {
       const grossSats = grossBuy(supplyAtoms / ATOMS_PER_TOKEN, amountAtoms / ATOMS_PER_TOKEN);
-      const buyFeeSats = deterministicFee(grossSats, COVE_FEE_CONFIG.buyFeeBps);
+      const buyFeeSats = deterministicFee(grossSats, fees.buyFeeBps);
       routes.push({
         kind: "backing",
         amountAtoms,
         totalCostSats: grossSats + buyFeeSats,
-        breakdown: { grossSats, buyFeeSats, feeBps: COVE_FEE_CONFIG.buyFeeBps },
+        breakdown: { grossSats, buyFeeSats, feeBps: fees.buyFeeBps },
       });
     }
   }
@@ -89,7 +96,7 @@ export async function getBuyRoutes(
       ),
     );
   for (const l of listings) {
-    const marketFeeSats = deterministicFee(l.totalPriceSats, COVE_FEE_CONFIG.p2pFeeBps);
+    const marketFeeSats = deterministicFee(l.totalPriceSats, fees.p2pFeeBps);
     routes.push({
       kind: "p2p",
       amountAtoms,
@@ -98,7 +105,7 @@ export async function getBuyRoutes(
         listingId: l.listingId,
         sellerPriceSats: l.totalPriceSats,
         marketFeeSats,
-        feeBps: COVE_FEE_CONFIG.p2pFeeBps,
+        feeBps: fees.p2pFeeBps,
       },
     });
   }
@@ -116,6 +123,7 @@ export async function getSellOptions(
   network: string,
   tokenId: string,
   ownerScript: string,
+  redeemFeeBps: bigint = COVE_FEE_CONFIG.redeemFeeBps,
 ): Promise<{ redeemQuote: SellOption | null; listableUtxos: SellOption[] }> {
   const utxos = await db
     .select()
@@ -155,7 +163,7 @@ export async function getSellOptions(
       );
     const supplyAtoms = backing[0]?.supplyAtoms ?? 0n;
     if (balanceAtoms <= supplyAtoms) {
-      const q = quoteRedeem(supplyAtoms / ATOMS_PER_TOKEN, balanceAtoms / ATOMS_PER_TOKEN);
+      const q = quoteRedeem(supplyAtoms / ATOMS_PER_TOKEN, balanceAtoms / ATOMS_PER_TOKEN, { buyFeeBps: COVE_FEE_CONFIG.buyFeeBps, redeemFeeBps, p2pFeeBps: COVE_FEE_CONFIG.p2pFeeBps });
       redeemQuote = {
         kind: "backing",
         amountAtoms: balanceAtoms,

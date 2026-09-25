@@ -8,8 +8,7 @@ import {
   reorgPersistentToTip,
   hydrateState,
 } from "@crclaunch/cove-indexer/v3";
-import { loadV3AppConfig, V3AppService, Metrics } from "@crclaunch/cove-app";
-import { GuardianV3Signer } from "@crclaunch/cove-guardian/v3";
+import { loadV3AppConfig, V3AppService, Metrics, buildAppTransitionSigner } from "@crclaunch/cove-app";
 import type { V3IndexerConfig } from "@crclaunch/cove-indexer/v3";
 
 /**
@@ -43,10 +42,15 @@ async function main() {
 
   const lock = await acquireNetworkLock(config.network);
   const provider = new CoreRpcProvider({ url: config.coreRpcUrl, user: config.coreRpcUser, password: config.coreRpcPassword });
+  // §P1-2: arm the two-node Core quorum when a secondary Core is configured.
+  const secondaryProvider = config.coreRpcUrlSecondary
+    ? new CoreRpcProvider({ url: config.coreRpcUrlSecondary, user: config.coreRpcUser, password: config.coreRpcPassword })
+    : null;
   const db = createDb(DB_URL);
   const store = new V3Store(config.network);
-  const signer = config.guardianPrivateKey ? GuardianV3Signer.fromPrivateKey(config.guardianPrivateKey) : null;
-  const app = new V3AppService(db, provider, config, signer);
+  // §C4: the transition signer is REQUIRED (no raw-signing fallback).
+  const transitionSigner = buildAppTransitionSigner(db, config);
+  const app = new V3AppService(db, provider, config, transitionSigner, secondaryProvider);
   const metrics = new Metrics();
 
   const indexerConfig: V3IndexerConfig = {
@@ -57,6 +61,8 @@ async function main() {
     recoveryProfile: config.recoveryProfile,
     feeScript: config.feeScript,
     genesisHeight: config.activationHeight,
+    buyFeeBps: config.buyFeeBps,
+    redeemFeeBps: config.redeemFeeBps,
   };
 
   const state = await hydrateState(db, config.network, indexerConfig);

@@ -44,7 +44,8 @@
     "cove:v3-mainnet-readiness": "pnpm --filter @crclaunch/cove-app readiness",
     "check:secrets": "node scripts/check-secrets.mjs",
     "check:v3-architecture": "node scripts/check-v3-architecture.mjs",
-    "cove:v3-release-manifest": "node scripts/cove-v3-release-manifest.mjs"
+    "cove:v3-release-manifest": "node scripts/cove-v3-release-manifest.mjs",
+    "cove:v3-mutinynet-proof": "pnpm --filter @crclaunch/cove-guardian v3-mutinynet-proof"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

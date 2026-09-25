@@ -43,6 +43,7 @@ uploads/
 .cove-mutinynet-signer-b.wif
 .cove-proof.json
 .cove-mutinynet-proof.json
+.cove-mutinynet-v2-proof.json
 .cove-mainnet-canary.json
 .cove-v3-mainnet-profile.json
 

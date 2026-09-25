@@ -17,7 +17,8 @@
     "regtest-proof": "tsx src/regtest-proof.ts",
     "v3-regtest-lifecycle": "tsx src/v3-lifecycle.ts",
     "v3-mainnet-profile-lifecycle": "tsx src/v3-mainnet-profile-lifecycle.ts",
-    "v3-production-profile-lifecycle": "tsx src/v3-production-profile-lifecycle.ts"
+    "v3-production-profile-lifecycle": "tsx src/v3-production-profile-lifecycle.ts",
+    "v3-mutinynet-proof": "tsx src/v3-mutinynet-proof.ts"
   },
   "dependencies": {
     "@crclaunch/bitcoin": "workspace:*",

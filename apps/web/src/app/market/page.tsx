@@ -2,10 +2,14 @@
 
 import { useSearchParams } from "next/navigation";
 
-import { Suspense, useEffect, useState } from "react";
-import { DEMO_LISTINGS } from "@/lib/demo-tokens";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { DEMO_LISTINGS, DEMO_TOKENS } from "@/lib/demo-tokens";
 import { useWallet } from "@/components/WalletProvider";
-import { fmtBtc, fmtTokens } from "@/lib/format";
+import { fmtBtc, fmtTokens, fmtInt } from "@/lib/format";
+import { Sparkline } from "@/components/Sparkline";
+import { useSparklines } from "@/lib/use-sparklines";
+import { unitPriceSats } from "@/lib/ohlc";
 import { verifyClientIntent } from "@crclaunch/wallets";
 
 interface Listing {
@@ -17,6 +21,8 @@ interface Listing {
   expiryHeight: string;
   status: string;
   sellerTokenScript: string;
+  /** Joined from the token row; null if that row is missing. */
+  ticker?: string | null;
 }
 
 function MarketContent() {
@@ -32,7 +38,12 @@ function MarketContent() {
 
   useEffect(() => {
     if (demo) {
-      setListings(DEMO_LISTINGS);
+      setListings(
+        DEMO_LISTINGS.map((l) => ({
+          ...l,
+          ticker: DEMO_TOKENS.find((t) => t.tokenId === l.tokenId)?.ticker ?? null,
+        })),
+      );
       setLoaded(true);
       return;
     }
@@ -98,55 +109,171 @@ function MarketContent() {
     }
   }
 
+  // Quote every listing in the unit the charts use, so a buyer can compare an
+  // ask against that token's recent trades without doing arithmetic.
+  //
+  // Grouped by token, then cheapest first within each token. Sorting the whole
+  // book by absolute price would rank a cheap token above an expensive one and
+  // read as a bargain, when the two prices are not comparable at all.
+  const rows = useMemo(
+    () =>
+      listings
+        .map((l) => ({
+          listing: l,
+          unitPrice: unitPriceSats(l.amountAtoms, l.totalPriceSats),
+          tokens: Number(BigInt(l.amountAtoms) / 100_000_000n),
+          label: l.ticker ?? l.tokenId,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label) || a.unitPrice - b.unitPrice),
+    [listings],
+  );
+
+  const { series, lastPrice } = useSparklines(
+    listings.map((l) => ({
+      tokenId: l.tokenId,
+      ticker: l.ticker ?? l.tokenId.slice(0, 6),
+      curveStage:
+        DEMO_TOKENS.find((t) => t.tokenId === l.tokenId)?.curveStage ?? 10,
+    })),
+    demo,
+  );
+
+  const totalTokens = rows.reduce((a, r) => a + r.tokens, 0);
+  const totalSats = listings.reduce((a, l) => a + BigInt(l.totalPriceSats), 0n);
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl text-bone">P2P Market</h1>
-        <p className="text-sm text-bone-dim">Active fixed-price asks. No fake bids, no synthetic liquidity.</p>
-      </div>
-      {!loaded ? (
-        <Empty message="Loading listings…" />
-      ) : listings.length === 0 ? (
-        <Empty message="No active listings yet." />
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {listings.map((l) => (
-            <div key={l.listingId} className="border border-rule bg-ink-2 p-5">
-              <div className="flex items-center justify-between">
-                <div className="font-mono text-xs text-bone-dim">{l.tokenId.slice(0, 12)}…</div>
-                <span className="text-xs text-bone-dim">{l.status}</span>
-              </div>
-              <div className="mt-2 space-y-1 text-sm">
-                <div className="flex justify-between"><span className="text-bone-dim">Lot</span><span className="text-bone">{fmtTokens(BigInt(l.amountAtoms))}</span></div>
-                <div className="flex justify-between"><span className="text-bone-dim">Seller price</span><span className="text-bone">{fmtBtc(BigInt(l.totalPriceSats))}</span></div>
-                <div className="flex justify-between"><span className="text-bone-dim">Seller</span><span className="text-bone-dim font-mono text-xs">{l.sellerTokenScript.slice(0, 12)}…</span></div>
-              </div>
-              <button
-                onClick={() => void buy(l)}
-                disabled={!connected || buying === l.listingId}
-                className="mt-3 w-full bg-signal px-4 py-2 text-sm text-bone hover:bg-[#F0A253] disabled:opacity-50"
-              >
-                {buying === l.listingId ? "Reserving…" : "Buy"}
-              </button>
-            </div>
-          ))}
+    <div className="space-y-px">
+      <section className="panel px-6 py-8 sm:px-10">
+        {demo ? (
+          <p className="mb-5 inline-block border border-pending/40 bg-pending/10 px-3 py-1.5 text-label uppercase tracking-label text-pending">
+            Demo data &middot; not from the chain
+          </p>
+        ) : null}
+        <p className="eyebrow">Market</p>
+        <h1 className="mt-3 text-4xl text-bone">P2P asks</h1>
+        <p className="mt-3 max-w-xl text-sm leading-relaxed text-bone-dim">
+          Every row is a real token UTXO offered at a fixed BTC price. Buyer and seller both sign
+          SIGHASH_ALL and it settles atomically in one Bitcoin transaction. There are no bids and no
+          synthetic liquidity &mdash; an empty book means an empty book.
+        </p>
+
+        <div className="mt-8 grid grid-cols-2 gap-px bg-rule sm:grid-cols-3">
+          <Tile value={fmtInt(listings.length)} label="Open asks" />
+          <Tile value={fmtInt(totalTokens)} label="Tokens offered" />
+          <Tile value={totalSats > 0n ? fmtBtc(totalSats) : "\u2014"} label="Book value" />
         </div>
-      )}
-      {!connected && (
-        <div className="text-center">
-          <button onClick={() => void connect()} className="bg-signal px-6 py-3 text-bone hover:bg-[#F0A253]">
-            Connect wallet
-          </button>
-        </div>
-      )}
-      {msg && <p className="text-sm text-success">{msg}</p>}
-      {err && <p className="text-sm text-danger">{err}</p>}
+      </section>
+
+      <section className="panel px-6 py-8 sm:px-10">
+        {!loaded ? (
+          <Empty message="Loading listings\u2026" />
+        ) : rows.length === 0 ? (
+          <Empty message="No active listings yet." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="ledger-table min-w-[64rem]">
+              <thead>
+                <tr>
+                  <th>Token</th>
+                  <th>Ask &middot; sats/1M</th>
+                  <th>Last &middot; sats/1M</th>
+                  <th>Trend</th>
+                  <th>Lot</th>
+                  <th>Total</th>
+                  <th>Status</th>
+                  <th>Seller</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(({ listing: l, unitPrice, tokens }, i) => {
+                  const last = lastPrice[l.tokenId] ?? null;
+                  const firstOfToken = i === 0 || rows[i - 1]!.listing.tokenId !== l.tokenId;
+                  // Below the last trade is the interesting case for a buyer.
+                  const cheap = last !== null && unitPrice < last;
+                  return (
+                    <tr key={l.listingId} className="transition-colors hover:bg-ink-3">
+                      <td>
+                        {firstOfToken ? (
+                          <Link href={`/token/${l.tokenId}`} className="text-bone hover:text-signal">
+                            {l.ticker ?? `${l.tokenId.slice(0, 10)}\u2026`}
+                          </Link>
+                        ) : (
+                          <span className="text-bone-dim">&#8226;</span>
+                        )}
+                      </td>
+                      <td className={cheap ? "text-verified" : "text-bone"}>
+                        {fmtInt(Math.round(unitPrice))}
+                      </td>
+                      <td className="text-bone-dim">
+                        {firstOfToken && last !== null ? fmtInt(Math.round(last)) : ""}
+                      </td>
+                      <td>
+                        {firstOfToken ? (
+                          <Sparkline values={series[l.tokenId] ?? []} width={80} height={22} />
+                        ) : null}
+                      </td>
+                      <td className="text-bone-2">{fmtTokens(BigInt(l.amountAtoms))}</td>
+                      <td className="text-bone-2">{fmtBtc(BigInt(l.totalPriceSats))}</td>
+                      <td>
+                        <span className={statusChip(l.status)}>{l.status}</span>
+                      </td>
+                      <td className="hex">{l.sellerTokenScript.slice(0, 10)}&hellip;</td>
+                      <td>
+                        <button
+                          onClick={() => void buy(l)}
+                          disabled={!connected || buying === l.listingId || l.status !== "ACTIVE"}
+                          className="btn px-3 py-1.5 text-label"
+                        >
+                          {buying === l.listingId ? "Reserving\u2026" : "Buy"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {!connected && loaded && rows.length > 0 ? (
+          <p className="mt-6 text-xs text-bone-dim">
+            Connect a wallet to fill an ask.{" "}
+            <button onClick={() => void connect()} className="text-signal hover:underline">
+              Connect
+            </button>
+          </p>
+        ) : null}
+
+        {msg ? <p className="mt-5 text-sm text-verified">{msg}</p> : null}
+        {err ? <p className="mt-5 text-sm text-rejected">{err}</p> : null}
+      </section>
     </div>
   );
 }
 
+function Tile({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="tile">
+      <div className="tile-value">{value}</div>
+      <div className="tile-label">{label}</div>
+    </div>
+  );
+}
+
+/** Status is protocol state, so it gets the semantic chips, not grey text. */
+function statusChip(status: string): string {
+  if (status === "ACTIVE") return "chip chip-verified";
+  if (status === "RESERVED" || status === "BROADCAST") return "chip chip-pending";
+  return "chip chip-rejected";
+}
+
 function Empty({ message }: { message: string }) {
-  return <div className="border border-dashed border-rule bg-ink-3 px-6 py-12 text-center text-bone-dim">{message}</div>;
+  return (
+    <div className="border border-dashed border-rule px-6 py-16 text-center text-sm text-bone-dim">
+      {message}
+    </div>
+  );
 }
 
 /**

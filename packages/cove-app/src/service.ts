@@ -886,10 +886,41 @@ export class V3AppService {
   getSellOptions(tokenId: string, walletScript: string) {
     return getSellOptions(this.db, this.config.network, tokenId, walletScript, this.config.redeemFeeBps);
   }
+  /**
+   * Active listings, each carrying the ticker of the token it sells.
+   *
+   * The ticker comes from a left join rather than a second round trip: a market
+   * row that shows only a 64-character token id tells a buyer nothing about
+   * what they are buying. The join is left, not inner, so a listing whose token
+   * row is missing still appears — with a null ticker — instead of silently
+   * vanishing from the book.
+   */
   async listListings(opts: { tokenId?: string; limit?: number } = {}) {
     const limit = Math.min(opts.limit ?? 100, 200);
-    const cond = opts.tokenId ? and(eq(schema.coveV3MarketListings.network, this.config.network), eq(schema.coveV3MarketListings.status, "ACTIVE"), eq(schema.coveV3MarketListings.tokenId, opts.tokenId)) : and(eq(schema.coveV3MarketListings.network, this.config.network), eq(schema.coveV3MarketListings.status, "ACTIVE"));
-    return this.db.select().from(schema.coveV3MarketListings).where(cond).limit(limit);
+    const base = [
+      eq(schema.coveV3MarketListings.network, this.config.network),
+      eq(schema.coveV3MarketListings.status, "ACTIVE"),
+    ];
+    const cond = opts.tokenId
+      ? and(...base, eq(schema.coveV3MarketListings.tokenId, opts.tokenId))
+      : and(...base);
+
+    const rows = await this.db
+      .select({ listing: schema.coveV3MarketListings, ticker: schema.coveV3Tokens.ticker })
+      .from(schema.coveV3MarketListings)
+      .leftJoin(
+        schema.coveV3Tokens,
+        and(
+          eq(schema.coveV3Tokens.network, schema.coveV3MarketListings.network),
+          eq(schema.coveV3Tokens.tokenId, schema.coveV3MarketListings.tokenId),
+          // A token row orphaned by a reorg must not supply a ticker.
+          eq(schema.coveV3Tokens.canonical, true),
+        ),
+      )
+      .where(cond)
+      .limit(limit);
+
+    return rows.map((r) => ({ ...r.listing, ticker: r.ticker }));
   }
 
   // ── broadcast boundary ────────────────────────────────────────────────────

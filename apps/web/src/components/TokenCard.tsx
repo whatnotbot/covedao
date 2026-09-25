@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { fmtBtc, fmtTokens } from "@/lib/format";
+import { fmtBtc, fmtTokens, fmtInt } from "@/lib/format";
+import { Sparkline } from "./Sparkline";
 
 export interface V3TokenCardData {
   tokenId: string;
@@ -17,7 +18,14 @@ export interface V3TokenCardData {
   bestAskSats: string | null;
 }
 
-export function TokenCard({ token }: { token: V3TokenCardData }) {
+export function TokenCard({
+  token,
+  spark = [],
+}: {
+  token: V3TokenCardData;
+  /** Recent closes, sats per 1M tokens. Empty when the token has not traded. */
+  spark?: number[];
+}) {
   const issued = BigInt(token.issuedSupplyAtoms);
   const cap = BigInt(token.publicCapAtoms);
   const atCapacity = issued >= cap;
@@ -38,6 +46,19 @@ export function TokenCard({ token }: { token: V3TokenCardData }) {
         <span className={atCapacity ? "chip chip-pending shrink-0" : "chip chip-verified shrink-0"}>
           {atCapacity ? "At cap" : "Open"}
         </span>
+      </div>
+
+      {/* Market price and its recent shape. A token that has never traded shows
+          the label without a number rather than a zero, which would read as a
+          real price of nothing. */}
+      <div className="mt-4 flex items-end justify-between gap-3">
+        <div>
+          <div className="text-label uppercase tracking-label text-bone-dim">Last · sats/1M</div>
+          <div className="mt-1 text-lg tabular-nums text-bone">
+            {spark.length > 0 ? fmtInt(Math.round(spark[spark.length - 1]!)) : "—"}
+          </div>
+        </div>
+        <Sparkline values={spark} label={`${token.ticker} recent price`} />
       </div>
 
       {/* Progress against the public cap — the one number deciding whether this

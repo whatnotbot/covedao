@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { TokenCard, type V3TokenCardData } from "@/components/TokenCard";
+import { useSparklines } from "@/lib/use-sparklines";
 
 /**
  * The hero states the protocol's actual claim rather than a slogan: state is
@@ -23,6 +24,11 @@ export default function HomePage() {
       })
       .catch(() => setLoaded(true));
   }, []);
+
+  const { series } = useSparklines(
+    tokens.map((t) => ({ tokenId: t.tokenId, ticker: t.ticker, curveStage: t.curveStage })),
+    false,
+  );
 
   return (
     <div className="space-y-px">
@@ -69,7 +75,7 @@ export default function HomePage() {
           ) : (
             <div className="grid gap-px bg-rule sm:grid-cols-2 lg:grid-cols-3">
               {tokens.map((t) => (
-                <TokenCard key={t.tokenId} token={t} />
+                <TokenCard key={t.tokenId} token={t} spark={series[t.tokenId] ?? []} />
               ))}
             </div>
           )}

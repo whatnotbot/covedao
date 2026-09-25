@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { TokenCard, type V3TokenCardData } from "@/components/TokenCard";
+import type { V3TokenCardData } from "@/components/TokenCard";
 import { DEMO_TOKENS } from "@/lib/demo-tokens";
-import { fmtBtc, fmtInt } from "@/lib/format";
+import { fmtBtc, fmtInt, fmtTokens } from "@/lib/format";
+import { Sparkline } from "@/components/Sparkline";
+import { useSparklines } from "@/lib/use-sparklines";
 
 type SortKey = "progress" | "backing" | "holders" | "newest";
-type View = "grid" | "table";
 type Filter = "all" | "open" | "atcap" | "listed";
 
 const SORTS: { key: SortKey; label: string }[] = [
@@ -37,7 +38,6 @@ function ExploreContent() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("progress");
   const [filter, setFilter] = useState<Filter>("all");
-  const [view, setView] = useState<View>("grid");
 
   useEffect(() => {
     if (demo) {
@@ -91,6 +91,11 @@ function ExploreContent() {
 
   const totalBacking = rows.reduce((a, t) => a + BigInt(t.backingSats), 0n);
   const totalHolders = rows.reduce((a, t) => a + t.holderCount, 0);
+
+  const { series } = useSparklines(
+    rows.map((t) => ({ tokenId: t.tokenId, ticker: t.ticker, curveStage: t.curveStage })),
+    demo,
+  );
 
   return (
     <div className="space-y-px">
@@ -164,23 +169,6 @@ function ExploreContent() {
               ))}
             </div>
           </div>
-
-          <div className="ml-auto flex">
-            {(["grid", "table"] as View[]).map((v) => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                aria-pressed={view === v}
-                className={
-                  view === v
-                    ? "border border-rule-bright bg-ink-3 px-3 py-1.5 text-label uppercase tracking-label text-bone"
-                    : "border border-rule px-3 py-1.5 text-label uppercase tracking-label text-bone-dim transition-colors hover:text-bone"
-                }
-              >
-                {v}
-              </button>
-            ))}
-          </div>
         </div>
       </section>
 
@@ -215,14 +203,8 @@ function ExploreContent() {
               )
             }
           />
-        ) : view === "grid" ? (
-          <div className="grid gap-px bg-rule sm:grid-cols-2 lg:grid-cols-3">
-            {rows.map((t) => (
-              <TokenCard key={t.tokenId} token={t} />
-            ))}
-          </div>
         ) : (
-          <TokenTable rows={rows} />
+          <TokenTable rows={rows} series={series} />
         )}
       </section>
     </div>
@@ -237,13 +219,21 @@ export default function ExplorePage() {
   );
 }
 
-function TokenTable({ rows }: { rows: V3TokenCardData[] }) {
+function TokenTable({
+  rows,
+  series,
+}: {
+  rows: V3TokenCardData[];
+  series: Record<string, number[]>;
+}) {
   return (
     <div className="overflow-x-auto">
-      <table className="ledger-table min-w-[56rem]">
+      <table className="ledger-table min-w-[64rem]">
         <thead>
           <tr>
             <th>Ticker</th>
+            <th>Last · sats/1M</th>
+            <th>Trend</th>
             <th>Issued / cap</th>
             <th>Progress</th>
             <th>Backing</th>
@@ -266,8 +256,16 @@ function TokenTable({ rows }: { rows: V3TokenCardData[] }) {
                   </Link>
                   <div className="text-xs text-bone-dim">{t.displayName}</div>
                 </td>
-                <td className="text-bone-2">
-                  {fmtInt(issued / 100_000_000n)} / {fmtInt(cap / 100_000_000n)}
+                <td className="text-bone">
+                  {(series[t.tokenId]?.length ?? 0) > 0
+                    ? fmtInt(Math.round(series[t.tokenId]![series[t.tokenId]!.length - 1]!))
+                    : <span className="text-bone-dim">&mdash;</span>}
+                </td>
+                <td>
+                  <Sparkline values={series[t.tokenId] ?? []} width={88} height={24} />
+                </td>
+                <td className="whitespace-nowrap text-bone-2">
+                  {fmtTokens(issued)} / {fmtTokens(cap)}
                 </td>
                 <td className="w-40">
                   <div className="h-1 w-full bg-rule">
@@ -275,10 +273,10 @@ function TokenTable({ rows }: { rows: V3TokenCardData[] }) {
                   </div>
                   <div className="mt-1 text-xs text-bone-dim">{pct.toFixed(1)}%</div>
                 </td>
-                <td className="text-bone-2">{fmtBtc(BigInt(t.backingSats))}</td>
-                <td className="text-bone-dim">{t.curveStage} / 20</td>
+                <td className="whitespace-nowrap text-bone-2">{fmtBtc(BigInt(t.backingSats))}</td>
+                <td className="whitespace-nowrap text-bone-dim">{t.curveStage} / 20</td>
                 <td className="text-bone-2">{fmtInt(t.holderCount)}</td>
-                <td className="text-bone-2">
+                <td className="whitespace-nowrap text-bone-2">
                   {t.bestAskSats ? (
                     fmtBtc(BigInt(t.bestAskSats))
                   ) : (

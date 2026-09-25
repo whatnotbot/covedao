@@ -79,18 +79,21 @@ class RegtestRpc {
     return json.result as T;
   }
 
-  async createWallet(name: string): Promise<void> {
-    // Legacy (non-descriptor) wallet so `importaddress` (watch-only discovery)
-    // is supported. descriptors=false is the 6th positional arg; the 7th
-    // (load_on_startup=false) prevents the wallet from being auto-loaded — and
-    // therefore from re-broadcasting the orphaned TRANSFER — after the reorg
-    // restart. CI is always a fresh datadir, so "already exists" is not a
-    // concern here.
-    await this.call("createwallet", [name, false, false, "", false, true, false]);
+  async createWallet(name: string, watchOnly = false): Promise<void> {
+    // Descriptor wallet: current Core has no legacy wallets. load_on_startup=false
+    // keeps the wallet from being auto-loaded — and therefore from re-broadcasting
+    // the orphaned TRANSFER — after the reorg restart. CI is always a fresh
+    // datadir, so "already exists" is not a concern here.
+    await this.call("createwallet", [name, watchOnly, watchOnly, "", false, true, false]);
   }
 
+  /** Watch-only discovery: descriptor wallets take `addr()` descriptors, not `importaddress`. */
   async importAddress(address: string, label: string): Promise<void> {
-    await this.call("importaddress", [address, label, false]);
+    const { descriptor } = await this.call<{ descriptor: string }>("getdescriptorinfo", [`addr(${address})`]);
+    const [result] = await this.call<{ success: boolean; error?: { message?: string } }[]>("importdescriptors", [
+      [{ desc: descriptor, timestamp: "now", label }],
+    ]);
+    if (!result?.success) throw new Error(`importdescriptors: ${result?.error?.message ?? "failed"}`);
   }
 
   async getNewAddress(): Promise<string> {
@@ -280,11 +283,16 @@ async function main(): Promise<void> {
   const actorAddress = signerA.getAddress();
   const actorScript = bitcoin.address.toOutputScript(actorAddress, bitcoin.networks.regtest).toString("hex");
 
+  // Two wallets: "cove" funds the actor; "watch" sees the actor's coins without
+  // ever holding its key. With two loaded, wallet calls must name their wallet.
   await rpc.createWallet("cove");
-  const walletAddress = await rpc.getNewAddress();
+  await rpc.createWallet("watch", true);
+  const wallet = new RegtestRpc(`${RPC_URL}/wallet/cove`, RPC_USER, RPC_PASSWORD);
+  const watch = new RegtestRpc(`${RPC_URL}/wallet/watch`, RPC_USER, RPC_PASSWORD);
+  const walletAddress = await wallet.getNewAddress();
   await rpc.generateToAddress(101, walletAddress); // mature coinbase funds the wallet
-  await rpc.importAddress(actorAddress, "canary-actor"); // watch-only discovery (no key into bitcoind)
-  await rpc.sendToAddress(actorAddress, 5.0); // actor gets a normal (non-coinbase) 5 BTC UTXO
+  await watch.importAddress(actorAddress, "canary-actor"); // watch-only discovery (no key into bitcoind)
+  await wallet.sendToAddress(actorAddress, 5.0); // actor gets a normal (non-coinbase) 5 BTC UTXO
   await rpc.generateToAddress(1, walletAddress); // confirm the funding tx
   console.log("✓ funded actor (5 BTC, confirmed)");
 
@@ -295,19 +303,19 @@ async function main(): Promise<void> {
   };
 
   // DEPLOY
-  let coins = selectCoins(await freshUtxos(rpc, actorAddress, true), CFG.launchFeeSats + 1_000n);
+  let coins = selectCoins(await freshUtxos(watch, actorAddress, true), CFG.launchFeeSats + 1_000n);
   let psbt = buildCoveDeployPsbt({ network: "regtest", ticker: "FROG", inputs: coins.selected, changeAddress: actorAddress, feeRateSatVb: 2n, config: CFG });
   const deployTxid = await broadcastAndMine(await signerA.signPsbt(psbt.psbtBase64, psbtIntent(psbt.unsignedHex, { maxFeeSats: CFG.maxMinerFeeSats, changeScriptPubKeyHex: psbt.changeSats > 0n ? actorScript : undefined })));
   console.log(`✓ DEPLOY ${deployTxid}`);
 
   // MINT (to self)
-  coins = selectCoins(await freshUtxos(rpc, actorAddress, true), 1_010n + 1_000n);
+  coins = selectCoins(await freshUtxos(watch, actorAddress, true), 1_010n + 1_000n);
   psbt = buildCoveMintPsbt({ network: "regtest", ticker: "FROG", amountAtoms: MINT_AMOUNT_ATOMS, supplyBeforeAtoms: 0n, recipientScriptHex: actorScript, inputs: coins.selected, changeAddress: actorAddress, feeRateSatVb: 2n, config: CFG });
   const mintTxid = await broadcastAndMine(await signerA.signPsbt(psbt.psbtBase64, psbtIntent(psbt.unsignedHex, { maxFeeSats: CFG.maxMinerFeeSats, changeScriptPubKeyHex: psbt.changeSats > 0n ? actorScript : undefined })));
   console.log(`✓ MINT ${mintTxid}`);
 
   // TRANSFER (to RECIPIENT_SCRIPT)
-  coins = selectCoins(await freshUtxos(rpc, actorAddress, true), 1_000n);
+  coins = selectCoins(await freshUtxos(watch, actorAddress, true), 1_000n);
   psbt = buildCoveTransferPsbt({ network: "regtest", ticker: "FROG", amountAtoms: TRANSFER_AMOUNT_ATOMS, recipientScriptHex: RECIPIENT_SCRIPT, actorScriptHex: actorScript, inputs: coins.selected, changeAddress: actorAddress, feeRateSatVb: 2n, config: CFG });
   const transferTxid = await broadcastAndMine(await signerA.signPsbt(psbt.psbtBase64, psbtIntent(psbt.unsignedHex, { maxFeeSats: CFG.maxMinerFeeSats, changeScriptPubKeyHex: psbt.changeSats > 0n ? actorScript : undefined })));
   console.log(`✓ TRANSFER ${transferTxid}`);

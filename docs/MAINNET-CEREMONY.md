@@ -52,7 +52,7 @@ single compromise would otherwise take both the hot path and the escape hatch.
 Copy the template and edit it:
 
 ```
-cp .cove-v3-mainnet-profile.template.json .cove-v3-mainnet-profile.json
+cp config/cove-v3-mainnet-profile.template.json .cove-v3-mainnet-profile.json
 ```
 
 The real file is gitignored. The template carries every frozen protocol

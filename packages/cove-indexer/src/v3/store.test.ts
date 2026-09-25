@@ -4,9 +4,9 @@ import * as ecc from "tiny-secp256k1";
 import { createDb, schema } from "@crclaunch/db";
 import { eq, and, isNull } from "drizzle-orm";
 import { CHAIN_BITCOIN_REGTEST, computeTokenId, encodeDeployV2, encodeMintV2, encodeRedeemV2, encodeTransferV2 } from "@crclaunch/cove-wire";
-import { applyMintV2, s0StateV2 } from "@crclaunch/cove-covenant";
+import { applyMintV2, applyRedeemV2, s0StateV2 } from "@crclaunch/cove-covenant";
 import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
-import { COVE_FEE_CONFIG, deterministicFee } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, deterministicFee, stageScaledFlatSats } from "@crclaunch/cove-economics";
 import { V3IndexerState } from "./state.js";
 import { V3Store } from "./store.js";
 import { RESERVE_ANCHOR_SATS } from "./constants.js";
@@ -66,7 +66,7 @@ describe.skipIf(!URL)("V3Store persistence — DEPLOY/MINT/TRANSFER/REDEEM + rev
     // ── MINT (height 2) ──
     const minted = applyMintV2(s0, MINT_AMOUNT);
     const gross = minted.grossSats;
-    const mintFee = deterministicFee(gross, COVE_FEE_CONFIG.buyFeeBps);
+    const mintFee = deterministicFee(gross, COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(0n, COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage));
     const mintWire = encodeMintV2({ tokenId, amount: MINT_AMOUNT, recipientVout: 2 });
     const mintHex = tx([{ txid: deployTxid, vout: 1 }], [
       { script: opReturn(mintWire), value: 0n },
@@ -106,14 +106,16 @@ describe.skipIf(!URL)("V3Store persistence — DEPLOY/MINT/TRANSFER/REDEEM + rev
     expect(bobUtxo[0]!.spentByTxid).toBeNull();
 
     // ── REDEEM full 84M (height 4) ──
+    const redeemed = applyRedeemV2(minted.nextState, MINT_AMOUNT);
+    const redeemFee = deterministicFee(redeemed.grossSats, COVE_FEE_CONFIG.redeemFeeBps, COVE_FEE_CONFIG.redeemFeeFlatSats);
     const redeemWire = encodeRedeemV2({ tokenId, redeemAmount: MINT_AMOUNT, changeAllocations: [] });
     const redeemHex = tx(
       [{ txid: mintTxid, vout: 1 }, { txid: transferTxid, vout: 1 }],
       [
         { script: opReturn(redeemWire), value: 0n },
         { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS },
-        { script: carrierScript, value: 48_856n },
-        { script: feeScript, value: 494n },
+        { script: carrierScript, value: redeemed.grossSats - redeemFee },
+        { script: feeScript, value: redeemFee },
       ],
     );
     const redeemTxid = bitcoin.Transaction.fromHex(redeemHex).getId();

@@ -36,6 +36,13 @@
       "when": 1790307918340,
       "tag": "0004_ambiguous_triton",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790353035705,
+      "tag": "0005_smooth_king_bedlam",
+      "breakpoints": true
     }
   ]
 }

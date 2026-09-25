@@ -314,7 +314,7 @@ async function main(): Promise<void> {
   const redeemTxid = await broadcastValidated(redeemVal);
   await rpc.generateToAddress(1, mineAddr);
   assert(redeem.grossSats === 47_950n, `redeem gross ${redeem.grossSats}`);
-  assert(redeem.netSats === 47_470n, `redeem net ${redeem.netSats}`);
+  assert(redeem.netSats === 45_450n, `redeem net ${redeem.netSats}`);
   assert(redeem.changeAtoms === 0n, "full redeem must have zero token change");
   view.redeem({
     tokenId, nextState: redeem.nextState,

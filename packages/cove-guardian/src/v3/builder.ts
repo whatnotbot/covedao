@@ -128,6 +128,8 @@ export function buildMintPsbtV3(params: {
   minerFeeSats: Sats;
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
+  /** Flat sats added on top of the percentage. */
+  buyFeeFlatSats?: bigint;
   /**
    * Emit the advisory `crc-20` discovery envelope as a trailing OP_RETURN
    * (§D1). OPT-IN: it needs two OP_RETURNs in one transaction, which Bitcoin
@@ -151,7 +153,7 @@ export function buildMintPsbtV3(params: {
       recoveryProfile: params.recoveryProfile,
     network: params.network,
   });
-  const buyFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps);
+  const buyFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, params.buyFeeFlatSats ?? COVE_FEE_CONFIG.buyFeeFlatSats);
   const wire = encodeMintV2({
     tokenId: params.tokenId,
     amount: params.mintAmountAtoms,
@@ -353,6 +355,8 @@ export function buildRedeemPsbtV3(params: {
   funderChangeScript?: Buffer;
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   redeemFeeBps?: bigint;
+  /** Flat sats deducted on top of the percentage. */
+  redeemFeeFlatSats?: bigint;
 }): RedeemResult {
   const { nextState, grossSats } = applyRedeemV2(params.prevState, params.redeemAmountAtoms);
   const prevVault = buildBackingVaultV3({
@@ -369,7 +373,7 @@ export function buildRedeemPsbtV3(params: {
       recoveryProfile: params.recoveryProfile,
     network: params.network,
   });
-  const redeemFeeSats = deterministicFee(grossSats, params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps);
+  const redeemFeeSats = deterministicFee(grossSats, params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps, params.redeemFeeFlatSats ?? COVE_FEE_CONFIG.redeemFeeFlatSats);
   const netSats = grossSats - redeemFeeSats;
   const changeAtoms = params.tokenInputTotalAtoms - params.redeemAmountAtoms;
   if (changeAtoms < 0n) throw new Error("redeem exceeds token input");

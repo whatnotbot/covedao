@@ -79,7 +79,11 @@ export interface V3IndexerConfig {
   genesisHeight: bigint;
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
+  /** Flat sats added to every backing buy, on top of the percentage. */
+  buyFeeFlatSats?: bigint;
   redeemFeeBps?: bigint;
+  /** Flat sats deducted from every redemption, on top of the percentage. */
+  redeemFeeFlatSats?: bigint;
 }
 
 export interface BlockUndo {

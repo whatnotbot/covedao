@@ -52,7 +52,7 @@ function fullLifecycleState(): V3IndexerState {
   const tokenIdHex = tokenId.toString("hex");
   const s0 = s0StateV2({ tokenId: tokenIdHex });
   const minted = applyMintV2(s0, MINT_AMOUNT);
-  const mintFee = deterministicFee(minted.grossSats, COVE_FEE_CONFIG.buyFeeBps);
+  const mintFee = deterministicFee(minted.grossSats, COVE_FEE_CONFIG.buyFeeBps, COVE_FEE_CONFIG.buyFeeFlatSats);
 
   // DEPLOY
   const deployWire = encodeDeployV2({ policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
@@ -83,7 +83,7 @@ function fullLifecycleState(): V3IndexerState {
     { script: opReturn(redeemWire), value: 0n },
     { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS },
     { script: bobScript, value: 48_856n },
-    { script: feeScript, value: 494n },
+    { script: feeScript, value: 2_500n },
   ]);
   const redeemTxid = bitcoin.Transaction.fromHex(redeemHex).getId();
   state.applyBlock(block(4, [redeemHex]));
@@ -113,7 +113,7 @@ function fullLifecycleState(): V3IndexerState {
 }
 
 /** Frozen deterministic state-root golden for the full 6-op lifecycle fixture. */
-export const V3_STATE_ROOT_GOLDEN = "5db11b18d0b1e5616151aae7d52f3feef1015affc6383bd1d22edd5fac4bf1bd";
+export const V3_STATE_ROOT_GOLDEN = "0deeb9bbcc9907f4fda5f21d8f19304430f93813bd948439378aefca66c706fc";
 
 describe("deterministic V3 state-root golden (§18)", () => {
   it("matches the frozen golden root", () => {

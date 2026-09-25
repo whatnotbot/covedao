@@ -88,7 +88,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
     // ── MINT 84M ──
     const minted = applyMintV2(s0, MINT_AMOUNT);
     const gross = minted.grossSats;
-    const fee = deterministicFee(gross, COVE_FEE_CONFIG.buyFeeBps);
+    const fee = deterministicFee(gross, COVE_FEE_CONFIG.buyFeeBps, COVE_FEE_CONFIG.buyFeeFlatSats);
     const mintWire = encodeMintV2({ tokenId, amount: MINT_AMOUNT, recipientVout: 2 });
     const carrierScript = Buffer.from("0014" + "a".repeat(40), "hex");
     const mintTxid = tx(
@@ -134,8 +134,8 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
       [
         { script: opReturn(redeemWire), value: 0n },
         { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS },
-        { script: payoutScript, value: 47_470n },
-        { script: feeScript, value: 480n },
+        { script: payoutScript, value: 45_450n },
+        { script: feeScript, value: 2_500n },
       ],
     );
     state.applyBlock(block(4, [redeemTxid]));

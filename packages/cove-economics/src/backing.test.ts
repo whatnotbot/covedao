@@ -18,11 +18,11 @@ describe("requiredBackingSats R(s) golden vectors (geometric20)", () => {
 });
 
 describe("quoteBuy / quoteRedeem golden vectors", () => {
-  it("buy 50M from 0 = 25,000 gross, 250 fee (1%)", () => {
-    expect(quoteBuy(0n, STAGE)).toEqual({ gross: 25_000n, fee: 250n, net: 25_250n });
+  it("buy 50M from 0 = 25,000 gross, 4,375 fee (2,500 flat + 7.5%)", () => {
+    expect(quoteBuy(0n, STAGE)).toEqual({ gross: 25_000n, fee: 4_375n, net: 29_375n });
   });
-  it("redeem 50M from 50M = 25,000 gross, 250 fee (1%)", () => {
-    expect(quoteRedeem(STAGE, STAGE)).toEqual({ gross: 25_000n, fee: 250n, net: 24_750n });
+  it("redeem 50M from 50M = 25,000 gross, 2,500 flat fee (no percentage)", () => {
+    expect(quoteRedeem(STAGE, STAGE)).toEqual({ gross: 25_000n, fee: 2_500n, net: 22_500n });
   });
   it("deterministicFee rounds up", () => {
     expect(deterministicFee(1n, 100n)).toBe(1n); // 0.01 sat → 1 sat

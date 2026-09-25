@@ -163,7 +163,7 @@ export async function getSellOptions(
       );
     const supplyAtoms = backing[0]?.supplyAtoms ?? 0n;
     if (balanceAtoms <= supplyAtoms) {
-      const q = quoteRedeem(supplyAtoms / ATOMS_PER_TOKEN, balanceAtoms / ATOMS_PER_TOKEN, { buyFeeBps: COVE_FEE_CONFIG.buyFeeBps, redeemFeeBps, p2pFeeBps: COVE_FEE_CONFIG.p2pFeeBps });
+      const q = quoteRedeem(supplyAtoms / ATOMS_PER_TOKEN, balanceAtoms / ATOMS_PER_TOKEN, { ...COVE_FEE_CONFIG, redeemFeeBps });
       redeemQuote = {
         kind: "backing",
         amountAtoms: balanceAtoms,

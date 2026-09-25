@@ -105,7 +105,7 @@ export function quoteBuy(
   feeConfig: CoveFeeConfig = COVE_FEE_CONFIG,
 ): Quote {
   const gross = grossBuy(supply, amount);
-  const fee = deterministicFee(gross, feeConfig.buyFeeBps);
+  const fee = deterministicFee(gross, feeConfig.buyFeeBps, feeConfig.buyFeeFlatSats);
   return { gross, fee, net: gross + fee };
 }
 
@@ -116,6 +116,6 @@ export function quoteRedeem(
   feeConfig: CoveFeeConfig = COVE_FEE_CONFIG,
 ): Quote {
   const gross = grossRedeem(supply, amount);
-  const fee = deterministicFee(gross, feeConfig.redeemFeeBps);
+  const fee = deterministicFee(gross, feeConfig.redeemFeeBps, feeConfig.redeemFeeFlatSats);
   return { gross, fee, net: gross - fee };
 }

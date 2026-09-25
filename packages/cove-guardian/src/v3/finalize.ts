@@ -61,7 +61,11 @@ export interface FinalizeParams {
   prevouts?: Map<string, ResolvedPrevout>;
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
+  /** Flat sats added on top of the percentage. */
+  buyFeeFlatSats?: bigint;
   redeemFeeBps?: bigint;
+  /** Flat sats deducted on top of the percentage. */
+  redeemFeeFlatSats?: bigint;
 }
 
 const MAX_MINER_FEE = 20_000n;
@@ -232,7 +236,7 @@ export async function validateFinalizedMintTransaction(params: FinalizeParams): 
   } catch (e) {
     return reject(`REFERENCE_POLICY_REJECTED: ${(e as Error).message}`);
   }
-  const protocolFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps);
+  const protocolFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, params.buyFeeFlatSats ?? COVE_FEE_CONFIG.buyFeeFlatSats);
 
   const nextVault = buildBackingVaultV3({
     state: nextState,
@@ -338,7 +342,7 @@ export async function validateFinalizedRedeemTransaction(params: FinalizeParams)
   } catch (e) {
     return reject(`REFERENCE_POLICY_REJECTED: ${(e as Error).message}`);
   }
-  const protocolFeeSats = deterministicFee(grossSats, params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps);
+  const protocolFeeSats = deterministicFee(grossSats, params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps, params.redeemFeeFlatSats ?? COVE_FEE_CONFIG.redeemFeeFlatSats);
   const netPayoutSats = grossSats - protocolFeeSats;
 
   const nextVault = buildBackingVaultV3({

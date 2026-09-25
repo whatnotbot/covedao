@@ -45,3 +45,12 @@ export {
   type TokenAllocation,
   type ParsedEnvelopeV2,
 } from "./codecV2.js";
+export {
+  serializeDiscovery,
+  discoveryFor,
+  encodeDiscovery,
+  decodeDiscovery,
+  discoveryAgreesWithBinary,
+  DiscoveryError,
+  type DiscoveryEnvelope,
+} from "./discovery.js";

@@ -2,7 +2,7 @@
  * Cove wire protocol constants + operation opcodes. Single canonical registry.
  *
  * The on-chain OP_RETURN uses a compact, versioned BINARY transport (see
- * codec.ts). `cove-20` remains the LOGICAL protocol identity; the wire payload
+ * codec.ts). `crc-20` is the LOGICAL protocol identity (see discovery.ts); the wire payload
  * carries an explicit binary version and a compact op + payload.
  *
  * Redundant values (curve id, supply caps, policy CMR) are NOT repeated on-chain
@@ -10,7 +10,7 @@
  * the asset exists.
  */
 
-export const COVE_PROTOCOL_ID = "cove-20";
+export const COVE_PROTOCOL_ID = "crc-20";
 
 /** Binary wire version. Bump on any breaking transport change. */
 export const COVE_WIRE_VERSION = 1;

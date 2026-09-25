@@ -26,7 +26,7 @@ interface Vector {
 }
 
 const vectors = JSON.parse(
-  readFileSync(fileURLToPath(new URL("../../../docs/CRC_LAUNCH_V1_TEST_VECTORS.json", import.meta.url)), "utf8"),
+  readFileSync(fileURLToPath(new URL("../../../docs/legacy/CRC_LAUNCH_V1_TEST_VECTORS.json", import.meta.url)), "utf8"),
 ) as { vectors: Vector[] };
 
 describe("CRC Launch V1 canonical mint test vectors", () => {

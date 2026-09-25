@@ -24,7 +24,6 @@
     "db:seed": "pnpm --filter @crclaunch/db db:seed",
     "reindex": "pnpm --filter @crclaunch/worker reindex",
     "demo:reset": "pnpm --filter @crclaunch/worker demo:reset",
-    "mock-crc": "pnpm --filter @crclaunch/mock-crc-service dev",
     "cove:index": "pnpm --filter @crclaunch/cove-indexer index",
     "cove:verify": "pnpm --filter @crclaunch/cove-indexer verify",
     "cove:status": "pnpm --filter @crclaunch/cove-indexer status",
@@ -56,5 +55,7 @@
     "turbo": "^2.3.3",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.0"
-  }
+  },
+  "license": "MIT",
+  "description": "A CRC-family token protocol on Bitcoin L1 \u2014 state-committed Taproot UTXOs, an open indexer, and a non-custodial marketplace."
 }

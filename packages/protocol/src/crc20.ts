@@ -9,7 +9,7 @@
  * IMPORTANT: this documents what is OBSERVABLE on-chain. It does NOT imply
  * that any operation is Bitcoin-consensus-enforced. CRC-20 is client-side
  * (indexer) validated; pricing/supply/ticker rules are NOT enforced by Bitcoin
- * script (see docs/PROTOCOL_VERIFICATION.md).
+ * script (see docs/legacy/PROTOCOL_VERIFICATION.md).
  */
 
 export interface Crc20Payload {

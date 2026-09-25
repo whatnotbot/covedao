@@ -6,7 +6,9 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useWallet } from "@/components/WalletProvider";
 import { verifyClientIntent } from "@crclaunch/wallets";
 import { fmtBtc, fmtTokens, fmtInt, displayTokensToAtoms } from "@/lib/format";
-import { DEMO_TOKEN_DETAIL } from "@/lib/demo-tokens";
+import { DEMO_TOKEN_DETAIL, DEMO_LISTINGS } from "@/lib/demo-tokens";
+import { TokenMarketPanel } from "@/components/TokenMarketPanel";
+import { unitPriceSats } from "@/lib/ohlc";
 
 interface Detail {
   tokenId: string;
@@ -255,6 +257,13 @@ function TokenContent() {
   const pct = cap > 0n ? Number((issued * 10_000n) / cap) / 100 : 0;
   const atCap = issued >= cap;
 
+  // Open asks for this token, quoted in the same unit as the chart.
+  const asks = (demo ? DEMO_LISTINGS.filter((l) => l.tokenId === detail.tokenId) : []).map((l) => ({
+    priceSatsPer1M: unitPriceSats(l.amountAtoms, l.totalPriceSats),
+    amountTokens: Number(BigInt(l.amountAtoms) / 100_000_000n),
+    status: l.status,
+  }));
+
   return (
     <div className="space-y-px">
       {/* ── Identity ─────────────────────────────────────────────────── */}
@@ -303,6 +312,15 @@ function TokenContent() {
           />
         </div>
       </section>
+
+      {/* ── Market ───────────────────────────────────────────────────── */}
+      <TokenMarketPanel
+        tokenId={detail.tokenId}
+        ticker={detail.ticker}
+        curveStage={detail.curveStage}
+        demo={demo}
+        asks={asks}
+      />
 
       {/* ── Actions ──────────────────────────────────────────────────── */}
       <section className="panel px-6 py-8 sm:px-10">

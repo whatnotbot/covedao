@@ -124,6 +124,11 @@ export interface DemoListing {
 export const DEMO_LISTINGS: DemoListing[] = [
   ["ANCHOR", 1_000_000n, 41_500n, "ACTIVE"],
   ["ANCHOR", 2_500_000n, 106_000n, "ACTIVE"],
+  ["ANCHOR", 750_000n, 32_400n, "ACTIVE"],
+  ["ANCHOR", 4_000_000n, 176_000n, "ACTIVE"],
+  ["ANCHOR", 1_800_000n, 81_900n, "RESERVED"],
+  ["ANCHOR", 6_200_000n, 291_400n, "ACTIVE"],
+  ["ANCHOR", 500_000n, 24_750n, "BROADCAST"],
   ["REEF", 500_000n, 75_600n, "ACTIVE"],
   ["REEF", 5_000_000n, 771_000n, "RESERVED"],
   ["HARBOR", 3_000_000n, 265_000n, "ACTIVE"],

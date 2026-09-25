@@ -40,8 +40,9 @@ export default function HomePage() {
           tokens.
         </h1>
         <p className="mt-6 max-w-xl text-sm leading-relaxed text-bone-dim">
-          Every token&rsquo;s supply and backing are committed into the Taproot output key of a live
-          UTXO. Bitcoin settles the transaction. The indexer is open, deterministic and in this
+Every token is a flat 1,000,000,000 supply with nothing held back for the
+          team. Supply and backing are committed into the Taproot output key of a live UTXO, and
+          Bitcoin settles the transaction. The indexer is open, deterministic and in this
           repository — so you can reproduce the state root yourself rather than take our word for it.
         </p>
         <div className="mt-9 flex flex-wrap gap-3">
@@ -53,9 +54,9 @@ export default function HomePage() {
       <section className="panel px-6 py-8 sm:px-10">
         <p className="eyebrow">The ledger</p>
         <div className="mt-5 grid grid-cols-2 gap-px bg-rule sm:grid-cols-4">
-          <Tile value="840M" label="Public supply" />
-          <Tile value="160M" label="Graduation reserve" />
-          <Tile value="0.242" label="BTC at full cap" />
+          <Tile value="1B" label="Total supply" />
+          <Tile value="0" label="Held back" />
+          <Tile value="0.288" label="BTC at full cap" />
           <Tile value="20" label="Curve stages" />
         </div>
       </section>

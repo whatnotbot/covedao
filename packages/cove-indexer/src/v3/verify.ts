@@ -28,7 +28,14 @@ export async function quickVerify(
     }
   }
 
-  const btcNet = state.config.network === "regtest" ? bitcoin.networks.regtest : bitcoin.networks.testnet;
+  // Mainnet must not fall through to testnet parameters (signet and testnet
+  // legitimately share them; mainnet does not).
+  const btcNet =
+    state.config.network === "regtest"
+      ? bitcoin.networks.regtest
+      : state.config.network === "mainnet"
+        ? bitcoin.networks.bitcoin
+        : bitcoin.networks.testnet;
   for (const b of state.backing.values()) {
     // Bitcoin Core: outpoint must exist and be unspent.
     const prevout = await provider.getPrevout(b.outpoint.txid, b.outpoint.vout);

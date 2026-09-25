@@ -57,3 +57,18 @@ export { buildAppTransitionSigner } from "./transition-signer.js";
 export { checkBackingInvariant, checkSupplyInvariant, type InvariantResult } from "./invariants.js";
 export { FixedWindowRateLimiter, type RateLimiter, type RateLimitKey, type RateLimitConfig, type RateLimitResult } from "./rate-limit.js";
 export { Metrics, type MetricName } from "./metrics.js";
+export {
+  estimateVsize,
+  estimateOperationVsize,
+  loadFeeRates,
+  resolveMinerFee,
+  outputVbytes,
+  OP_RETURN_SCRIPT_BYTES,
+  ABSOLUTE_FLOOR_SAT_PER_VB,
+  ABSOLUTE_CEILING_SAT_PER_VB,
+  type CoveOperation,
+  type CoveTxShape,
+  type FeeRates,
+  type FeeTier,
+  type FeeTierKey,
+} from "./fees.js";

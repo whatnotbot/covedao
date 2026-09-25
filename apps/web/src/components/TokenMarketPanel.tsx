@@ -72,7 +72,6 @@ export function TokenMarketPanel({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tokenId, demo, ticker, curveStage]);
 
   // Generated at the interval actually being shown, so a day candle covers a

@@ -18,8 +18,22 @@ export function ok(data: unknown): Response {
   return json({ ok: true, data });
 }
 
-export function fail(code: string, message: string, status = 400, retryable = false): Response {
-  return json({ ok: false, error: { code, message, retryable } }, status);
+export function fail(code: string, message: string, status = 400, retryable = false, detail?: string): Response {
+  return json({ ok: false, error: { code, message, retryable, detail } }, status);
+}
+
+/**
+ * The error's own words, when we wrote them ourselves.
+ *
+ * `humanCopy` below is deliberately short, but short copy hides the one thing
+ * the user needs: how much BTC is missing, which fee rate would actually
+ * relay, how many carriers to consolidate. Those details come from our own
+ * error classes, never from a stack or a node, so they are safe to show. An
+ * unrecognised error contributes nothing.
+ */
+function detailOf(e: unknown): string | undefined {
+  if (!(e instanceof AppError || e instanceof MarketError || e instanceof BackingError)) return undefined;
+  return e.message.replace(/^\[[A-Z_]+\]\s*/, "");
 }
 
 function codeOf(e: unknown): string {
@@ -38,7 +52,7 @@ export function handleError(e: unknown): Response {
   const human = humanCopy(code);
   const retryable = ["CORE_UNAVAILABLE", "INDEXER_UNHEALTHY", "INDEXER_REBUILDING", "QUOTE_STALE", "STATE_CHANGED", "MEMPOOL_REJECTED", "BROADCAST_FAILED"].includes(code);
   const status = code === "INTERNAL_ERROR" ? 500 : code === "WRONG_NETWORK" || code === "MAINNET_DISABLED" ? 403 : 400;
-  return fail(code, human, status, retryable);
+  return fail(code, human, status, retryable, detailOf(e));
 }
 
 function humanCopy(code: string): string {
@@ -69,6 +83,10 @@ function humanCopy(code: string): string {
       return "Mainnet is not enabled yet.";
     case "INSUFFICIENT_BTC":
       return "Not enough BTC to cover this transaction.";
+    case "MINER_FEE_TOO_LOW":
+      return "That miner fee is too low — Bitcoin would not relay this transaction.";
+    case "MINER_FEE_TOO_HIGH":
+      return "That miner fee is far above the going rate. Pick a lower speed.";
     case "PSBT_MUTATED":
       return "The transaction changed after it was built. Please retry.";
     case "MEMPOOL_REJECTED":

@@ -1,7 +1,7 @@
 import { COVE_PROTOCOL_ID, OP_DEPLOY, OP_MINT, OP_REDEEM, OP_TRANSFER, opName } from "./opcodes.js";
 import { DATACARRIER_PAYLOAD_LIMIT } from "./opcodes.js";
 import type { ParsedEnvelopeV2 } from "./codecV2.js";
-import { canonicalTicker } from "./tokenId.js";
+import { canonicalTicker } from "./ticker.js";
 
 /**
  * The `crc-20` DISCOVERY envelope (§D1).

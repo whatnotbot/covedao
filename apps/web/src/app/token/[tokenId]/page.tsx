@@ -8,6 +8,7 @@ import { verifyClientIntent } from "@crclaunch/wallets";
 import { fmtBtc, fmtTokens, fmtInt, displayTokensToAtoms } from "@/lib/format";
 import { DEMO_TOKEN_DETAIL, DEMO_LISTINGS } from "@/lib/demo-tokens";
 import { TokenMarketPanel } from "@/components/TokenMarketPanel";
+import { FeePicker, useFeeRates, type FeeRatesResponse, type FeeTier } from "@/components/FeePicker";
 import { unitPriceSats } from "@/lib/ohlc";
 
 interface Detail {
@@ -47,6 +48,10 @@ function TokenContent() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [txid, setTxid] = useState("");
+  const { rates, selected: feeTier, setSelected: setFeeTier, satPerVb, previewFeeSats } = useFeeRates();
+  // What the user is about to commit to, held between "Review" and "Confirm".
+  // Nothing is built, signed or broadcast until they have seen these numbers.
+  const [review, setReview] = useState<Review | null>(null);
 
   useEffect(() => {
     if (demo) {
@@ -63,47 +68,30 @@ function TokenContent() {
       .catch(() => setLoaded(true));
   }, [tokenId]);
 
-  async function buy() {
+  /**
+   * Step one of a trade: price it, and show the user what it costs.
+   *
+   * Nothing is built, nothing is signed and nothing is broadcast here. The
+   * whole point is that the amounts below are on screen BEFORE a wallet popup
+   * appears, because a wallet popup is a poor place to discover a price.
+   */
+  async function reviewTrade(kind: "buy" | "sell") {
     if (!detail || !connected) return;
     setErr("");
+    setMsg("");
+    setTxid("");
     setBusy(true);
     try {
-      const qr = await fetch("/api/v3/backing/buy/quote", {
+      const amountAtoms = displayTokensToAtoms(amount);
+      const endpoint = kind === "buy" ? "buy" : "redeem";
+      const qr = await fetch(`/api/v3/backing/${endpoint}/quote`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tokenId, amountAtoms: displayTokensToAtoms(amount) }),
+        body: JSON.stringify({ tokenId, amountAtoms }),
       });
       const qj = await qr.json();
-      if (!qj.ok) throw new Error(qj.error?.message ?? "quote failed");
-      const funding = await getUtxos();
-      const br = await fetch("/api/v3/backing/buy/build", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          network: "regtest",
-          tokenId,
-          amountAtoms: displayTokensToAtoms(amount),
-          quoteBinding: { stateHash: qj.data.stateHash, backingOutpoint: qj.data.backingOutpoint, expiresAtHeight: qj.data.expiresAtHeight },
-          walletScript: script,
-          walletAddress: address,
-          funding,
-          minerFeeSats: "1000",
-          idempotencyKey: `buy-${tokenId}-${Date.now()}`,
-        }),
-      });
-      const bj = await br.json();
-      if (!bj.ok) throw new Error(bj.error?.message ?? "build failed");
-      verifyClientIntent(bj.data.psbtBase64, bj.data.intent);
-      const signed = await signPsbt(bj.data.psbtBase64, "BACKING_BUY");
-      const sr = await fetch("/api/v3/backing/buy/submit", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sessionId: bj.data.sessionId, signedPsbtBase64: signed }),
-      });
-      const sj = await sr.json();
-      if (!sj.ok) throw new Error(sj.error?.message ?? "submit failed");
-      setTxid(sj.data.txid);
-      setMsg(`Buy broadcast ${sj.data.txid.slice(0, 16)}…`);
+      if (!qj.ok) throw new Error(errorText(qj));
+      setReview({ kind, amountAtoms, quote: qj.data });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -111,49 +99,55 @@ function TokenContent() {
     }
   }
 
-  async function sell() {
-    if (!detail || !connected) return;
+  /** Step two: build against the reviewed quote, verify it, sign it, send it. */
+  async function confirmTrade() {
+    if (!detail || !connected || !review) return;
     setErr("");
     setBusy(true);
     try {
-      const qr = await fetch("/api/v3/backing/redeem/quote", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tokenId, amountAtoms: displayTokensToAtoms(amount) }),
-      });
-      const qj = await qr.json();
-      if (!qj.ok) throw new Error(qj.error?.message ?? "quote failed");
-      // Offer BTC utxos for the miner fee. Token carriers are 1,000 sats each,
-      // so without these a partial redeem from a single carrier cannot pay a
-      // fee at all and larger redeems break above a few sat/vB.
-      const redeemFunding = await getUtxos();
-      const br = await fetch("/api/v3/backing/redeem/build", {
+      const funding = await getUtxos();
+      const isBuy = review.kind === "buy";
+      const br = await fetch(`/api/v3/backing/${isBuy ? "buy" : "redeem"}/build`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          network: "regtest",
           tokenId,
-          amountAtoms: displayTokensToAtoms(amount),
+          amountAtoms: review.amountAtoms,
+          // The buy binds to the exact backing state that was quoted, so the
+          // price cannot move between the review and the signature.
+          ...(isBuy
+            ? {
+                quoteBinding: {
+                  stateHash: review.quote.stateHash,
+                  backingOutpoint: review.quote.backingOutpoint,
+                  expiresAtHeight: review.quote.expiresAtHeight,
+                },
+              }
+            : {}),
           walletScript: script,
           walletAddress: address,
-          minerFeeSats: "1000",
-          funding: redeemFunding,
-          idempotencyKey: `redeem-${tokenId}-${Date.now()}`,
+          funding,
+          feeRateSatPerVb: satPerVb ?? undefined,
+          idempotencyKey: `${review.kind}-${tokenId}-${Date.now()}`,
         }),
       });
       const bj = await br.json();
-      if (!bj.ok) throw new Error(bj.error?.message ?? "build failed");
+      if (!bj.ok) throw new Error(errorText(bj));
+      // Independently re-check the PSBT against the intent before signing: the
+      // price, the fees, the token amount and where the tokens land.
       verifyClientIntent(bj.data.psbtBase64, bj.data.intent);
-      const signed = await signPsbt(bj.data.psbtBase64, "REDEEM");
-      const sr = await fetch("/api/v3/backing/redeem/submit", {
+      const signed = await signPsbt(bj.data.psbtBase64, isBuy ? "BACKING_BUY" : "REDEEM");
+      const sr = await fetch(`/api/v3/backing/${isBuy ? "buy" : "redeem"}/submit`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ sessionId: bj.data.sessionId, signedPsbtBase64: signed }),
       });
       const sj = await sr.json();
-      if (!sj.ok) throw new Error(sj.error?.message ?? "submit failed");
+      if (!sj.ok) throw new Error(errorText(sj));
       setTxid(sj.data.txid);
-      setMsg(`Redeem broadcast ${sj.data.txid.slice(0, 16)}…`);
+      setMsg(`${isBuy ? "Buy" : "Redeem"} broadcast. It is in the mempool now.`);
+      setReview(null);
+      setAmount("");
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -171,19 +165,18 @@ function TokenContent() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          network: "regtest",
           tokenId,
           amountAtoms: displayTokensToAtoms(amount),
           recipientScript: recipient,
           walletScript: script,
           walletAddress: address,
           funding,
-          minerFeeSats: "1000",
+          feeRateSatPerVb: satPerVb ?? undefined,
           idempotencyKey: `transfer-${tokenId}-${Date.now()}`,
         }),
       });
       const bj = await br.json();
-      if (!bj.ok) throw new Error(bj.error?.message ?? "build failed");
+      if (!bj.ok) throw new Error(errorText(bj));
       verifyClientIntent(bj.data.psbtBase64, bj.data.intent);
       const signed = await signPsbt(bj.data.psbtBase64, "TRANSFER");
       const sr = await fetch("/api/v3/transfer/submit", {
@@ -192,7 +185,7 @@ function TokenContent() {
         body: JSON.stringify({ sessionId: bj.data.sessionId, signedPsbtBase64: signed }),
       });
       const sj = await sr.json();
-      if (!sj.ok) throw new Error(sj.error?.message ?? "submit failed");
+      if (!sj.ok) throw new Error(errorText(sj));
       setTxid(sj.data.txid);
       setMsg(`Transfer broadcast ${sj.data.txid.slice(0, 16)}…`);
     } catch (e) {
@@ -225,7 +218,7 @@ function TokenContent() {
         }),
       });
       const pj = await pr.json();
-      if (!pj.ok) throw new Error(pj.error?.message ?? "prepare listing failed");
+      if (!pj.ok) throw new Error(errorText(pj));
       const sig = await signBip322(pj.data.message);
       const cr = await fetch("/api/v3/market/listings", {
         method: "POST",
@@ -233,7 +226,7 @@ function TokenContent() {
         body: JSON.stringify({ listing: pj.data.listing, signatureB64: sig }),
       });
       const cj = await cr.json();
-      if (!cj.ok) throw new Error(cj.error?.message ?? "create listing failed");
+      if (!cj.ok) throw new Error(errorText(cj));
       setMsg(`Listing created ${cj.data.listingId.slice(0, 16)}…`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -296,7 +289,7 @@ function TokenContent() {
           <div className="mt-6 border border-signal/40 bg-signal/10 px-5 py-4">
             <p className="text-label uppercase tracking-label text-signal">Graduated</p>
             <p className="mt-2 max-w-xl text-xs leading-relaxed text-bone-dim">
-              The full 840M public curve has been minted. Minting is finished. The backing vault
+              The full 1B curve has been minted. Minting is finished. The backing vault
               keeps buying and selling at the curve price exactly as before, so holders can still
               redeem at any time &mdash; graduation marks the milestone, it does not change how the
               token works.
@@ -375,6 +368,18 @@ function TokenContent() {
               <button onClick={() => void connect()} className="btn mt-5 w-full">
                 Connect wallet
               </button>
+            ) : review ? (
+              <TradeReview
+                review={review}
+                ticker={detail.ticker}
+                rates={rates}
+                feeTier={feeTier}
+                onFeeTier={setFeeTier}
+                previewFeeSats={previewFeeSats}
+                busy={busy}
+                onConfirm={() => void confirmTrade()}
+                onCancel={() => setReview(null)}
+              />
             ) : (
               <div className="mt-5 space-y-4">
                 {tab !== "list" && (
@@ -406,17 +411,33 @@ function TokenContent() {
                     <input value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="0014…" className="field mt-2" />
                   </label>
                 )}
+                {tab === "transfer" ? (
+                  <FeePicker
+                    rates={rates}
+                    selected={feeTier}
+                    onSelect={setFeeTier}
+                    vsizeHint={rates?.typicalVsize.TRANSFER}
+                  />
+                ) : null}
                 <button
-                  onClick={tab === "buy" ? buy : tab === "sell" ? sell : tab === "transfer" ? transfer : list}
+                  onClick={
+                    tab === "buy"
+                      ? () => void reviewTrade("buy")
+                      : tab === "sell"
+                        ? () => void reviewTrade("sell")
+                        : tab === "transfer"
+                          ? () => void transfer()
+                          : () => void list()
+                  }
                   disabled={busy}
                   className="btn w-full"
                 >
                   {busy
                     ? "Working…"
                     : tab === "buy"
-                      ? "Buy from backing"
+                      ? "Review purchase"
                       : tab === "sell"
-                        ? "Redeem to backing"
+                        ? "Review sale"
                         : tab === "transfer"
                           ? "Transfer"
                           : "Sign & create listing"}
@@ -452,6 +473,124 @@ function TokenContent() {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+interface Quote {
+  stateHash: string;
+  backingOutpoint: { txid: string; vout: number };
+  expiresAtHeight: string;
+  grossSats: string;
+  feeSats: string;
+  netSats?: string;
+  supplyAfterAtoms: string;
+}
+
+interface Review {
+  kind: "buy" | "sell";
+  amountAtoms: string;
+  quote: Quote;
+}
+
+/** The server's own words when it has them; the short copy otherwise. */
+function errorText(j: { error?: { message?: string; detail?: string } }): string {
+  return j.error?.detail || j.error?.message || "Something went wrong.";
+}
+
+/**
+ * What this trade costs, before anything is signed.
+ *
+ * The price and the protocol fee are exact — they come from the quote the
+ * build binds to, so they cannot move underneath the user. The miner fee is
+ * marked "≈" because only the server knows the final transaction size, and
+ * saying "≈" is better than showing a precise number that turns out to be a
+ * different one.
+ */
+function TradeReview({
+  review,
+  ticker,
+  rates,
+  feeTier,
+  onFeeTier,
+  previewFeeSats,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  review: Review;
+  ticker: string;
+  rates: FeeRatesResponse | null;
+  feeTier: FeeTier["key"];
+  onFeeTier: (k: FeeTier["key"]) => void;
+  previewFeeSats: (op: "DEPLOY" | "BACKING_BUY" | "REDEEM" | "TRANSFER") => bigint | null;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const isBuy = review.kind === "buy";
+  const gross = BigInt(review.quote.grossSats);
+  const protocolFee = BigInt(review.quote.feeSats);
+  const minerFee = previewFeeSats(isBuy ? "BACKING_BUY" : "REDEEM") ?? 0n;
+  const total = isBuy ? gross + protocolFee + minerFee : gross - protocolFee - minerFee;
+
+  return (
+    <div className="mt-5 space-y-4">
+      <div className="border border-signal/40 bg-signal/5 px-4 py-4">
+        <p className="eyebrow">{isBuy ? "You are buying" : "You are selling"}</p>
+        <p className="mt-2 text-2xl tabular-nums text-bone">
+          {fmtTokens(review.amountAtoms)} <span className="text-base text-bone-dim">{ticker}</span>
+        </p>
+      </div>
+
+      <dl className="space-y-2 text-sm">
+        <Line k="Curve price" v={fmtBtc(gross)} />
+        <Line k="Protocol fee" v={`${isBuy ? "+" : "−"}${fmtBtc(protocolFee)}`} />
+        <Line k="Network fee" v={`${isBuy ? "+" : "−"}\u2248${fmtBtc(minerFee)}`} />
+        <div className="border-t border-rule-bright pt-2">
+          <Line
+            k={isBuy ? "You pay" : "You receive"}
+            v={`\u2248${fmtBtc(total < 0n ? -total : total)}`}
+            strong
+          />
+        </div>
+      </dl>
+
+      <FeePicker
+        rates={rates}
+        selected={feeTier}
+        onSelect={onFeeTier}
+        vsizeHint={rates?.typicalVsize[isBuy ? "BACKING_BUY" : "REDEEM"]}
+      />
+
+      <p className="text-xs leading-relaxed text-bone-dim">
+        The curve price and the protocol fee are locked to the backing state quoted above. If
+        someone else trades first, this is refused and re-quoted rather than filled at a different
+        price. Your wallet will show the final amounts before you sign.
+      </p>
+
+      <div className="grid grid-cols-2 gap-px bg-rule">
+        <button onClick={onCancel} disabled={busy} className="btn-ghost w-full border-0">
+          Back
+        </button>
+        <button onClick={onConfirm} disabled={busy} className="btn w-full">
+          {busy ? "Working…" : isBuy ? "Confirm & sign" : "Confirm & sign"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One line of the cost breakdown. A leading "≈" on the value is the only mark
+ * of an estimate — a separate "est" badge beside the label said the same thing
+ * twice and ran into the label text when read aloud.
+ */
+function Line({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <dt className={strong ? "text-bone" : "text-bone-dim"}>{k}</dt>
+      <dd className={`tabular-nums ${strong ? "text-base text-bone" : "text-bone-2"}`}>{v}</dd>
     </div>
   );
 }

@@ -16,8 +16,18 @@ export function parsePsbt(b64: string, network: bitcoin.networks.Network): bitco
   }
 }
 
+/**
+ * bitcoinjs network parameters for a Cove network name.
+ *
+ * Signet and testnet share testnet's parameters (same bech32 prefix, same
+ * version bytes), so they map together. Mainnet must map to `bitcoin`: this
+ * previously fell through to testnet, which would have built every mainnet
+ * PSBT and address against the wrong parameters.
+ */
 export function btcNetwork(network: string): bitcoin.networks.Network {
-  return network === "regtest" ? bitcoin.networks.regtest : bitcoin.networks.testnet;
+  if (network === "regtest") return bitcoin.networks.regtest;
+  if (network === "mainnet") return bitcoin.networks.bitcoin;
+  return bitcoin.networks.testnet;
 }
 
 /** Validate a P2WPKH input's partial sig is SIGHASH_ALL and cryptographically valid. */
@@ -37,4 +47,27 @@ export function validateInputSignature(psbt: bitcoin.Psbt, inputIndex: number): 
     ok = false;
   }
   if (!ok) throw new AppError("WALLET_SIGNATURE_INVALID", `input ${inputIndex} signature invalid`);
+}
+
+/**
+ * Net satoshis a wallet gains (+) or loses (−) across a PSBT.
+ *
+ * This is the one number a user actually cares about, and it is measured from
+ * the transaction rather than assembled from the parts, so it cannot drift out
+ * of step with what will be broadcast. The client re-derives the same figure
+ * from the price it was shown and refuses to sign if the two disagree.
+ */
+export function walletDeltaSats(psbt: bitcoin.Psbt, walletScriptHex: string): bigint {
+  const into = psbt.txOutputs.reduce(
+    (sum, out) => (out.script.toString("hex") === walletScriptHex ? sum + BigInt(out.value) : sum),
+    0n,
+  );
+  const outOf = psbt.data.inputs.reduce(
+    (sum, input) =>
+      input.witnessUtxo?.script.toString("hex") === walletScriptHex
+        ? sum + BigInt(input.witnessUtxo.value)
+        : sum,
+    0n,
+  );
+  return into - outOf;
 }

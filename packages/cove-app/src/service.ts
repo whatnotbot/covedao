@@ -40,8 +40,15 @@ import {
 import { AppError } from "./errors.js";
 import type { V3AppConfig, V3Network } from "./config.js";
 import { checkCoreAgreement, verifyMainnetGenesis } from "./readiness.js";
-import { unsignedTxDigest, parsePsbt, btcNetwork, validateInputSignature } from "./psbt.js";
-import { resolveFundingUtxos, type FundingCandidate } from "./funding.js";
+import { unsignedTxDigest, parsePsbt, btcNetwork, validateInputSignature, walletDeltaSats } from "./psbt.js";
+import { resolveFundingUtxos, type FundingCandidate, type ResolvedFunding } from "./funding.js";
+import {
+  estimateOperationVsize,
+  loadFeeRates,
+  resolveMinerFee,
+  type CoveOperation,
+  type FeeRates,
+} from "./fees.js";
 import {
   createTxSession,
   requireTxSession,
@@ -124,6 +131,12 @@ export interface IntentV3 {
   walletScript: string;
   stateHash: string | null;
   unsignedTxDigest: string;
+  /**
+   * Net satoshis this transaction adds to (+) or takes from (−) the wallet,
+   * measured from the PSBT itself. The browser re-derives the same figure from
+   * the price it displayed and refuses to sign if the two disagree.
+   */
+  walletDeltaSats: bigint;
 }
 
 interface BackingRow {
@@ -138,6 +151,9 @@ interface BackingRow {
  */
 const MAX_REDEEM_TOKEN_INPUTS = 4;
 
+/** Wire-v2 TRANSFER allows at most four allocations, so at most four carriers. */
+const MAX_TRANSFER_TOKEN_INPUTS = 4;
+
 /**
  * How far to chain unconfirmed vault transitions.
  *
@@ -151,8 +167,15 @@ const MAX_PENDING_BACKING_CHAIN = 24;
 /** The successor vault is always output 1 of a MINT or REDEEM. */
 const BACKING_SUCCESSOR_VOUT = 1;
 
+/**
+ * How long a fee-rate reading stays usable. Short enough that a mempool floor
+ * climbing mid-block is picked up before it can strand a transaction.
+ */
+const FEE_RATE_CACHE_MS = 15_000;
+
 export class V3AppService {
   readonly market: MarketService;
+  private feeRatesCache: { at: number; rates: FeeRates } | null = null;
 
   constructor(
     readonly db: Database,
@@ -411,6 +434,128 @@ export class V3AppService {
     return loadCanonicalViewSnapshotFromDb({ db: this.db, network: this.config.network, tokenId, relevantOutpoints });
   }
 
+  // ── miner fees ────────────────────────────────────────────────────────────
+
+  /**
+   * Live fee rates from the node, cached for a few seconds.
+   *
+   * Every build asks for these, and a browser buying in a hurry will hit this
+   * many times a block. The cache is short enough that a rising mempool floor
+   * is picked up well within one block.
+   */
+  async feeRates(): Promise<FeeRates> {
+    const now = Date.now();
+    if (this.feeRatesCache && now - this.feeRatesCache.at < FEE_RATE_CACHE_MS) {
+      return this.feeRatesCache.rates;
+    }
+    const rates = await loadFeeRates(this.provider);
+    this.feeRatesCache = { at: now, rates };
+    return rates;
+  }
+
+  /**
+   * Pick the funding inputs this transaction needs, and size the miner fee to
+   * the transaction it will actually produce.
+   *
+   * Two problems are fixed here at once. Every build used to spend EVERY UTXO
+   * in the wallet, so a wallet with fifty of them paid for a ~3,400-vbyte
+   * transaction to buy a few dollars of tokens. And the fee was a flat 1,000
+   * sats regardless of size, which is under the relay floor for anything but a
+   * quiet mempool. Now the smallest sufficient set of inputs is chosen, and
+   * the fee follows the size of that exact set.
+   *
+   * `targetSats` is everything the funding inputs must cover EXCLUDING the
+   * miner fee. It may be negative when other inputs (token carriers) already
+   * bring in more sats than the outputs consume.
+   */
+  private async resolveFundingAndFee(params: {
+    op: CoveOperation;
+    walletScript: string;
+    candidates: FundingCandidate[];
+    targetSats: bigint;
+    tokenInputs?: number;
+    recipientCarriers?: number;
+    discovery?: boolean;
+    feeRateSatPerVb?: bigint;
+    explicitMinerFeeSats?: bigint;
+  }): Promise<{ inputs: ResolvedInput[]; minerFeeSats: bigint; vsize: number; satPerVb: bigint }> {
+    const resolved = await resolveFundingUtxos(this.provider, params.candidates);
+    for (const f of resolved) {
+      if (f.script.toString("hex") !== params.walletScript) {
+        throw new AppError("FUNDING_INPUT_INVALID", "funding input script does not match wallet");
+      }
+    }
+    const rates = await this.feeRates();
+    // Neither a rate nor an amount supplied: use the Standard tier. The old
+    // default was a flat 1,000 sats regardless of size, which is what made a
+    // busy-mempool transaction unconfirmable in the first place.
+    const standard = rates.tiers.find((t) => t.key === "standard") ?? rates.tiers[0]!;
+    const feeRateSatPerVb =
+      params.feeRateSatPerVb ??
+      (params.explicitMinerFeeSats === undefined ? standard.satPerVb : undefined);
+    const shape = {
+      tokenInputs: params.tokenInputs,
+      walletScriptBytes: params.walletScript.length / 2,
+      feeScriptBytes: this.config.feeScript.length,
+      recipientCarriers: params.recipientCarriers,
+      discovery: params.discovery,
+    };
+    const priceAt = (fundingInputs: number) => {
+      const vsize = estimateOperationVsize(params.op, { ...shape, fundingInputs });
+      const fee = resolveMinerFee({
+        rateSatPerVb: feeRateSatPerVb,
+        explicitSats: params.explicitMinerFeeSats,
+        vsize,
+        floorSatPerVb: rates.floorSatPerVb,
+        ceilingSatPerVb: rates.ceilingSatPerVb,
+        maxMinerFeeSats: this.config.maxMinerFeeSats,
+      });
+      return { vsize: fee.vsize, minerFeeSats: fee.minerFeeSats, satPerVb: fee.effectiveSatPerVb };
+    };
+
+    // Largest-first: reaches the target in the fewest inputs, which is also the
+    // cheapest transaction. Ties break on txid/vout so the choice is
+    // deterministic and a rebuild produces the same PSBT.
+    const sorted = [...resolved].sort((a, b) => {
+      if (a.valueSats !== b.valueSats) return a.valueSats > b.valueSats ? -1 : 1;
+      if (a.txid !== b.txid) return a.txid < b.txid ? -1 : 1;
+      return a.vout - b.vout;
+    });
+
+    const toInput = (f: ResolvedFunding): ResolvedInput => ({
+      txid: f.txid,
+      vout: f.vout,
+      script: f.script,
+      valueSats: f.valueSats,
+    });
+
+    // Zero funding inputs is legitimate when other inputs already cover the
+    // outputs and the fee (a redeem whose token carriers pay for themselves).
+    const noFunding = priceAt(0);
+    if (params.targetSats + noFunding.minerFeeSats <= 0n) {
+      return { inputs: [], ...noFunding };
+    }
+
+    const chosen: ResolvedFunding[] = [];
+    let sum = 0n;
+    for (const utxo of sorted) {
+      chosen.push(utxo);
+      sum += utxo.valueSats;
+      const priced = priceAt(chosen.length);
+      if (sum >= params.targetSats + priced.minerFeeSats) {
+        return { inputs: chosen.map(toInput), ...priced };
+      }
+    }
+    const shortfall = priceAt(Math.max(1, chosen.length));
+    throw new AppError(
+      "INSUFFICIENT_BTC",
+      `wallet has ${sum} sats across ${chosen.length} inputs but ` +
+        `${params.targetSats + shortfall.minerFeeSats} is required ` +
+        `(${params.targetSats} for the trade, ${shortfall.minerFeeSats} for the miner at ` +
+        `${shortfall.satPerVb} sat/vB)`,
+    );
+  }
+
   // ── launch ────────────────────────────────────────────────────────────────
 
   prepareLaunch(input: LaunchPrepareInput): LaunchPrepareResult {
@@ -439,7 +584,10 @@ export class V3AppService {
     walletScript: string;
     walletAddress: string | null;
     funding: FundingCandidate[];
-    minerFeeSats: bigint;
+    /** Preferred: the fee rate the user picked; the server sizes the fee. */
+    feeRateSatPerVb?: bigint;
+    /** Explicit fee, for callers that size the transaction themselves. */
+    minerFeeSats?: bigint;
     metadata: TokenMetadataInput;
     idempotencyKey: string;
   }): Promise<{ sessionId: string; psbtBase64: string; intent: IntentV3; tokenId: string }> {
@@ -447,11 +595,15 @@ export class V3AppService {
     await this.requireHealthy();
     const tokenId = computeTokenId({ chainIdentity: this.config.chainIdentity, policyVersion: 3, ticker: canonicalTicker(params.ticker), tokenNonce: Buffer.from(params.nonceHex, "hex") }).toString("hex");
     this.assertCanaryAllowed({ tokenId, walletScript: params.walletScript });
-    const resolved = await resolveFundingUtxos(this.provider, params.funding);
-    for (const f of resolved) {
-      if (f.script.toString("hex") !== params.walletScript) throw new AppError("FUNDING_INPUT_INVALID", "funding input script does not match wallet");
-    }
-    const deployerInputs: ResolvedInput[] = resolved.map((f) => ({ txid: f.txid, vout: f.vout, script: f.script, valueSats: f.valueSats }));
+    // The deploy funds the vault anchor plus the miner fee, nothing else.
+    const { inputs: deployerInputs, minerFeeSats } = await this.resolveFundingAndFee({
+      op: "DEPLOY",
+      walletScript: params.walletScript,
+      candidates: params.funding,
+      targetSats: RESERVE_ANCHOR_SATS,
+      feeRateSatPerVb: params.feeRateSatPerVb,
+      explicitMinerFeeSats: params.minerFeeSats,
+    });
     const result = buildDeployPsbtV3({
       network: btcNetwork(this.config.network),
       identity: { chainIdentity: this.config.chainIdentity, policyVersion: 3, ticker: canonicalTicker(params.ticker), tokenNonce: Buffer.from(params.nonceHex, "hex") },
@@ -460,7 +612,7 @@ export class V3AppService {
       recoveryProfile: this.config.recoveryProfile,
       deployerInputs,
       deployerChangeScript: Buffer.from(params.walletScript, "hex"),
-      minerFeeSats: params.minerFeeSats,
+      minerFeeSats,
     });
     const psbtBase64 = result.psbt.toBase64();
     const digest = unsignedTxDigest(result.psbt);
@@ -490,11 +642,12 @@ export class V3AppService {
         tokenAmountAtoms: 0n,
         grossSats: null,
         protocolFeeSats: null,
-        minerFeeSats: params.minerFeeSats,
+        minerFeeSats,
         netSats: null,
         walletScript: params.walletScript,
         stateHash: null,
         unsignedTxDigest: digest,
+        walletDeltaSats: walletDeltaSats(result.psbt, params.walletScript),
       },
     };
   }
@@ -564,27 +717,46 @@ export class V3AppService {
     walletScript: string;
     walletAddress: string | null;
     funding: FundingCandidate[];
-    minerFeeSats: bigint;
+    /** Preferred: the fee rate the user picked; the server sizes the fee. */
+    feeRateSatPerVb?: bigint;
+    /** Explicit fee, for callers that size the transaction themselves. */
+    minerFeeSats?: bigint;
     idempotencyKey: string;
   }): Promise<{ sessionId: string; psbtBase64: string; intent: IntentV3 }> {
     this.assertMutating();
     await this.requireHealthy();
     this.assertCanaryAllowed({ tokenId: params.tokenId, walletScript: params.walletScript });
-    if (params.minerFeeSats > this.config.maxMinerFeeSats) throw new AppError("TOKEN_AMOUNT_INVALID", "miner fee exceeds cap");
     const backing = await this.loadBacking(params.tokenId);
     if (backing.stateHash !== params.quoteBinding.stateHash || backing.input.txid !== params.quoteBinding.backingOutpoint.txid || backing.input.vout !== params.quoteBinding.backingOutpoint.vout) {
       throw new AppError("QUOTE_STALE", "backing state changed since quote");
     }
-    const resolved = await resolveFundingUtxos(this.provider, params.funding);
-    for (const f of resolved) {
-      if (f.script.toString("hex") !== params.walletScript) throw new AppError("FUNDING_INPUT_INVALID", "funding input script does not match wallet");
-    }
-    const buyerInputs: ResolvedInput[] = resolved.map((f) => ({ txid: f.txid, vout: f.vout, script: f.script, valueSats: f.valueSats }));
     // The advisory crc-20 envelope is ticker-keyed; the canonical view resolves
     // tokens by tokenId, so look the ticker up only when the envelope is on.
     const discoveryTicker = this.config.discoveryEnvelope
       ? (await getV3TokenDetail(this.db, this.config.network, params.tokenId))?.ticker
       : undefined;
+    // What the buyer's own BTC must cover: the curve price, the protocol fee,
+    // and the sats that ride on their new token carrier. The vault input
+    // supplies the existing backing and the successor consumes it, so neither
+    // appears here.
+    const { grossSats: quotedGrossSats } = applyMintV2(backing.state, params.amountAtoms);
+    const quotedBuyFeeSats = deterministicFee(
+      quotedGrossSats,
+      this.config.buyFeeBps,
+      stageScaledFlatSats(
+        backing.state.issuedPublicSupplyAtoms / ATOMS_PER_TOKEN,
+        this.config.buyFeeFlatSatsAtTopStage,
+      ),
+    );
+    const { inputs: buyerInputs, minerFeeSats } = await this.resolveFundingAndFee({
+      op: "BACKING_BUY",
+      walletScript: params.walletScript,
+      candidates: params.funding,
+      targetSats: quotedGrossSats + quotedBuyFeeSats + TOKEN_CARRIER_SATS,
+      discovery: discoveryTicker !== undefined,
+      feeRateSatPerVb: params.feeRateSatPerVb,
+      explicitMinerFeeSats: params.minerFeeSats,
+    });
     const result = buildMintPsbtV3({
       network: btcNetwork(this.config.network),
       tokenId: Buffer.from(params.tokenId, "hex"),
@@ -598,8 +770,9 @@ export class V3AppService {
       buyerCarrierScript: Buffer.from(params.walletScript, "hex"),
       buyerChangeScript: Buffer.from(params.walletScript, "hex"),
       feeScript: this.config.feeScript,
-      minerFeeSats: params.minerFeeSats,
+      minerFeeSats,
       buyFeeBps: this.config.buyFeeBps,
+      buyFeeFlatSatsAtTopStage: this.config.buyFeeFlatSatsAtTopStage,
       discoveryEnvelope: discoveryTicker ? { ticker: discoveryTicker } : undefined,
     });
     const view = this.overlayPendingBacking(
@@ -609,6 +782,7 @@ export class V3AppService {
     );
     const req: TransitionSignRequest = { psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
       recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, buyFeeBps: this.config.buyFeeBps,
+      buyFeeFlatSatsAtTopStage: this.config.buyFeeFlatSatsAtTopStage,
       discoveryTicker };
     const signed = await this.transitionSigner.signMint(req);
     if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
@@ -638,11 +812,12 @@ export class V3AppService {
         tokenAmountAtoms: params.amountAtoms,
         grossSats: result.grossSats,
         protocolFeeSats: result.buyFeeSats,
-        minerFeeSats: params.minerFeeSats,
+        minerFeeSats,
         netSats: null,
         walletScript: params.walletScript,
         stateHash: backing.stateHash,
         unsignedTxDigest: digest,
+        walletDeltaSats: walletDeltaSats(result.psbt, params.walletScript),
       },
     };
   }
@@ -674,6 +849,7 @@ export class V3AppService {
       feeScript: this.config.feeScript,
       maxMinerFeeSats: this.config.maxMinerFeeSats,
       buyFeeBps: this.config.buyFeeBps,
+      buyFeeFlatSatsAtTopStage: this.config.buyFeeFlatSatsAtTopStage,
     });
     if (!("rawTxHex" in validated)) throw new AppError("GUARDIAN_REJECTED", validated.reason);
     const txid = await this.broadcast(validated);
@@ -709,7 +885,10 @@ export class V3AppService {
     amountAtoms: bigint;
     walletScript: string;
     walletAddress: string | null;
-    minerFeeSats: bigint;
+    /** Preferred: the fee rate the user picked; the server sizes the fee. */
+    feeRateSatPerVb?: bigint;
+    /** Explicit fee, for callers that size the transaction themselves. */
+    minerFeeSats?: bigint;
     idempotencyKey: string;
     /** Ordinary BTC utxos the seller offers to pay the miner fee. */
     funding?: FundingCandidate[];
@@ -754,14 +933,22 @@ export class V3AppService {
     // The vault covers the R-delta payout; the seller funds the miner fee from
     // ordinary BTC so the backing never pays it and a single-carrier partial
     // redeem is possible.
-    const funderInputs = params.funding?.length
-      ? await resolveFundingUtxos(this.provider, params.funding)
-      : [];
-    for (const f of funderInputs) {
-      if (f.script.toString("hex") !== params.walletScript) {
-        throw new AppError("FUNDING_INPUT_INVALID", "funding input script does not match wallet");
-      }
-    }
+    //
+    // The vault pays the seller's BTC out of backing, so the seller's own BTC
+    // only has to cover the miner fee and the token-change carrier, less the
+    // sats the spent carriers already bring in. That figure is usually
+    // negative, which is why zero funding inputs is a legitimate answer.
+    const changeCarrierSats = tokenInputTotalAtoms > params.amountAtoms ? TOKEN_CARRIER_SATS : 0n;
+    const carrierSatsIn = BigInt(tokenInputs.length) * TOKEN_CARRIER_SATS;
+    const { inputs: funderInputs, minerFeeSats } = await this.resolveFundingAndFee({
+      op: "REDEEM",
+      walletScript: params.walletScript,
+      candidates: params.funding ?? [],
+      targetSats: changeCarrierSats - carrierSatsIn,
+      tokenInputs: tokenInputs.length,
+      feeRateSatPerVb: params.feeRateSatPerVb,
+      explicitMinerFeeSats: params.minerFeeSats,
+    });
     const result = buildRedeemPsbtV3({
       network: btcNetwork(this.config.network),
       tokenId: Buffer.from(params.tokenId, "hex"),
@@ -776,10 +963,11 @@ export class V3AppService {
       sellerPayoutScript: Buffer.from(params.walletScript, "hex"),
       sellerChangeScript: Buffer.from(params.walletScript, "hex"),
       feeScript: this.config.feeScript,
-      minerFeeSats: params.minerFeeSats,
+      minerFeeSats,
       funderInputs,
       funderChangeScript: Buffer.from(params.walletScript, "hex"),
       redeemFeeBps: this.config.redeemFeeBps,
+      redeemFeeFlatSats: this.config.redeemFeeFlatSats,
     });
     const view = this.overlayPendingBacking(
       await this.loadView(params.tokenId, selected.map((u) => ({ txid: u.txid, vout: u.vout }))),
@@ -787,7 +975,8 @@ export class V3AppService {
       backing,
     );
     const req: TransitionSignRequest = { psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
-      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, redeemFeeBps: this.config.redeemFeeBps };
+      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, redeemFeeBps: this.config.redeemFeeBps,
+      redeemFeeFlatSats: this.config.redeemFeeFlatSats };
     const signed = await this.transitionSigner.signRedeem(req);
     if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
     const psbtBase64 = result.psbt.toBase64();
@@ -816,11 +1005,12 @@ export class V3AppService {
         tokenAmountAtoms: params.amountAtoms,
         grossSats: result.grossSats,
         protocolFeeSats: result.redeemFeeSats,
-        minerFeeSats: params.minerFeeSats,
+        minerFeeSats,
         netSats: result.netSats,
         walletScript: params.walletScript,
         stateHash: backing.stateHash,
         unsignedTxDigest: digest,
+        walletDeltaSats: walletDeltaSats(result.psbt, params.walletScript),
       },
     };
   }
@@ -851,6 +1041,7 @@ export class V3AppService {
       feeScript: this.config.feeScript,
       maxMinerFeeSats: this.config.maxMinerFeeSats,
       redeemFeeBps: this.config.redeemFeeBps,
+      redeemFeeFlatSats: this.config.redeemFeeFlatSats,
     });
     if (!("rawTxHex" in validated)) throw new AppError("GUARDIAN_REJECTED", validated.reason);
     const txid = await this.broadcast(validated);
@@ -867,7 +1058,10 @@ export class V3AppService {
     walletScript: string;
     walletAddress: string | null;
     funding: FundingCandidate[];
-    minerFeeSats: bigint;
+    /** Preferred: the fee rate the user picked; the server sizes the fee. */
+    feeRateSatPerVb?: bigint;
+    /** Explicit fee, for callers that size the transaction themselves. */
+    minerFeeSats?: bigint;
     idempotencyKey: string;
   }): Promise<{ sessionId: string; psbtBase64: string; intent: IntentV3 }> {
     this.assertMutating();
@@ -876,15 +1070,49 @@ export class V3AppService {
     const mine = tokenUtxos.filter((u) => u.tokenId === params.tokenId);
     const total = mine.reduce((s, u) => s + u.amountAtoms, 0n);
     if (total < params.amountAtoms) throw new AppError("TOKEN_AMOUNT_INVALID", "insufficient token balance");
-    const sorted = [...mine].sort((a, b) => (a.amountAtoms !== b.amountAtoms ? (a.amountAtoms < b.amountAtoms ? -1 : 1) : a.txid < b.txid ? -1 : 1));
-    const selected = sorted.slice(0, Math.min(sorted.length, 4));
+    // Largest-first, taking only what the amount needs. This previously sorted
+    // ASCENDING and took the four smallest unconditionally, so the balance
+    // check above could pass on a wallet whose four smallest carriers held less
+    // than the amount — the transfer then went on to build a negative token
+    // change and failed far downstream. Same defect that was fixed in redeem.
+    const sorted = [...mine].sort((a, b) =>
+      a.amountAtoms !== b.amountAtoms ? (a.amountAtoms > b.amountAtoms ? -1 : 1) : a.txid < b.txid ? -1 : 1,
+    );
+    const selected: typeof sorted = [];
+    let runningAtoms = 0n;
+    for (const u of sorted) {
+      if (runningAtoms >= params.amountAtoms) break;
+      if (selected.length >= MAX_TRANSFER_TOKEN_INPUTS) break;
+      selected.push(u);
+      runningAtoms += u.amountAtoms;
+    }
+    if (runningAtoms < params.amountAtoms) {
+      throw new AppError(
+        "TOKEN_AMOUNT_INVALID",
+        `balance is spread across too many outputs: the ${MAX_TRANSFER_TOKEN_INPUTS} largest hold ` +
+          `${runningAtoms} atoms, short of ${params.amountAtoms}. Consolidate with a transfer to ` +
+          `yourself, or send a smaller amount.`,
+      );
+    }
     const tokenInputs: ResolvedInput[] = selected.map((u) => ({ txid: u.txid, vout: u.vout, script: Buffer.from(u.scriptPubKey, "hex"), valueSats: TOKEN_CARRIER_SATS }));
     const tokenInputTotalAtoms = selected.reduce((s, u) => s + u.amountAtoms, 0n);
     const changeAtoms = tokenInputTotalAtoms - params.amountAtoms;
     const tokenOutputs = [{ script: Buffer.from(params.recipientScript, "hex"), amountAtoms: params.amountAtoms }];
     if (changeAtoms > 0n) tokenOutputs.push({ script: Buffer.from(params.walletScript, "hex"), amountAtoms: changeAtoms });
-    const resolved = await resolveFundingUtxos(this.provider, params.funding);
-    const funderInputs: ResolvedInput[] = resolved.map((f) => ({ txid: f.txid, vout: f.vout, script: f.script, valueSats: f.valueSats }));
+    // Carrier outputs cost 1,000 sats each; the carriers being spent bring the
+    // same back in. The wallet's own BTC covers the difference and the fee.
+    const carrierSatsOut = BigInt(tokenOutputs.length) * TOKEN_CARRIER_SATS;
+    const carrierSatsIn = BigInt(tokenInputs.length) * TOKEN_CARRIER_SATS;
+    const { inputs: funderInputs, minerFeeSats } = await this.resolveFundingAndFee({
+      op: "TRANSFER",
+      walletScript: params.walletScript,
+      candidates: params.funding,
+      targetSats: carrierSatsOut - carrierSatsIn,
+      tokenInputs: tokenInputs.length,
+      recipientCarriers: tokenOutputs.length,
+      feeRateSatPerVb: params.feeRateSatPerVb,
+      explicitMinerFeeSats: params.minerFeeSats,
+    });
     const result = buildTransferPsbtV2({
       network: btcNetwork(this.config.network),
       tokenId: Buffer.from(params.tokenId, "hex"),
@@ -894,7 +1122,7 @@ export class V3AppService {
       funderInputs,
       funderChangeScript: Buffer.from(params.walletScript, "hex"),
       btcOutputs: [],
-      minerFeeSats: params.minerFeeSats,
+      minerFeeSats,
     });
     const psbtBase64 = result.psbt.toBase64();
     const digest = unsignedTxDigest(result.psbt);
@@ -922,11 +1150,12 @@ export class V3AppService {
         tokenAmountAtoms: params.amountAtoms,
         grossSats: null,
         protocolFeeSats: null,
-        minerFeeSats: params.minerFeeSats,
+        minerFeeSats,
         netSats: null,
         walletScript: params.walletScript,
         stateHash: null,
         unsignedTxDigest: digest,
+        walletDeltaSats: walletDeltaSats(result.psbt, params.walletScript),
       },
     };
   }
@@ -1072,8 +1301,8 @@ export class V3AppService {
   reserveListing(input: Parameters<MarketService["reserveListing"]>[0]) {
     return this.market.reserveListing(input);
   }
-  buildFillPsbt(fillId: string, minerFeeSats: bigint) {
-    return this.market.buildFillPsbt(fillId, minerFeeSats);
+  buildFillPsbt(fillId: string, fee: { feeRateSatPerVb?: bigint; minerFeeSats?: bigint }) {
+    return this.market.buildFillPsbt(fillId, fee);
   }
   submitBuyerSignature(fillId: string, psbtB64: string) {
     return this.market.submitBuyerSignedPsbt(fillId, psbtB64);

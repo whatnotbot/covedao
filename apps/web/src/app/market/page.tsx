@@ -11,6 +11,7 @@ import { Sparkline } from "@/components/Sparkline";
 import { useSparklines } from "@/lib/use-sparklines";
 import { unitPriceSats } from "@/lib/ohlc";
 import { verifyClientIntent } from "@crclaunch/wallets";
+import { FeePicker, useFeeRates } from "@/components/FeePicker";
 
 interface Listing {
   id: string;
@@ -35,6 +36,7 @@ function MarketContent() {
   const [buying, setBuying] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  const { rates, selected: feeTier, setSelected: setFeeTier, satPerVb } = useFeeRates();
 
   useEffect(() => {
     if (demo) {
@@ -70,7 +72,7 @@ function MarketContent() {
         body: JSON.stringify({ buyerTokenScript: script }),
       });
       const pj = await pr.json();
-      if (!pj.ok) throw new Error(pj.error?.message ?? "reserve prepare failed");
+      if (!pj.ok) throw new Error(errorText(pj));
       const signatureB64 = await signBip322(pj.data.message);
       const rr = await fetch(`/api/v3/market/listings/${listing.listingId}/reserve`, {
         method: "POST",
@@ -78,16 +80,16 @@ function MarketContent() {
         body: JSON.stringify({ buyerTokenScript: script, buyerChangeScript: script, funding, nonceHex: pj.data.reserveNonce, signatureB64 }),
       });
       const rj = await rr.json();
-      if (!rj.ok) throw new Error(rj.error?.message ?? "reserve failed");
+      if (!rj.ok) throw new Error(errorText(rj));
       const fillId = rj.data.fillId;
 
       const br = await fetch(`/api/v3/market/fills/${fillId}/build`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ minerFeeSats: "1000" }),
+        body: JSON.stringify({ feeRateSatPerVb: satPerVb ?? undefined }),
       });
       const bj = await br.json();
-      if (!bj.ok) throw new Error(bj.error?.message ?? "build failed");
+      if (!bj.ok) throw new Error(errorText(bj));
 
       // §M3: independently re-derive the P2P outputs from the user's own input
       // before signing (the server-supplied digest alone is circular).
@@ -100,7 +102,7 @@ function MarketContent() {
         body: JSON.stringify({ signedPsbtBase64: signed }),
       });
       const sj = await sr.json();
-      if (!sj.ok) throw new Error(sj.error?.message ?? "buyer signature failed");
+      if (!sj.ok) throw new Error(errorText(sj));
       setMsg(`Buyer signed — waiting for seller (fill ${fillId.slice(0, 8)})…`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -186,7 +188,7 @@ function MarketContent() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(({ listing: l, unitPrice, tokens }, i) => {
+                {rows.map(({ listing: l, unitPrice }, i) => {
                   const last = lastPrice[l.tokenId] ?? null;
                   const firstOfToken = i === 0 || rows[i - 1]!.listing.tokenId !== l.tokenId;
                   // Below the last trade is the interesting case for a buyer.
@@ -243,13 +245,27 @@ function MarketContent() {
             </button>
             <p className="text-xs text-bone-dim">Required to fill an ask.</p>
           </div>
-        ) : null}
+        ) : (
+          <div className="mt-6 max-w-md border-t border-rule pt-6">
+            <FeePicker
+              rates={rates}
+              selected={feeTier}
+              onSelect={setFeeTier}
+              vsizeHint={rates?.typicalVsize.TRANSFER}
+            />
+          </div>
+        )}
 
         {msg ? <p className="mt-5 text-sm text-verified">{msg}</p> : null}
         {err ? <p className="mt-5 text-sm text-rejected">{err}</p> : null}
       </section>
     </div>
   );
+}
+
+/** The server's own words when it has them; the short copy otherwise. */
+function errorText(j: { error?: { message?: string; detail?: string } }): string {
+  return j.error?.detail || j.error?.message || "Something went wrong.";
 }
 
 function Tile({ value, label }: { value: string; label: string }) {

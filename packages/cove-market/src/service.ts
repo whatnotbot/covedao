@@ -2,7 +2,13 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { eq, and, isNull, inArray, lte, desc } from "drizzle-orm";
 import { schema, type Database, type DbTransaction } from "@crclaunch/db";
-import type { CoreRpcProvider } from "@crclaunch/bitcoin";
+import {
+  estimateVsize,
+  loadFeeRates,
+  resolveMinerFee,
+  FeeError,
+  type CoreRpcProvider,
+} from "@crclaunch/bitcoin";
 import { TOKEN_CARRIER_SATS, type CoveCanonicalView } from "@crclaunch/cove-covenant";
 import { buildTransferPsbtV2, type ResolvedInput } from "@crclaunch/cove-guardian/v3";
 import { loadCanonicalViewSnapshotFromDb } from "@crclaunch/cove-indexer/v3";
@@ -57,7 +63,11 @@ interface SourceResolution {
 }
 
 function btcNetwork(network: MarketConfig["network"]): bitcoin.networks.Network {
-  return network === "regtest" ? bitcoin.networks.regtest : bitcoin.networks.testnet;
+  // Mainnet must not fall through to testnet parameters (signet and testnet
+  // legitimately share them; mainnet does not).
+  if (network === "regtest") return bitcoin.networks.regtest;
+  if (network === "mainnet") return bitcoin.networks.bitcoin;
+  return bitcoin.networks.testnet;
 }
 
 function asBuffer(hex: string): Buffer {
@@ -82,6 +92,13 @@ function listingToV1(row: ListingSelect): ListingV1 {
     nonce: row.nonce,
   };
 }
+
+/**
+ * A P2P fill's OP_RETURN: a wire-v2 TRANSFER with at most two allocations
+ * (the buyer's tokens and the seller's change), plus OP_RETURN and its push
+ * length.
+ */
+const P2P_OP_RETURN_SCRIPT_BYTES = 57;
 
 function fillFundInputs(fill: FillSelect): BuyerFundInput[] {
   const raw = fill.buyerFundInputs as unknown as { txid: string; vout: number; script: string; valueSats: string }[];
@@ -308,8 +325,18 @@ export class MarketService {
     return fillId;
   }
 
-  async buildFillPsbt(fillId: string, minerFeeSats: bigint): Promise<string> {
-    if (minerFeeSats > this.config.maxMinerFeeSats) throw new MarketError("BUYER_FUNDS_INSUFFICIENT", "miner fee exceeds cap");
+  /**
+   * Build the atomic fill PSBT.
+   *
+   * `fee` is a RATE by preference: only this method knows how many inputs the
+   * buyer reserved and therefore how large the transaction will be. A flat sat
+   * amount is still accepted for callers that size their own transaction.
+   */
+  async buildFillPsbt(
+    fillId: string,
+    fee: bigint | { feeRateSatPerVb?: bigint; minerFeeSats?: bigint },
+  ): Promise<string> {
+    const feeInput = typeof fee === "bigint" ? { minerFeeSats: fee } : fee;
     await assertMarketReady({ db: this.db, config: this.config, provider: this.provider });
 
     const fill = await this.loadFill(fillId);
@@ -339,6 +366,39 @@ export class MarketService {
       script: asBuffer(f.script),
       valueSats: f.valueSats,
     }));
+
+    // Size the fee against the transaction that is actually about to exist:
+    // one token-carrier input plus however many UTXOs the buyer reserved, and
+    // every output already decided above. A flat fee here would mean a fill
+    // that either never confirms or overpays by a multiple.
+    const rates = await loadFeeRates(this.provider);
+    const standard = rates.tiers.find((t) => t.key === "standard") ?? rates.tiers[0]!;
+    const vsize = estimateVsize({
+      vaultInputs: 0,
+      p2wpkhInputs: 1 + funderInputs.length,
+      outputScriptBytes: [
+        P2P_OP_RETURN_SCRIPT_BYTES,
+        ...tokenOutputs.map((o) => o.script.length),
+        ...btcOutputs.map((o) => o.script.length),
+        asBuffer(fill.buyerChangeScript).length,
+      ],
+    });
+    let minerFeeSats: bigint;
+    try {
+      minerFeeSats = resolveMinerFee({
+        rateSatPerVb:
+          feeInput.feeRateSatPerVb ??
+          (feeInput.minerFeeSats === undefined ? standard.satPerVb : undefined),
+        explicitSats: feeInput.minerFeeSats,
+        vsize,
+        floorSatPerVb: rates.floorSatPerVb,
+        ceilingSatPerVb: rates.ceilingSatPerVb,
+        maxMinerFeeSats: this.config.maxMinerFeeSats,
+      }).minerFeeSats;
+    } catch (e) {
+      if (e instanceof FeeError) throw new MarketError("BUYER_FUNDS_INSUFFICIENT", e.message);
+      throw e;
+    }
 
     const result = buildTransferPsbtV2({
       network: btcNetwork(this.config.network),

@@ -4,6 +4,21 @@ import { checkRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * The client picks a fee RATE; the server sizes the fee to the transaction it
+ * builds. An explicit `minerFeeSats` is still honoured for callers that size
+ * their own transaction, but there is no longer a flat default: omitting both
+ * makes the server use the live Standard rate.
+ */
+function feeFields(body: Record<string, unknown>) {
+  const rate = bigintField(body, "feeRateSatPerVb", 0n);
+  const explicit = bigintField(body, "minerFeeSats", 0n);
+  return {
+    feeRateSatPerVb: rate > 0n ? rate : undefined,
+    minerFeeSats: rate > 0n || explicit === 0n ? undefined : explicit,
+  };
+}
+
 export async function POST(req: Request) {
   try {
     const limited = checkRateLimit(req, "build-redeem");
@@ -15,7 +30,7 @@ export async function POST(req: Request) {
       amountAtoms: bigintField(body, "amountAtoms", 0n),
       walletScript: strField(body, "walletScript"),
       walletAddress: strField(body, "walletAddress") || null,
-      minerFeeSats: bigintField(body, "minerFeeSats", 1000n),
+      ...feeFields(body),
       // Optional: BTC utxos to pay the miner fee. Without them the fee can only
       // come from token carriers, which caps it at ~1,000 sats each.
       funding: Array.isArray(body.funding) ? (body.funding as { txid: string; vout: number }[]) : undefined,

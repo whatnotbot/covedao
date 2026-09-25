@@ -4,6 +4,21 @@ import { checkRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * The client picks a fee RATE; the server sizes the fee to the transaction it
+ * builds. An explicit `minerFeeSats` is still honoured for callers that size
+ * their own transaction, but there is no longer a flat default: omitting both
+ * makes the server use the live Standard rate.
+ */
+function feeFields(body: Record<string, unknown>) {
+  const rate = bigintField(body, "feeRateSatPerVb", 0n);
+  const explicit = bigintField(body, "minerFeeSats", 0n);
+  return {
+    feeRateSatPerVb: rate > 0n ? rate : undefined,
+    minerFeeSats: rate > 0n || explicit === 0n ? undefined : explicit,
+  };
+}
+
 export async function POST(req: Request) {
   try {
     const limited = checkRateLimit(req, "build-launch");
@@ -17,7 +32,7 @@ export async function POST(req: Request) {
       walletScript: strField(body, "walletScript"),
       walletAddress: strField(body, "walletAddress") || null,
       funding,
-      minerFeeSats: bigintField(body, "minerFeeSats", 1000n),
+      ...feeFields(body),
       metadata: {
         displayName: strField(body, "displayName"),
         description: strField(body, "description"),

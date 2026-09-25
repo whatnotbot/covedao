@@ -3,6 +3,13 @@
 import { useState } from "react";
 import { useWallet } from "@/components/WalletProvider";
 import { verifyClientIntent } from "@crclaunch/wallets";
+import { FeePicker, useFeeRates } from "@/components/FeePicker";
+import { fmtInt } from "@/lib/format";
+
+/** The server's own words when it has them; the short copy otherwise. */
+function errorText(j: { error?: { message?: string; detail?: string } }): string {
+  return j.error?.detail || j.error?.message || "Something went wrong.";
+}
 
 interface Prepared {
   tokenId: string;
@@ -22,7 +29,9 @@ export default function LaunchPage() {
   const [description, setDescription] = useState("A deterministic backing test token.");
   const [website, setWebsite] = useState("");
   const [xUrl, setXUrl] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
   const [prepared, setPrepared] = useState<Prepared | null>(null);
+  const { rates, selected: feeTier, setSelected: setFeeTier, satPerVb } = useFeeRates();
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [tokenId, setTokenId] = useState("");
@@ -35,10 +44,10 @@ export default function LaunchPage() {
       const r = await fetch("/api/v3/launch/prepare", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ticker, displayName: name, description, websiteUrl: website, xUrl }),
+        body: JSON.stringify({ ticker, displayName: name, description, websiteUrl: website, xUrl, imageUrl }),
       });
       const j = await r.json();
-      if (!j.ok) throw new Error(j.error?.message ?? "prepare failed");
+      if (!j.ok) throw new Error(errorText(j));
       setPrepared(j.data);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -58,22 +67,22 @@ export default function LaunchPage() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          network: "regtest",
           ticker: prepared.ticker,
           nonceHex: prepared.nonceHex,
           walletScript: script,
           walletAddress: address,
           funding,
-          minerFeeSats: "1000",
+          feeRateSatPerVb: satPerVb ?? undefined,
           displayName: name,
           description,
           websiteUrl: website,
           xUrl,
+          imageUrl,
           idempotencyKey: `launch-${prepared.tokenId}`,
         }),
       });
       const bj = await build.json();
-      if (!bj.ok) throw new Error(bj.error?.message ?? "build failed");
+      if (!bj.ok) throw new Error(errorText(bj));
       // Client-side intent verification before opening the wallet.
       verifyClientIntent(bj.data.psbtBase64, bj.data.intent);
       setStatus("Signing…");
@@ -84,7 +93,7 @@ export default function LaunchPage() {
         body: JSON.stringify({ sessionId: bj.data.sessionId, signedPsbtBase64: signed }),
       });
       const sj = await submit.json();
-      if (!sj.ok) throw new Error(sj.error?.message ?? "submit failed");
+      if (!sj.ok) throw new Error(errorText(sj));
       setTokenId(prepared.tokenId);
       setStatus(`Broadcast ${sj.data.txid.slice(0, 16)}…`);
     } catch (e) {
@@ -108,6 +117,22 @@ export default function LaunchPage() {
         <Field label="Description" value={description} onChange={setDescription} />
         <Field label="Website (https)" value={website} onChange={setWebsite} />
         <Field label="X (https)" value={xUrl} onChange={setXUrl} />
+        <Field label="Image URL (https)" value={imageUrl} onChange={setImageUrl} />
+        {imageUrl ? (
+          <div className="flex items-center gap-3 border border-rule bg-ink-2 px-4 py-3">
+            <img
+              src={imageUrl}
+              alt=""
+              className="h-12 w-12 shrink-0 border border-rule object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+            <span className="text-xs text-bone-dim">
+              This is how the token image will appear. It is metadata, not chain state.
+            </span>
+          </div>
+        ) : null}
       </div>
 
       {!prepared ? (
@@ -120,10 +145,19 @@ export default function LaunchPage() {
           <Row k="tokenId" v={<span className="break-all font-mono text-xs">{prepared.tokenId}</span>} />
           <Row k="Ticker" v={`$${prepared.ticker}`} />
           <Row k="Policy" v={`V${prepared.policyVersion}`} />
-          <Row k="Total supply" v="840,000,000 tokens" />
-          <Row k="Creator allocation" v="0 tokens" />
+          <Row k="Total supply" v={`${fmtInt(BigInt(prepared.publicCapAtoms) / 100_000_000n)} tokens`} />
+          <Row k="Held back for the team" v="0 tokens" />
+          <Row k="Sold on the curve" v={`${fmtInt(BigInt(prepared.publicSupplyAtoms) / 100_000_000n)} tokens`} />
           <Row k="Backing curve" v={prepared.curve} />
-          <Row k="Vault anchor" v={`${prepared.vaultAnchorSats} sats`} />
+          <Row k="Vault anchor" v={`${fmtInt(prepared.vaultAnchorSats)} sats`} />
+          <div className="mt-5">
+            <FeePicker
+              rates={rates}
+              selected={feeTier}
+              onSelect={setFeeTier}
+              vsizeHint={rates?.typicalVsize.DEPLOY}
+            />
+          </div>
           <div className="mt-4">
             {!connected ? (
               <button onClick={() => void connect()} className="w-full bg-signal px-6 py-3 text-bone hover:bg-[#F0A253]">

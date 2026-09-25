@@ -43,6 +43,14 @@ export interface TransitionSignRequest {
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
   redeemFeeBps?: bigint;
+  /**
+   * Flat fee components. These MUST be forwarded whenever the caller's schedule
+   * differs from COVE_FEE_CONFIG: the builder and this validator each fall back
+   * to the development default independently, so an unforwarded value makes the
+   * two disagree and every transition is rejected.
+   */
+  buyFeeFlatSatsAtTopStage?: bigint;
+  redeemFeeFlatSats?: bigint;
   /** Ticker the advisory crc-20 discovery envelope must carry, if present (§D1). */
   discoveryTicker?: string;
 }

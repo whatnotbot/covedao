@@ -166,7 +166,6 @@ export function TokenChart({
       chartRef.current = null;
     };
     // The instance is built once; data changes go through the loader below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticker]);
 
   // Re-run the loader whenever the interval (and therefore the series) changes.

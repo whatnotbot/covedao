@@ -90,7 +90,13 @@ test("E2E-002 backing buy: Alice buys 84M from Cove Backing", async ({ browser }
   await page.goto(`${BASE}/token/${aliceTokenId}`);
   await page.getByRole("button", { name: /connect wallet/i }).click();
   await page.getByLabel(/Amount . display tokens/i).fill("84000000");
-  await page.getByRole("button", { name: /buy from backing/i }).click();
+  // Two steps on purpose: the price, the protocol fee and the network fee are
+  // on screen before anything is built or signed.
+  await page.getByRole("button", { name: /review purchase/i }).click();
+  await expect(page.getByText(/you are buying/i)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Curve price", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^you pay$/i)).toBeVisible();
+  await page.getByRole("button", { name: /confirm . sign/i }).click();
   await expect(page.getByText(/buy broadcast/i).first()).toBeVisible({ timeout: 60_000 });
   await mineAndWait(1);
 
@@ -124,7 +130,10 @@ test("E2E-004 redeem: Bob instant-sells to Cove Backing", async ({ browser }) =>
   await page.getByRole("button", { name: /connect wallet/i }).click();
   await page.getByRole("button", { name: "Sell", exact: true }).click();
   await page.getByLabel(/Amount . display tokens/i).fill("60000000");
-  await page.getByRole("button", { name: /redeem to backing/i }).click();
+  await page.getByRole("button", { name: /review sale/i }).click();
+  await expect(page.getByText(/you are selling/i)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^you receive$/i)).toBeVisible();
+  await page.getByRole("button", { name: /confirm . sign/i }).click();
   await expect(page.getByText(/redeem broadcast/i).first()).toBeVisible({ timeout: 60_000 });
   await mineAndWait(1);
 

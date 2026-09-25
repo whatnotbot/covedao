@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { ECPairFactory } from "ecpair";
+import { encodeMintV2, encodeRedeemV2 } from "@crclaunch/cove-wire/codec-v2";
 import { verifyClientIntent, unsignedTxDigestHex, type ClientIntent } from "./cove-intent.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
@@ -14,18 +15,58 @@ function scriptFor(byte: number): Buffer {
 
 const walletScript = scriptFor(0x49);
 const attackerScript = scriptFor(0x59);
+const feeScript = scriptFor(0x69);
+const vaultScript = Buffer.concat([Buffer.from([0x51, 0x20]), Buffer.alloc(32, 0x11)]);
 
-function intentFor(psbt: bitcoin.Psbt, overrides: Partial<ClientIntent> = {}): ClientIntent {
+const TOKEN_ID = Buffer.alloc(32, 0xab);
+const TOKEN_ID_HEX = TOKEN_ID.toString("hex");
+const AMOUNT_ATOMS = 4_200_000_000_000_000n;
+
+function opReturn(payload: Buffer): Buffer {
+  return Buffer.concat([Buffer.from([0x6a, payload.length]), payload]);
+}
+
+// ── a realistic REDEEM ──────────────────────────────────────────────────────
+// vault in 110,000 (10,000 anchor + 100,000 backing) + one 1,000-sat carrier.
+// gross 21,000, protocol fee 210, payout 20,790, miner fee 1,000.
+const REDEEM = {
+  grossSats: 21_000n,
+  protocolFeeSats: 210n,
+  netSats: 20_790n,
+  minerFeeSats: 1_000n,
+};
+
+function buildRedeemPsbt(
+  opts: { payoutScript?: Buffer; envelopeAmount?: bigint; omitEnvelope?: boolean } = {},
+): bitcoin.Psbt {
+  const psbt = new bitcoin.Psbt({ network: bitcoin.networks.regtest });
+  psbt.addInput({ hash: "22".repeat(32), index: 0, witnessUtxo: { script: vaultScript, value: 110_000 } });
+  psbt.addInput({ hash: "33".repeat(32), index: 0, witnessUtxo: { script: walletScript, value: 1_000 } });
+  if (!opts.omitEnvelope) {
+    const wire = encodeRedeemV2({
+      tokenId: TOKEN_ID,
+      redeemAmount: opts.envelopeAmount ?? AMOUNT_ATOMS,
+      changeAllocations: [],
+    });
+    psbt.addOutput({ script: opReturn(wire), value: 0 });
+  }
+  psbt.addOutput({ script: vaultScript, value: 89_000 });
+  psbt.addOutput({ script: opts.payoutScript ?? walletScript, value: Number(REDEEM.netSats) });
+  psbt.addOutput({ script: feeScript, value: Number(REDEEM.protocolFeeSats) });
+  return psbt;
+}
+
+function redeemIntent(psbt: bitcoin.Psbt, overrides: Partial<ClientIntent> = {}): ClientIntent {
   const totalIn = psbt.data.inputs.reduce((s, i) => s + BigInt(i.witnessUtxo?.value ?? 0), 0n);
   const totalOut = psbt.txOutputs.reduce((s, o) => s + BigInt(o.value), 0n);
   return {
     operation: "REDEEM",
-    tokenId: "ab".repeat(32),
-    tokenAmountAtoms: "4200000000000000",
-    grossSats: "21000",
-    protocolFeeSats: "210",
+    tokenId: TOKEN_ID_HEX,
+    tokenAmountAtoms: AMOUNT_ATOMS.toString(),
+    grossSats: REDEEM.grossSats.toString(),
+    protocolFeeSats: REDEEM.protocolFeeSats.toString(),
     minerFeeSats: (totalIn - totalOut).toString(),
-    netSats: "20790",
+    netSats: REDEEM.netSats.toString(),
     walletScript: walletScript.toString("hex"),
     stateHash: "cd".repeat(32),
     unsignedTxDigest: unsignedTxDigestHex(psbt),
@@ -33,37 +74,170 @@ function intentFor(psbt: bitcoin.Psbt, overrides: Partial<ClientIntent> = {}): C
   };
 }
 
-function buildPsbt(payoutScript: Buffer): bitcoin.Psbt {
+// ── a realistic BACKING_BUY ─────────────────────────────────────────────────
+// buyer pays 30,000 price + 2,300 protocol fee + 1,000 miner fee, and gets a
+// 1,000-sat carrier back. Funding input 40,000, change 5,700.
+const BUY = { grossSats: 30_000n, protocolFeeSats: 2_300n, minerFeeSats: 1_000n };
+
+function buildMintPsbt(
+  opts: {
+    carrierScript?: Buffer;
+    envelopeAmount?: bigint;
+    recipientVout?: number;
+    vaultOutSats?: number;
+    changeSats?: number;
+  } = {},
+): bitcoin.Psbt {
+  const wire = encodeMintV2({
+    tokenId: TOKEN_ID,
+    amount: opts.envelopeAmount ?? AMOUNT_ATOMS,
+    recipientVout: opts.recipientVout ?? 2,
+  });
   const psbt = new bitcoin.Psbt({ network: bitcoin.networks.regtest });
-  psbt.addInput({ hash: "22".repeat(32), index: 0, witnessUtxo: { script: walletScript, value: 50_000 } });
-  psbt.addOutput({ script: payoutScript, value: 20_790 });
-  psbt.addOutput({ script: attackerScript, value: 210 });
+  psbt.addInput({ hash: "44".repeat(32), index: 0, witnessUtxo: { script: vaultScript, value: 10_000 } });
+  psbt.addInput({ hash: "55".repeat(32), index: 0, witnessUtxo: { script: walletScript, value: 40_000 } });
+  psbt.addOutput({ script: opReturn(wire), value: 0 }); // 0
+  psbt.addOutput({ script: vaultScript, value: opts.vaultOutSats ?? 40_000 }); // 1: anchor + 30,000 backing
+  psbt.addOutput({ script: opts.carrierScript ?? walletScript, value: 1_000 }); // 2: carrier
+  psbt.addOutput({ script: feeScript, value: Number(BUY.protocolFeeSats) }); // 3
+  psbt.addOutput({ script: walletScript, value: opts.changeSats ?? 5_700 }); // 4: change
   return psbt;
 }
 
-describe("verifyClientIntent output re-derivation (§M3)", () => {
-  it("accepts a PSBT whose digest AND outputs match the intent", () => {
-    const psbt = buildPsbt(walletScript);
-    expect(() => verifyClientIntent(psbt.toBase64(), intentFor(psbt))).not.toThrow();
+function buyIntent(psbt: bitcoin.Psbt, overrides: Partial<ClientIntent> = {}): ClientIntent {
+  const totalIn = psbt.data.inputs.reduce((s, i) => s + BigInt(i.witnessUtxo?.value ?? 0), 0n);
+  const totalOut = psbt.txOutputs.reduce((s, o) => s + BigInt(o.value), 0n);
+  return {
+    operation: "BACKING_BUY",
+    tokenId: TOKEN_ID_HEX,
+    tokenAmountAtoms: AMOUNT_ATOMS.toString(),
+    grossSats: BUY.grossSats.toString(),
+    protocolFeeSats: BUY.protocolFeeSats.toString(),
+    minerFeeSats: (totalIn - totalOut).toString(),
+    netSats: null,
+    walletScript: walletScript.toString("hex"),
+    stateHash: "cd".repeat(32),
+    unsignedTxDigest: unsignedTxDigestHex(psbt),
+    ...overrides,
+  };
+}
+
+describe("verifyClientIntent — BTC re-derivation (§M3)", () => {
+  it("accepts a redeem whose PSBT matches the intent", () => {
+    const psbt = buildRedeemPsbt();
+    const result = verifyClientIntent(psbt.toBase64(), redeemIntent(psbt));
+    // Payout less the miner fee, less the carrier that was spent and not returned.
+    expect(result.walletDeltaSats).toBe(REDEEM.netSats - REDEEM.minerFeeSats);
   });
 
-  it("rejects a hostile PSBT whose digest matches but payout is redirected to an attacker", () => {
-    const psbt = buildPsbt(attackerScript); // payout to attacker; digest still matches the (server-supplied) intent
-    expect(() => verifyClientIntent(psbt.toBase64(), intentFor(psbt))).toThrow(/payout does not go to the wallet/);
+  it("rejects a redeem whose payout is redirected to an attacker", () => {
+    const psbt = buildRedeemPsbt({ payoutScript: attackerScript });
+    expect(() => verifyClientIntent(psbt.toBase64(), redeemIntent(psbt))).toThrow(
+      /CLIENT_INTENT_MISMATCH/,
+    );
   });
 
-  it("rejects a hostile PSBT whose digest matches but the miner fee is inflated", () => {
-    const psbt = buildPsbt(walletScript);
-    // Server quotes minerFeeSats lower than the actual fee (hidden output).
-    expect(() => verifyClientIntent(psbt.toBase64(), intentFor(psbt, { minerFeeSats: "0" }))).toThrow(/miner fee/);
+  it("rejects an understated miner fee", () => {
+    const psbt = buildRedeemPsbt();
+    expect(() =>
+      verifyClientIntent(psbt.toBase64(), redeemIntent(psbt, { minerFeeSats: "0" })),
+    ).toThrow(/miner fee/);
   });
 
-  it("rejects a hostile PSBT whose digest matches but the protocol fee output is missing", () => {
+  it("rejects a missing protocol fee output", () => {
     const psbt = new bitcoin.Psbt({ network: bitcoin.networks.regtest });
     psbt.addInput({ hash: "22".repeat(32), index: 0, witnessUtxo: { script: walletScript, value: 50_000 } });
-    psbt.addOutput({ script: walletScript, value: 20_790 }); // no fee output
-    const totalIn = 50_000n;
-    const totalOut = 20_790n;
-    expect(() => verifyClientIntent(psbt.toBase64(), intentFor(psbt, { minerFeeSats: (totalIn - totalOut).toString(), protocolFeeSats: "210" }))).toThrow(/protocol fee output missing/);
+    psbt.addOutput({ script: walletScript, value: 20_790 });
+    expect(() =>
+      verifyClientIntent(
+        psbt.toBase64(),
+        redeemIntent(psbt, { minerFeeSats: "29210", protocolFeeSats: "210" }),
+      ),
+    ).toThrow(/protocol fee output missing/);
+  });
+
+  it("accepts a buy whose PSBT matches the intent", () => {
+    const psbt = buildMintPsbt();
+    const result = verifyClientIntent(psbt.toBase64(), buyIntent(psbt));
+    expect(result.walletDeltaSats).toBe(-(BUY.grossSats + BUY.protocolFeeSats + BUY.minerFeeSats));
+  });
+
+  it("rejects a buy that quietly costs more than the price it showed", () => {
+    // Same miner fee, same protocol fee, same token amount. The vault simply
+    // takes 5,000 sats more than the quoted price and the change shrinks to
+    // match, so nothing but the balance check can catch it.
+    const psbt = buildMintPsbt({ vaultOutSats: 45_000, changeSats: 700 });
+    expect(() => verifyClientIntent(psbt.toBase64(), buyIntent(psbt))).toThrow(
+      /buying costs 38300 sats, not the 33300/,
+    );
+  });
+
+  it("rejects a stated wallet delta that does not match the transaction", () => {
+    const psbt = buildMintPsbt();
+    expect(() =>
+      verifyClientIntent(psbt.toBase64(), buyIntent(psbt, { walletDeltaSats: "-1" })),
+    ).toThrow(/wallet balance changes by/);
+  });
+});
+
+describe("verifyClientIntent — token delivery (§M3)", () => {
+  it("rejects a buy that mints fewer tokens than the user asked for", () => {
+    // Every satoshi is correct. Only the envelope is short.
+    const psbt = buildMintPsbt({ envelopeAmount: 1n });
+    expect(() => verifyClientIntent(psbt.toBase64(), buyIntent(psbt))).toThrow(
+      /mints 1 atoms, not the 4200000000000000/,
+    );
+  });
+
+  it("rejects a buy whose carrier output is handed to someone else", () => {
+    // Sending the carrier elsewhere cannot be hidden: it necessarily breaks
+    // either the balance identity or the miner fee, whichever the attacker
+    // chooses to leave alone. Both are refusals, so assert the refusal itself.
+    const psbt = buildMintPsbt({ carrierScript: attackerScript });
+    expect(() => verifyClientIntent(psbt.toBase64(), buyIntent(psbt))).toThrow(
+      /CLIENT_INTENT_MISMATCH/,
+    );
+  });
+
+  it("rejects a buy whose envelope points the tokens at another output", () => {
+    // recipientVout 3 is the protocol fee output, not the buyer's carrier.
+    const psbt = buildMintPsbt({ recipientVout: 3 });
+    expect(() => verifyClientIntent(psbt.toBase64(), buyIntent(psbt))).toThrow(
+      /output 3, which is not your wallet/,
+    );
+  });
+
+  it("rejects a buy for a different token than the one on screen", () => {
+    const psbt = buildMintPsbt();
+    expect(() =>
+      verifyClientIntent(psbt.toBase64(), buyIntent(psbt, { tokenId: "ef".repeat(32) })),
+    ).toThrow(/moves token/);
+  });
+
+  it("rejects a redeem that burns more tokens than the user asked for", () => {
+    const psbt = buildRedeemPsbt({ envelopeAmount: AMOUNT_ATOMS * 2n });
+    expect(() => verifyClientIntent(psbt.toBase64(), redeemIntent(psbt))).toThrow(/redeems/);
+  });
+
+  it("refuses a Cove-magic envelope it cannot parse, instead of ignoring it", () => {
+    // A corrupted or future-version envelope must stop the signature. Skipping
+    // past an unreadable Cove payload is how an unchecked transaction gets
+    // signed — the browser hit exactly this when Buffer was missing.
+    const psbt = new bitcoin.Psbt({ network: bitcoin.networks.regtest });
+    psbt.addInput({ hash: "22".repeat(32), index: 0, witnessUtxo: { script: vaultScript, value: 110_000 } });
+    psbt.addInput({ hash: "33".repeat(32), index: 0, witnessUtxo: { script: walletScript, value: 1_000 } });
+    // "CV" magic, version 9 — right family, unreadable content.
+    psbt.addOutput({ script: opReturn(Buffer.from("4356090300000000", "hex")), value: 0 });
+    psbt.addOutput({ script: vaultScript, value: 89_000 });
+    psbt.addOutput({ script: walletScript, value: Number(REDEEM.netSats) });
+    psbt.addOutput({ script: feeScript, value: Number(REDEEM.protocolFeeSats) });
+    expect(() => verifyClientIntent(psbt.toBase64(), redeemIntent(psbt))).toThrow(/unreadable/);
+  });
+
+  it("rejects a token-moving transaction with no Cove envelope at all", () => {
+    const psbt = buildRedeemPsbt({ omitEnvelope: true });
+    expect(() => verifyClientIntent(psbt.toBase64(), redeemIntent(psbt))).toThrow(
+      /no Cove envelope/,
+    );
   });
 });

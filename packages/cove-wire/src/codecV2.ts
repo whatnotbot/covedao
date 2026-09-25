@@ -6,7 +6,13 @@ import {
   OP_REDEEM,
   OP_TRANSFER,
 } from "./opcodes.js";
-import { canonicalTicker } from "./tokenId.js";
+import { canonicalTicker } from "./ticker.js";
+
+// Re-exported so this module is a COMPLETE browser-safe surface. A consumer
+// that imports decodeV2 from here must be able to import the opcodes it
+// returns from the same place; importing them from the package index instead
+// drags in node:crypto and cannot be bundled.
+export { COVE_WIRE_MAGIC, OP_DEPLOY, OP_MINT, OP_REDEEM, OP_TRANSFER, canonicalTicker };
 
 /**
  * Production Cove wire v2 (§2). Header: magic "CV" (2B) || version 0x02 (1B) ||

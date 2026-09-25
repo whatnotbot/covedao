@@ -11,7 +11,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ fillId:
     const { app } = assertV3Enabled();
     const { fillId } = await params;
     const body = await readJson(req);
-    const psbtBase64 = await app.buildFillPsbt(fillId, bigintField(body, "minerFeeSats", 1000n));
+    const rate = bigintField(body, "feeRateSatPerVb", 0n);
+    const explicit = bigintField(body, "minerFeeSats", 0n);
+    const psbtBase64 = await app.buildFillPsbt(fillId, {
+      feeRateSatPerVb: rate > 0n ? rate : undefined,
+      minerFeeSats: rate > 0n || explicit === 0n ? undefined : explicit,
+    });
     // §M3: return a client-verifiable intent so the buyer can re-derive the P2P
     // outputs before signing (the digest alone is server-supplied and circular).
     const fill = (await app.getFill(fillId))[0];

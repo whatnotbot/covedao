@@ -81,7 +81,6 @@ export function useSparklines(subjects: SparklineSubject[], demo: boolean): Spar
       cancelled = true;
     };
     // `key` stands in for the token set; `subjects` is rebuilt every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, demo]);
 
   return { series, lastPrice, loading };

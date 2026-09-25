@@ -35,7 +35,7 @@ import {
   TOKEN_CARRIER_SATS,
   type OutPoint,
 } from "@crclaunch/cove-covenant";
-import { CHAIN_BITCOIN_SIGNET, COVE_POLICY_V3, computeTokenId } from "@crclaunch/cove-wire";
+import { CHAIN_BITCOIN_SIGNET, COVE_POLICY_V3 } from "@crclaunch/cove-wire";
 import {
   buildDeployPsbtV3,
   buildMintPsbtV3,

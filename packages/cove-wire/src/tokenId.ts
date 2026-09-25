@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { canonicalTicker } from "./ticker.js";
+
+export { canonicalTicker };
 
 /**
  * Precomputable, domain-separated Cove token identity (§4).
@@ -35,13 +38,6 @@ export interface TokenIdentityInput {
   ticker: string;
   /** 32 random bytes committed in DEPLOY wire data. */
   tokenNonce: Buffer;
-}
-
-export function canonicalTicker(ticker: string): string {
-  if (!/^[A-Za-z][A-Za-z0-9]{0,15}$/.test(ticker)) {
-    throw new Error("ticker must be 1..16 alphanumeric, starting with a letter");
-  }
-  return ticker.toUpperCase();
 }
 
 export function computeTokenId(input: TokenIdentityInput): Buffer {

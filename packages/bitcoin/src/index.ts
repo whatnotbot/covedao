@@ -49,3 +49,23 @@ export {
   type SignPsbtOutput,
 } from "./signer.js";
 export { EsploraUtxoProvider, EsploraChainProvider } from "./esplora.js";
+export {
+  estimateVsize,
+  loadFeeRates,
+  resolveMinerFee,
+  outputVbytes,
+  FeeError,
+  SCRIPT_BYTES_P2TR,
+  VB_TX_OVERHEAD,
+  VB_INPUT_P2WPKH,
+  VB_INPUT_P2TR_KEYPATH,
+  VB_INPUT_VAULT,
+  ABSOLUTE_FLOOR_SAT_PER_VB,
+  ABSOLUTE_CEILING_SAT_PER_VB,
+  type CoveTxShape,
+  type FeeRates,
+  type FeeTier,
+  type FeeTierKey,
+  type ResolveMinerFeeInput,
+  type ResolvedMinerFee,
+} from "./fees.js";

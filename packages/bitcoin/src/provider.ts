@@ -45,6 +45,10 @@ export interface BitcoinChainProvider {
   broadcastTransaction(hex: string): Promise<string>;
   testMempoolAccept(hex: string, maxFeeRateSatVb?: bigint): Promise<{ allowed: boolean; rejectReason?: string }>;
   estimateFeeRate(): Promise<bigint>;
+  /** Fee rate for an explicit confirmation target, or null when unknown. */
+  estimateFeeRateAt(blocks: number): Promise<bigint | null>;
+  /** The node's current minimum relay fee, in sat/vB. */
+  getMempoolMinFeeSatPerVb(): Promise<bigint>;
 }
 
 interface RpcConfig {
@@ -249,5 +253,44 @@ export class CoreRpcProvider implements BitcoinChainProvider {
       return this.cfg.maxFeeRateSatVb;
     }
     return rate;
+  }
+
+  /**
+   * `estimatesmartfee` for an explicit confirmation target, in sat/vB.
+   *
+   * Returns null when the node has no estimate — a fresh regtest chain, or a
+   * node that has not seen enough blocks. A null must NOT be silently turned
+   * into a low number here: the caller decides the fallback, because only the
+   * caller knows whether guessing is acceptable.
+   */
+  async estimateFeeRateAt(blocks: number): Promise<bigint | null> {
+    const res = await this.call<{ feerate?: number; errors?: string[] }>("estimatesmartfee", [
+      blocks,
+    ]);
+    const btcPerKvb = res?.feerate;
+    if (typeof btcPerKvb !== "number" || !Number.isFinite(btcPerKvb) || btcPerKvb <= 0) return null;
+    const rate = btcPerKvbToSatPerVb(btcPerKvb);
+    if (this.cfg.maxFeeRateSatVb && rate > this.cfg.maxFeeRateSatVb) {
+      return this.cfg.maxFeeRateSatVb;
+    }
+    return rate;
+  }
+
+  /**
+   * The node's current minimum relay fee in sat/vB (`getmempoolinfo.mempoolminfee`).
+   *
+   * This rises above the 1 sat/vB default once the mempool fills and starts
+   * evicting. A transaction below it is not "slow" — it is refused outright,
+   * so it is the hard floor every build must clear.
+   */
+  async getMempoolMinFeeSatPerVb(): Promise<bigint> {
+    const info = await this.call<{ mempoolminfee?: number; minrelaytxfee?: number }>(
+      "getmempoolinfo",
+    );
+    const btcPerKvb = Math.max(info?.mempoolminfee ?? 0, info?.minrelaytxfee ?? 0);
+    if (!Number.isFinite(btcPerKvb) || btcPerKvb <= 0) return 1n;
+    // Round UP: a truncated floor would let a transaction through that the node
+    // then refuses.
+    return BigInt(Math.max(1, Math.ceil(btcPerKvb * 100_000)));
   }
 }

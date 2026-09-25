@@ -190,7 +190,7 @@ function ExploreContent() {
           <div className="flex items-baseline justify-between">
             <p className="eyebrow">Graduated</p>
             <span className="text-label uppercase tracking-label text-bone-dim">
-              Full 840M curve minted
+              Full 1B curve minted
             </span>
           </div>
           <div

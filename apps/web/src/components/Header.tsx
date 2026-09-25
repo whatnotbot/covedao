@@ -14,7 +14,7 @@ const nav = [
 
 export function Header() {
   const pathname = usePathname();
-  const { connected, address, connect } = useWallet();
+  const { connected, address, adapterId, connect, disconnect } = useWallet();
 
   return (
     <header className="sticky top-0 z-40 border-b border-rule bg-ink/95 backdrop-blur">
@@ -45,12 +45,17 @@ export function Header() {
           })}
 
           {connected ? (
-            <span
-              className="ml-3 hidden border border-rule px-2.5 py-1.5 text-label text-bone-dim sm:inline"
-              title={address}
+            <button
+              onClick={disconnect}
+              title={`${address} — click to disconnect`}
+              className="group/w ml-3 hidden border border-rule px-2.5 py-1.5 text-label text-bone-dim transition-colors hover:border-rejected/40 hover:text-rejected sm:inline"
             >
-              {address.slice(0, 6)}…{address.slice(-4)}
-            </span>
+              <span className="group-hover/w:hidden">
+                {adapterId ? `${adapterId} · ` : ""}
+                {address.slice(0, 6)}…{address.slice(-4)}
+              </span>
+              <span className="hidden group-hover/w:inline">Disconnect</span>
+            </button>
           ) : (
             <button onClick={() => void connect()} className="btn ml-3 px-3 py-1.5 text-label">
               Connect

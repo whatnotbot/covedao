@@ -19,7 +19,7 @@ function WalletContent() {
   const searchParams = useSearchParams();
   // Client-side design-preview path: no API calls, no writes.
   const demo = searchParams.get("demo") === "1";
-  const { connected, address, script, connect, signPsbt, signBip322 } = useWallet();
+  const { connected, address, ordinalsAddress, script, connect, signPsbt, signBip322 } = useWallet();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [msg, setMsg] = useState("");
@@ -43,7 +43,9 @@ function WalletContent() {
       setLoaded(true);
       return;
     }
-    const r = await fetch(`/api/v3/wallet/${address}/portfolio`).then((r) => r.json());
+    // Holdings sit on the ordinals address; a wallet with one address for
+    // everything falls back to it.
+    const r = await fetch(`/api/v3/wallet/${ordinalsAddress || address}/portfolio`).then((r) => r.json());
     if (r.ok) setPortfolio(r.data);
     setLoaded(true);
   }

@@ -44,7 +44,7 @@ function TokenContent() {
   // Client-side render path for design review. Never calls the API, never writes.
   const demo = search.get("demo") === "1";
   const tokenId = params.tokenId;
-  const { connected, address, script, connect, signPsbt, signBip322, getUtxos } = useWallet();
+  const { connected, address, ordinalsAddress, walletFields, connect, signPsbt, signBip322, getUtxos } = useWallet();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState<"buy" | "sell" | "transfer" | "list">("buy");
@@ -134,8 +134,7 @@ function TokenContent() {
                 },
               }
             : {}),
-          walletScript: script,
-          walletAddress: address,
+          ...walletFields(),
           funding,
           feeRateSatPerVb: satPerVb ?? undefined,
           idempotencyKey: `${review.kind}-${tokenId}-${Date.now()}`,
@@ -178,8 +177,7 @@ function TokenContent() {
           tokenId,
           amountAtoms: displayTokensToAtoms(amount),
           recipientScript: recipient,
-          walletScript: script,
-          walletAddress: address,
+          ...walletFields(),
           funding,
           feeRateSatPerVb: satPerVb ?? undefined,
           idempotencyKey: `transfer-${tokenId}-${Date.now()}`,
@@ -211,7 +209,9 @@ function TokenContent() {
     setBusy(true);
     try {
       // list from the wallet's first token UTXO for this token (simple single-UTXO path)
-      const pf = await fetch(`/api/v3/wallet/${address}/portfolio`).then((r) => r.json());
+      // Tokens live on the ordinals address, which in most wallets is not the
+      // one holding BTC.
+      const pf = await fetch(`/api/v3/wallet/${ordinalsAddress || address}/portfolio`).then((r) => r.json());
       const utxo = pf.data?.tokenUtxos?.find((u: { tokenId: string }) => u.tokenId === tokenId);
       if (!utxo) throw new Error("No token UTXO to list");
       const pr = await fetch("/api/v3/market/listings/prepare", {
@@ -224,7 +224,7 @@ function TokenContent() {
           amountAtoms: amount,
           totalPriceSats: price,
           expiryBlocks: listingBlocks,
-          walletScript: script,
+          ...walletFields(),
         }),
       });
       const pj = await pr.json();

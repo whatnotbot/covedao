@@ -31,7 +31,7 @@ function MarketContent() {
   const searchParams = useSearchParams();
   // Client-side design-preview path: no API calls, no writes.
   const demo = searchParams.get("demo") === "1";
-  const { connected, script, connect, signPsbt, signBip322, getUtxos } = useWallet();
+  const { connected, script, ordinalsScript, connect, signPsbt, signBip322, getUtxos } = useWallet();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [buying, setBuying] = useState<string | null>(null);
@@ -70,7 +70,7 @@ function MarketContent() {
       const pr = await fetch(`/api/v3/market/listings/${listing.listingId}/reserve/prepare`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ buyerTokenScript: script }),
+        body: JSON.stringify({ buyerTokenScript: ordinalsScript || script }),
       });
       const pj = await pr.json();
       if (!pj.ok) throw new Error(errorText(pj));
@@ -78,7 +78,15 @@ function MarketContent() {
       const rr = await fetch(`/api/v3/market/listings/${listing.listingId}/reserve`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ buyerTokenScript: script, buyerChangeScript: script, funding, nonceHex: pj.data.reserveNonce, signatureB64 }),
+        body: JSON.stringify({
+          // Bought tokens go to the ordinals address; BTC change returns to
+          // the one that paid.
+          buyerTokenScript: ordinalsScript || script,
+          buyerChangeScript: script,
+          funding,
+          nonceHex: pj.data.reserveNonce,
+          signatureB64,
+        }),
       });
       const rj = await rr.json();
       if (!rj.ok) throw new Error(errorText(rj));

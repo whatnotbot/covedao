@@ -3,6 +3,7 @@ import "./globals.css";
 import { Header } from "@/components/Header";
 import { StatusBar } from "@/components/StatusBar";
 import { WalletProvider } from "@/components/WalletProvider";
+import { WalletPicker } from "@/components/WalletPicker";
 import { DevWallet } from "@/components/DevWallet";
 
 export const metadata: Metadata = {
@@ -21,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Header />
           <main className="mx-auto w-full max-w-6xl px-4 pb-24 pt-px sm:px-6">{children}</main>
           <StatusBar />
+          <WalletPicker />
         </WalletProvider>
       </body>
     </html>

@@ -25,6 +25,7 @@
     "@crclaunch/curve": "workspace:*",
     "@crclaunch/db": "workspace:*",
     "@crclaunch/wallets": "workspace:*",
+    "@ordzaar/ordit-sdk": "4.2.4",
     "bitcoinjs-lib": "^6.1.7",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.36.4",

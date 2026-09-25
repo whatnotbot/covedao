@@ -58,5 +58,10 @@
     "typescript-eslint": "^8.18.0"
   },
   "license": "MIT",
-  "description": "A CRC-family token protocol on Bitcoin L1 — state-committed Taproot UTXOs, an open indexer, and a non-custodial marketplace."
+  "description": "A CRC-family token protocol on Bitcoin L1 \u2014 state-committed Taproot UTXOs, an open indexer, and a non-custodial marketplace.",
+  "pnpm": {
+    "overrides": {
+      "bitcoinjs-lib": "6.1.8"
+    }
+  }
 }

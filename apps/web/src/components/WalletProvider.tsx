@@ -2,26 +2,70 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { WalletCapabilities } from "@crclaunch/wallets";
+import { adapterFor, inputsOwnedBy } from "@/lib/wallets/adapters";
+import { WalletError, type CoveNetwork, type WalletId } from "@/lib/wallets/types";
 
+/**
+ * The connected wallet.
+ *
+ * Two addresses, not one. `script` is the PAYMENTS address — where BTC comes
+ * from and change returns. `ordinalsScript` is where token carriers live, and
+ * in most wallets it is a different, Taproot address. Code that only knows
+ * about the first will build transactions those wallets cannot sign.
+ */
 interface WalletState {
   connected: boolean;
+  /** Payments address. */
   address: string;
+  /** Payments scriptPubKey, hex. */
   script: string;
+  /** Payments public key, hex. Needed to spend anything but native segwit. */
+  publicKey: string;
+  /** Ordinals address — where tokens are held. */
+  ordinalsAddress: string;
+  /** Ordinals scriptPubKey, hex. */
+  ordinalsScript: string;
+  ordinalsPublicKey: string;
   adapterId: string;
   network: string;
   capabilities: WalletCapabilities | null;
-  connect: () => Promise<void>;
+  /** Open the picker, or connect a named wallet directly. */
+  connect: (walletId?: WalletId) => Promise<void>;
   disconnect: () => void;
   signPsbt: (psbtBase64: string, operation: string) => Promise<string>;
   signBip322: (message: string) => Promise<string>;
   getUtxos: () => Promise<{ txid: string; vout: number }[]>;
+  /** Everything a build needs to describe this wallet to the server. */
+  walletFields: () => {
+    walletScript: string;
+    walletAddress: string;
+    walletPublicKey?: string;
+    ordinalsScript?: string;
+    ordinalsPublicKey?: string;
+  };
+  pickerOpen: boolean;
+  openPicker: () => void;
+  closePicker: () => void;
 }
 
 const WalletContext = createContext<WalletState | null>(null);
 
+/**
+ * The regtest test signer.
+ *
+ * No browser wallet supports regtest, so the local harness and the end-to-end
+ * suite inject this instead. It is only ever present when something has put it
+ * on `window`; nothing auto-attaches it.
+ */
 interface TestWallet {
   id: string;
-  connect(): Promise<{ adapterId: string; paymentAddress: string; paymentScript: string; network: string; capabilities: WalletCapabilities }>;
+  connect(): Promise<{
+    adapterId: string;
+    paymentAddress: string;
+    paymentScript: string;
+    network: string;
+    capabilities: WalletCapabilities;
+  }>;
   disconnect?(): Promise<void>;
   signPsbt(params: { psbtBase64: string; inputIndexes?: number[]; operation: string }): Promise<string>;
   signBip322Simple?(params: { message: string }): Promise<string>;
@@ -33,62 +77,204 @@ function getTestWallet(): TestWallet | null {
   return (window as unknown as { __COVE_TEST_WALLET__?: TestWallet }).__COVE_TEST_WALLET__ ?? null;
 }
 
-export function WalletProvider({ children }: { children: React.ReactNode }) {
-  const [connected, setConnected] = useState(false);
-  const [address, setAddress] = useState("");
-  const [script, setScript] = useState("");
-  const [adapterId, setAdapterId] = useState("");
-  const [network, setNetwork] = useState("");
-  const [capabilities, setCapabilities] = useState<WalletCapabilities | null>(null);
+const NETWORK = (process.env.NEXT_PUBLIC_COVE_NETWORK ?? "regtest") as CoveNetwork;
+const STORAGE_KEY = "cove.wallet";
 
-  const connect = useCallback(async () => {
-    const wallet = getTestWallet();
-    if (!wallet) throw new Error("No wallet detected");
-    const conn = await wallet.connect();
-    setConnected(true);
-    setAddress(conn.paymentAddress);
-    setScript(conn.paymentScript);
-    setAdapterId(conn.adapterId);
-    setNetwork(conn.network);
-    setCapabilities(conn.capabilities);
+interface Connected {
+  walletId: string;
+  payments: { address: string; script: string; publicKey: string };
+  ordinals: { address: string; script: string; publicKey: string };
+  isTestWallet: boolean;
+}
+
+export function WalletProvider({ children }: { children: React.ReactNode }) {
+  const [conn, setConn] = useState<Connected | null>(null);
+  const [capabilities, setCapabilities] = useState<WalletCapabilities | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const connectTestWallet = useCallback(async (wallet: TestWallet) => {
+    const c = await wallet.connect();
+    const account = { address: c.paymentAddress, script: c.paymentScript, publicKey: "" };
+    setConn({
+      walletId: c.adapterId,
+      // A single-address signer uses the same address for both roles, which is
+      // legitimate: plenty of native-segwit wallets work that way.
+      payments: account,
+      ordinals: account,
+      isTestWallet: true,
+    });
+    setCapabilities(c.capabilities);
   }, []);
+
+  const connect = useCallback(
+    async (walletId?: WalletId) => {
+      // The test signer wins when present: it is only there on a regtest
+      // harness, where no browser wallet can connect anyway.
+      const test = getTestWallet();
+      if (test) {
+        await connectTestWallet(test);
+        return;
+      }
+      if (!walletId) {
+        setPickerOpen(true);
+        return;
+      }
+      const adapter = adapterFor(walletId);
+      const c = await adapter.connect(NETWORK);
+      setConn({
+        walletId: c.walletId,
+        payments: c.payments,
+        ordinals: c.ordinals,
+        isTestWallet: false,
+      });
+      setCapabilities(null);
+      setPickerOpen(false);
+      try {
+        window.localStorage.setItem(STORAGE_KEY, c.walletId);
+      } catch {
+        // A blocked localStorage costs a reconnect, nothing more.
+      }
+    },
+    [connectTestWallet],
+  );
 
   const disconnect = useCallback(() => {
-    setConnected(false);
-    setAddress("");
-    setScript("");
+    setConn(null);
+    setCapabilities(null);
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignored
+    }
   }, []);
+
+  // Reconnect silently to the wallet last used, but only if it is still
+  // installed and still willing. A failure here is not an error the user needs
+  // to see — they simply stay disconnected.
+  useEffect(() => {
+    if (conn || getTestWallet()) return;
+    let cancelled = false;
+    void (async () => {
+      let last: string | null = null;
+      try {
+        last = window.localStorage.getItem(STORAGE_KEY);
+      } catch {
+        return;
+      }
+      if (!last) return;
+      try {
+        const adapter = adapterFor(last as WalletId);
+        if (!(await adapter.isInstalled())) return;
+        const c = await adapter.connect(NETWORK);
+        if (!cancelled) {
+          setConn({ walletId: c.walletId, payments: c.payments, ordinals: c.ordinals, isTestWallet: false });
+        }
+      } catch {
+        // Still disconnected; the picker is one click away.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [conn]);
 
   const signPsbt = useCallback(
     async (psbtBase64: string, operation: string) => {
-      const wallet = getTestWallet();
-      if (!wallet) throw new Error("No wallet detected");
-      return wallet.signPsbt({ psbtBase64, operation });
+      if (!conn) throw new WalletError("FAILED", "No wallet connected");
+      if (conn.isTestWallet) {
+        const test = getTestWallet();
+        if (!test) throw new WalletError("FAILED", "No wallet connected");
+        return test.signPsbt({ psbtBase64, operation });
+      }
+      // Tell the wallet exactly which inputs are its own. The backing vault
+      // input belongs to neither address, so it is never offered — the
+      // Guardian has already signed it and a second signature would only
+      // invalidate the transaction.
+      const inputsByAddress = inputsOwnedBy(psbtBase64, NETWORK, conn);
+      if (inputsByAddress.length === 0) {
+        throw new WalletError("FAILED", "this transaction has no inputs belonging to your wallet");
+      }
+      return adapterFor(conn.walletId as WalletId).signPsbt(NETWORK, {
+        psbtBase64,
+        inputsByAddress,
+      });
     },
-    [],
+    [conn],
   );
 
-  const signBip322 = useCallback(async (message: string) => {
-    const wallet = getTestWallet();
-    if (!wallet) throw new Error("No wallet detected");
-    if (!wallet.signBip322Simple) throw new Error("Wallet does not support BIP-322");
-    return wallet.signBip322Simple({ message });
-  }, []);
+  const signBip322 = useCallback(
+    async (message: string) => {
+      if (!conn) throw new WalletError("FAILED", "No wallet connected");
+      if (conn.isTestWallet) {
+        const test = getTestWallet();
+        if (!test?.signBip322Simple) {
+          throw new WalletError("UNSUPPORTED", "Wallet does not support BIP-322");
+        }
+        return test.signBip322Simple({ message });
+      }
+      // Marketplace orders are authorised by the address that holds the
+      // tokens, which is the ordinals address.
+      return adapterFor(conn.walletId as WalletId).signMessage(
+        NETWORK,
+        conn.ordinals.address,
+        message,
+      );
+    },
+    [conn],
+  );
 
   const getUtxos = useCallback(async () => {
-    const wallet = getTestWallet();
-    if (!wallet || !wallet.getUtxos) return [];
-    return wallet.getUtxos();
-  }, []);
+    if (!conn) return [];
+    if (conn.isTestWallet) {
+      const test = getTestWallet();
+      return test?.getUtxos ? test.getUtxos() : [];
+    }
+    // From Cove's own node, not the wallet: the server re-resolves every
+    // outpoint against Core at build time, and a list from somewhere else
+    // just produces failures nobody can explain.
+    const r = await fetch(`/api/v3/wallet/utxos?address=${encodeURIComponent(conn.payments.address)}`);
+    const j = await r.json();
+    if (!j.ok) throw new WalletError("FAILED", j.error?.detail || j.error?.message || "cannot list your coins");
+    return (j.data.utxos as { txid: string; vout: number }[]).map((u) => ({
+      txid: u.txid,
+      vout: u.vout,
+    }));
+  }, [conn]);
 
-  // NO auto-connect in production: the mock/demo wallet must never self-attach.
-  useEffect(() => {
-    // optional: auto-detect is intentionally left out of the production path.
-  }, []);
+  const walletFields = useCallback(() => {
+    if (!conn) return { walletScript: "", walletAddress: "" };
+    return {
+      walletScript: conn.payments.script,
+      walletAddress: conn.payments.address,
+      walletPublicKey: conn.payments.publicKey || undefined,
+      ordinalsScript: conn.ordinals.script,
+      ordinalsPublicKey: conn.ordinals.publicKey || undefined,
+    };
+  }, [conn]);
 
   const value = useMemo(
-    () => ({ connected, address, script, adapterId, network, capabilities, connect, disconnect, signPsbt, signBip322, getUtxos }),
-    [connected, address, script, adapterId, network, capabilities, connect, disconnect, signPsbt, signBip322, getUtxos],
+    () => ({
+      connected: conn !== null,
+      address: conn?.payments.address ?? "",
+      script: conn?.payments.script ?? "",
+      publicKey: conn?.payments.publicKey ?? "",
+      ordinalsAddress: conn?.ordinals.address ?? "",
+      ordinalsScript: conn?.ordinals.script ?? "",
+      ordinalsPublicKey: conn?.ordinals.publicKey ?? "",
+      adapterId: conn?.walletId ?? "",
+      network: NETWORK,
+      capabilities,
+      connect,
+      disconnect,
+      signPsbt,
+      signBip322,
+      getUtxos,
+      walletFields,
+      pickerOpen,
+      openPicker: () => setPickerOpen(true),
+      closePicker: () => setPickerOpen(false),
+    }),
+    [conn, capabilities, connect, disconnect, signPsbt, signBip322, getUtxos, walletFields, pickerOpen],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

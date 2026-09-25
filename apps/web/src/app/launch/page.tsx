@@ -23,7 +23,7 @@ interface Prepared {
 }
 
 export default function LaunchPage() {
-  const { connected, address, script, connect, signPsbt, getUtxos } = useWallet();
+  const { connected, walletFields, connect, signPsbt, getUtxos } = useWallet();
   const [name, setName] = useState("E2E Frog");
   const [ticker, setTicker] = useState("FROG");
   const [description, setDescription] = useState("A deterministic backing test token.");
@@ -69,8 +69,7 @@ export default function LaunchPage() {
         body: JSON.stringify({
           ticker: prepared.ticker,
           nonceHex: prepared.nonceHex,
-          walletScript: script,
-          walletAddress: address,
+          ...walletFields(),
           funding,
           feeRateSatPerVb: satPerVb ?? undefined,
           displayName: name,

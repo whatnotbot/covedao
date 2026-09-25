@@ -8,6 +8,7 @@ import {
   psbtInputFor,
   scriptForKind,
   spendKindOf,
+  unfinalizeKeyInputs,
   xOnly,
   type SpendKind,
 } from "./spend.js";
@@ -183,4 +184,23 @@ describe("psbtInputFor", () => {
       ),
     ).toThrow(/does not control it/);
   });
+});
+
+describe("a wallet that finalizes its own inputs", () => {
+  for (const kind of ["p2wpkh", "p2sh-p2wpkh", "p2tr"] as const) {
+    it(`is read back as signed (${kind})`, () => {
+      const { psbt } = roundTrip(kind);
+      psbt.finalizeAllInputs();
+      const expected = psbt.extractTransaction().toHex();
+
+      // As it arrives from the wallet: signature only in the final witness.
+      const received = bitcoin.Psbt.fromBase64(psbt.toBase64(), { network: NET });
+      expect(checkSpendSignature(received, 0).ok).toBe(false);
+
+      unfinalizeKeyInputs(received);
+      expect(checkSpendSignature(received, 0)).toEqual({ ok: true });
+      received.finalizeAllInputs();
+      expect(received.extractTransaction().toHex()).toBe(expected);
+    });
+  }
 });

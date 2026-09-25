@@ -189,11 +189,16 @@ export function checkSpendSignature(psbt: bitcoin.Psbt, index: number): Signatur
     if (sig.length !== 64 && sig.length !== 65) {
       return { ok: false, reason: "INVALID", detail: `input ${index} taproot signature is malformed` };
     }
+    // Verified directly against the output key in the scriptPubKey, so it
+    // does not depend on tapInternalKey, which a finalizing wallet clears.
     let ok = false;
     try {
-      ok = psbt.validateSignaturesOfInput(index, (pubkey, msghash, signature) =>
-        ecc.verifySchnorr(msghash, pubkey, signature),
-      );
+      const tx = bitcoin.Transaction.fromBuffer(psbt.data.globalMap.unsignedTx.toBuffer());
+      const prevScripts = psbt.data.inputs.map((i) => Buffer.from(i.witnessUtxo!.script));
+      const values = psbt.data.inputs.map((i) => i.witnessUtxo!.value);
+      const hashType = sig.length === 65 ? sig[64]! : bitcoin.Transaction.SIGHASH_DEFAULT;
+      const sighash = tx.hashForWitnessV1(index, prevScripts, values, hashType);
+      ok = ecc.verifySchnorr(sighash, Buffer.from(script!.subarray(2, 34)), Buffer.from(sig.subarray(0, 64)));
     } catch {
       ok = false;
     }
@@ -226,4 +231,56 @@ export function checkSpendSignature(psbt: bitcoin.Psbt, index: number): Signatur
     ok = false;
   }
   return ok ? { ok: true } : { ok: false, reason: "INVALID", detail: `input ${index} signature invalid` };
+}
+
+/**
+ * Undo a wallet's finalization of its own inputs.
+ *
+ * Some wallets hand back signed inputs already finalized — the signature moved
+ * into finalScriptWitness and the partialSig / tapKeySig fields cleared. Every
+ * check here reads those fields, so a finalized input looked unsigned and a
+ * good transaction was refused. Single-key spends are unambiguous to restore:
+ * a P2WPKH or nested-segwit witness is [sig, pubkey] and a key-path Taproot
+ * witness is [sig]. Anything else (the vault's script path) is left alone.
+ */
+export function unfinalizeKeyInputs(psbt: bitcoin.Psbt): void {
+  psbt.data.inputs.forEach((input) => {
+    if (!input.finalScriptWitness || input.partialSig?.length || input.tapKeySig) return;
+    const script = input.witnessUtxo?.script;
+    if (!script) return;
+    const kind = spendKindOf(script);
+    const stack = witnessStack(Buffer.from(input.finalScriptWitness));
+    const restored: Record<string, unknown> = {};
+    if ((kind === "p2wpkh" || kind === "p2sh-p2wpkh") && stack.length === 2) {
+      const pubkey = stack[1]!;
+      restored.partialSig = [{ pubkey, signature: stack[0]! }];
+      if (kind === "p2sh-p2wpkh") restored.redeemScript = bitcoin.payments.p2wpkh({ pubkey }).output!;
+    } else if (kind === "p2tr" && stack.length === 1 && (stack[0]!.length === 64 || stack[0]!.length === 65)) {
+      restored.tapKeySig = stack[0]!;
+    } else {
+      return;
+    }
+    // bitcoinjs will not overwrite final fields through updateInput.
+    delete (input as { finalScriptWitness?: Buffer }).finalScriptWitness;
+    delete (input as { finalScriptSig?: Buffer }).finalScriptSig;
+    Object.assign(input, restored);
+  });
+}
+
+function witnessStack(buf: Buffer): Buffer[] {
+  let o = 0;
+  const varint = (): number => {
+    const b = buf[o++]!;
+    if (b < 0xfd) return b;
+    if (b === 0xfd) { const v = buf.readUInt16LE(o); o += 2; return v; }
+    const v = buf.readUInt32LE(o); o += 4; return v;
+  };
+  const n = varint();
+  const out: Buffer[] = [];
+  for (let k = 0; k < n; k++) {
+    const len = varint();
+    out.push(buf.subarray(o, o + len));
+    o += len;
+  }
+  return out;
 }

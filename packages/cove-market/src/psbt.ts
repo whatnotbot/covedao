@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
-import { checkSpendSignature } from "@crclaunch/bitcoin";
+import { checkSpendSignature, unfinalizeKeyInputs } from "@crclaunch/bitcoin";
 import { MarketError } from "./errors.js";
 
 /**
@@ -72,9 +72,12 @@ export function validateP2wpkhPartialSig(psbt: bitcoin.Psbt, inputIndex: number)
 }
 
 export function parsePsbt(b64: string, network: bitcoin.networks.Network): bitcoin.Psbt {
+  let psbt: bitcoin.Psbt;
   try {
-    return bitcoin.Psbt.fromBase64(b64, { network });
+    psbt = bitcoin.Psbt.fromBase64(b64, { network });
   } catch (e) {
     throw new MarketError("PSBT_MUTATED", `cannot parse PSBT: ${(e as Error).message}`);
   }
+  unfinalizeKeyInputs(psbt);
+  return psbt;
 }

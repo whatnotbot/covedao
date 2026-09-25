@@ -74,6 +74,7 @@ export {
   spendKindOf,
   scriptForKind,
   psbtInputFor,
+  unfinalizeKeyInputs,
   checkSpendSignature,
   inputVbytes,
   isP2SH,

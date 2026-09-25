@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
-import { checkSpendSignature } from "@crclaunch/bitcoin";
+import { checkSpendSignature, unfinalizeKeyInputs } from "@crclaunch/bitcoin";
 import { AppError } from "./errors.js";
 
 /** sha256 of the canonical UNSIGNED transaction bytes. */
@@ -9,11 +9,14 @@ export function unsignedTxDigest(psbt: bitcoin.Psbt): string {
 }
 
 export function parsePsbt(b64: string, network: bitcoin.networks.Network): bitcoin.Psbt {
+  let psbt: bitcoin.Psbt;
   try {
-    return bitcoin.Psbt.fromBase64(b64, { network });
+    psbt = bitcoin.Psbt.fromBase64(b64, { network });
   } catch (e) {
     throw new AppError("PSBT_MUTATED", `cannot parse PSBT: ${(e as Error).message}`);
   }
+  unfinalizeKeyInputs(psbt);
+  return psbt;
 }
 
 /**

@@ -1,12 +1,15 @@
 import { ok, handleError } from "@/lib/api";
 import { getV3Services } from "@/lib/v3-server";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { desc, eq } from "drizzle-orm";
 import { schema } from "@crclaunch/db";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const limited = checkRateLimit(req, "read-activity");
+    if (limited) return limited;
     const { db, config } = getV3Services();
     const events = await db
       .select()

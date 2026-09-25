@@ -7,6 +7,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   try {
+    const limited = checkRateLimit(req, "read-listings");
+    if (limited) return limited;
     const { app } = getV3Services();
     const url = new URL(req.url);
     const tokenId = url.searchParams.get("tokenId") ?? undefined;

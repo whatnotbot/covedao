@@ -255,7 +255,7 @@ function TokenContent() {
   const issued = BigInt(detail.issuedSupplyAtoms);
   const cap = BigInt(detail.publicCapAtoms);
   const pct = cap > 0n ? Number((issued * 10_000n) / cap) / 100 : 0;
-  const atCap = issued >= cap;
+  const graduated = (detail as { graduated?: boolean }).graduated ?? issued >= cap;
 
   // Open asks for this token, quoted in the same unit as the chart.
   const asks = (demo ? DEMO_LISTINGS.filter((l) => l.tokenId === detail.tokenId) : []).map((l) => ({
@@ -279,12 +279,24 @@ function TokenContent() {
             <h1 className="mt-3 text-4xl text-bone">{detail.ticker}</h1>
             <p className="mt-1 text-sm text-bone-dim">{detail.displayName}</p>
           </div>
-          <span className={atCap ? "chip chip-pending" : "chip chip-verified"}>
-            {atCap ? "At cap" : "Open"}
+          <span className={graduated ? "chip chip-signal" : "chip chip-verified"}>
+            {graduated ? "Graduated" : "Open"}
           </span>
         </div>
         {detail.description ? (
           <p className="mt-5 max-w-xl text-sm leading-relaxed text-bone-dim">{detail.description}</p>
+        ) : null}
+
+        {graduated ? (
+          <div className="mt-6 border border-signal/40 bg-signal/10 px-5 py-4">
+            <p className="text-label uppercase tracking-label text-signal">Graduated</p>
+            <p className="mt-2 max-w-xl text-xs leading-relaxed text-bone-dim">
+              The full 840M public curve has been minted. Minting is finished. The backing vault
+              keeps buying and selling at the curve price exactly as before, so holders can still
+              redeem at any time &mdash; graduation marks the milestone, it does not change how the
+              token works.
+            </p>
+          </div>
         ) : null}
 
         {/* The curve is the single most important thing on this page. */}

@@ -20,6 +20,16 @@ export interface V3TokenSummary {
   issuedSupplyAtoms: bigint;
   publicCapAtoms: bigint;
   remainingCapacityAtoms: bigint;
+  /**
+   * The public cap is fully minted — the token has graduated.
+   *
+   * Derived here rather than stored so there is exactly one definition of
+   * "graduated" and no row can drift out of agreement with the supply it was
+   * derived from. Graduation is a milestone, not a mechanism: the backing vault
+   * keeps buying and selling afterwards exactly as before, so nothing a holder
+   * relies on changes at the moment it flips.
+   */
+  graduated: boolean;
   backingSats: bigint;
   backingOutpoint: { txid: string; vout: number };
   stateHash: string;
@@ -78,6 +88,7 @@ async function loadSummaries(db: Database, network: string, tokenIds?: string[])
       issuedSupplyAtoms: b?.issuedSupplyAtoms ?? 0n,
       publicCapAtoms: PUBLIC_SUPPLY_ATOMS,
       remainingCapacityAtoms: (b ? PUBLIC_SUPPLY_ATOMS - b.issuedSupplyAtoms : 0n) < 0n ? 0n : PUBLIC_SUPPLY_ATOMS - (b?.issuedSupplyAtoms ?? 0n),
+      graduated: (b?.issuedSupplyAtoms ?? 0n) >= PUBLIC_SUPPLY_ATOMS,
       backingSats: b?.backingSats ?? 0n,
       backingOutpoint: b ? { txid: b.txid, vout: b.vout } : { txid: "", vout: 0 },
       stateHash: b?.stateHash ?? "",

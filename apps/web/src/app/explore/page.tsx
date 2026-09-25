@@ -10,7 +10,7 @@ import { Sparkline } from "@/components/Sparkline";
 import { useSparklines } from "@/lib/use-sparklines";
 
 type SortKey = "progress" | "backing" | "holders" | "newest";
-type Filter = "all" | "open" | "atcap" | "listed";
+type Filter = "all" | "open" | "graduated" | "listed";
 
 const SORTS: { key: SortKey; label: string }[] = [
   { key: "progress", label: "Progress" },
@@ -22,7 +22,7 @@ const SORTS: { key: SortKey; label: string }[] = [
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "open", label: "Open" },
-  { key: "atcap", label: "At cap" },
+  { key: "graduated", label: "Graduated" },
   { key: "listed", label: "Listed" },
 ];
 
@@ -66,9 +66,12 @@ function ExploreContent() {
       const cap = BigInt(t.publicCapAtoms);
       return cap > 0n ? Number((BigInt(t.issuedSupplyAtoms) * 10_000n) / cap) / 100 : 0;
     };
+    // Prefer the server-derived flag so a row and its badge can never disagree;
+    // fall back to the percentage only for fixtures that predate it.
+    const isGraduated = (t: V3TokenCardData) => t.graduated ?? pct(t) >= 100;
     let out = tokens.filter((t) => {
-      if (filter === "open") return pct(t) < 100;
-      if (filter === "atcap") return pct(t) >= 100;
+      if (filter === "open") return !isGraduated(t);
+      if (filter === "graduated") return isGraduated(t);
       if (filter === "listed") return t.bestAskSats !== null;
       return true;
     });
@@ -91,6 +94,15 @@ function ExploreContent() {
 
   const totalBacking = rows.reduce((a, t) => a + BigInt(t.backingSats), 0n);
   const totalHolders = rows.reduce((a, t) => a + t.holderCount, 0);
+
+  const graduatedRows = useMemo(
+    () =>
+      tokens.filter((t) => {
+        const cap = BigInt(t.publicCapAtoms);
+        return t.graduated ?? (cap > 0n && BigInt(t.issuedSupplyAtoms) >= cap);
+      }),
+    [tokens],
+  );
 
   const { series } = useSparklines(
     rows.map((t) => ({ tokenId: t.tokenId, ticker: t.ticker, curveStage: t.curveStage })),
@@ -172,6 +184,56 @@ function ExploreContent() {
         </div>
       </section>
 
+      {/* Graduated board — the tokens that sold out their entire curve. */}
+      {graduatedRows.length > 0 ? (
+        <section className="panel px-6 py-8 sm:px-10">
+          <div className="flex items-baseline justify-between">
+            <p className="eyebrow">Graduated</p>
+            <span className="text-label uppercase tracking-label text-bone-dim">
+              Full 840M curve minted
+            </span>
+          </div>
+          <div
+            className={`mt-5 grid gap-px bg-rule ${
+              graduatedRows.length === 1
+                ? ""
+                : graduatedRows.length === 2
+                  ? "sm:grid-cols-2"
+                  : "sm:grid-cols-2 lg:grid-cols-3"
+            }`}
+          >
+            {graduatedRows.slice(0, 6).map((t) => (
+              <Link
+                key={t.tokenId}
+                href={`/token/${t.tokenId}`}
+                className="group bg-ink-3 px-5 py-4 transition-colors hover:bg-ink-2"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-bone transition-colors group-hover:text-signal">
+                    {t.ticker}
+                  </span>
+                  <span className="chip chip-signal shrink-0">Graduated</span>
+                </div>
+                <div className="mt-1 truncate text-xs text-bone-dim">{t.displayName}</div>
+                <div className="mt-3 flex justify-between text-xs tabular-nums">
+                  <span className="text-bone-dim">Backing</span>
+                  <span className="text-bone-2">{fmtBtc(BigInt(t.backingSats))}</span>
+                </div>
+                <div className="mt-1 flex justify-between text-xs tabular-nums">
+                  <span className="text-bone-dim">Holders</span>
+                  <span className="text-bone-2">{fmtInt(t.holderCount)}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+          <p className="mt-5 max-w-xl text-xs leading-relaxed text-bone-dim">
+            Minting is finished for these. The backing vault keeps buying and selling at the curve
+            price exactly as before &mdash; graduation marks the milestone, it does not change how
+            the token works.
+          </p>
+        </section>
+      ) : null}
+
       {/* Results */}
       <section className="panel px-6 py-8 sm:px-10">
         {!loaded ? (
@@ -228,10 +290,11 @@ function TokenTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="ledger-table min-w-[64rem]">
+      <table className="ledger-table min-w-[72rem]">
         <thead>
           <tr>
             <th>Ticker</th>
+            <th>Status</th>
             <th>Last · sats/1M</th>
             <th>Trend</th>
             <th>Issued / cap</th>
@@ -255,6 +318,13 @@ function TokenTable({
                     {t.ticker}
                   </Link>
                   <div className="text-xs text-bone-dim">{t.displayName}</div>
+                </td>
+                <td>
+                  {t.graduated ?? pct >= 100 ? (
+                    <span className="chip chip-signal">Graduated</span>
+                  ) : (
+                    <span className="chip chip-verified">Open</span>
+                  )}
                 </td>
                 <td className="text-bone">
                   {(series[t.tokenId]?.length ?? 0) > 0

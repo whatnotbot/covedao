@@ -39,6 +39,8 @@ function token(
     curveStage: opts.stage,
     holderCount: opts.holders,
     bestAskSats: opts.ask ? opts.ask.toString() : null,
+    // Mirrors the server-derived flag so demo mode shows the same badges.
+    graduated: issued >= CAP,
   };
 }
 
@@ -98,6 +100,7 @@ export const DEMO_TOKEN_DETAIL: DemoTokenDetail = (() => {
     curveStage: t.curveStage,
     holderCount: t.holderCount,
     bestAskSats: t.bestAskSats,
+    graduated: issued >= cap,
     activeListingCount: 7,
   };
 })();

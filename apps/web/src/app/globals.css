@@ -96,6 +96,11 @@ body > * {
   .chip-rejected {
     @apply border-rejected/40 bg-rejected/10 text-rejected;
   }
+  /* Graduation is an achievement, not a protocol state, so it takes the accent
+     rather than a slot in the verified/pending/rejected triad. */
+  .chip-signal {
+    @apply border-signal/50 bg-signal/10 text-signal;
+  }
 
   /* Hex, txids and scripts — the raw material, shown as such. */
   .hex {

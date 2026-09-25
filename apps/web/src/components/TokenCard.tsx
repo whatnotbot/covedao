@@ -16,6 +16,8 @@ export interface V3TokenCardData {
   curveStage: number;
   holderCount: number;
   bestAskSats: string | null;
+  /** Public cap fully minted. Derived server-side; see V3TokenSummary. */
+  graduated?: boolean;
 }
 
 export function TokenCard({
@@ -28,7 +30,7 @@ export function TokenCard({
 }) {
   const issued = BigInt(token.issuedSupplyAtoms);
   const cap = BigInt(token.publicCapAtoms);
-  const atCapacity = issued >= cap;
+  const graduated = token.graduated ?? issued >= cap;
   const pct = cap > 0n ? Number((issued * 100n) / cap) : 0;
 
   return (
@@ -43,8 +45,8 @@ export function TokenCard({
           </div>
           <div className="mt-0.5 truncate text-xs text-bone-dim">{token.displayName}</div>
         </div>
-        <span className={atCapacity ? "chip chip-pending shrink-0" : "chip chip-verified shrink-0"}>
-          {atCapacity ? "At cap" : "Open"}
+        <span className={graduated ? "chip chip-signal shrink-0" : "chip chip-verified shrink-0"}>
+          {graduated ? "Graduated" : "Open"}
         </span>
       </div>
 

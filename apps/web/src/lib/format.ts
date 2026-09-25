@@ -2,14 +2,31 @@
 
 const ATOMS_PER_TOKEN = 100_000_000n;
 
-/** Convert a display-token decimal string to an atom-string (no floats). */
+/** A token is divisible to 8 decimal places; one atom is the smallest unit. */
+export const TOKEN_DECIMALS = 8;
+
+/**
+ * Convert a display-token decimal string to an atom-string (no floats).
+ *
+ * More than 8 decimal places is REJECTED rather than truncated. Silently
+ * dropping the excess would take value off the user without telling them —
+ * paste an amount copied from somewhere with finer precision and part of it
+ * would vanish into the fee with no warning anywhere in the interface.
+ * Refusing is annoying; losing someone's money quietly is worse.
+ */
 export function displayTokensToAtoms(input: string): string {
   const s = input.trim();
   if (!/^\d+(\.\d+)?$/.test(s)) throw new Error("invalid token amount");
   const parts = s.split(".");
   const whole = parts[0] || "0";
-  const frac = (parts[1] ?? "").padEnd(8, "0").slice(0, 8) || "0";
-  return (BigInt(whole) * 100_000_000n + BigInt(frac)).toString();
+  const rawFrac = parts[1] ?? "";
+  if (rawFrac.length > TOKEN_DECIMALS) {
+    throw new Error(
+      `a token divides to ${TOKEN_DECIMALS} decimal places; "${s}" has ${rawFrac.length}`,
+    );
+  }
+  const frac = rawFrac.padEnd(TOKEN_DECIMALS, "0") || "0";
+  return (BigInt(whole) * ATOMS_PER_TOKEN + BigInt(frac)).toString();
 }
 
 export function fmtInt(v: string | bigint | number): string {

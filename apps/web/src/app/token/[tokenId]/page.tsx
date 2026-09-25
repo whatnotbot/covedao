@@ -14,6 +14,14 @@ import { TokenActivity } from "@/components/TokenActivity";
 import { TokenImage } from "@/components/TokenImage";
 import { Tile } from "@/components/Tile";
 import { unitPriceSats } from "@/lib/ohlc";
+import { scriptOf } from "@/lib/wallets/resolve";
+import type { CoveNetwork } from "@/lib/wallets/types";
+
+/** A recipient typed as an address, or (for tooling) as a raw scriptPubKey in hex. */
+function recipientScript(input: string, network: string): string {
+  if (/^(0014[0-9a-f]{40}|5120[0-9a-f]{64})$/i.test(input)) return input.toLowerCase();
+  return scriptOf(input, network as CoveNetwork);
+}
 
 interface Detail {
   tokenId: string;
@@ -44,7 +52,7 @@ function TokenContent() {
   // Client-side render path for design review. Never calls the API, never writes.
   const demo = search.get("demo") === "1";
   const tokenId = params.tokenId;
-  const { connected, address, ordinalsAddress, walletFields, connect, signPsbt, signBip322, getUtxos } = useWallet();
+  const { connected, address, ordinalsAddress, network, walletFields, connect, signPsbt, signBip322, getUtxos } = useWallet();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState<"buy" | "sell" | "transfer" | "list">("buy");
@@ -176,7 +184,7 @@ function TokenContent() {
         body: JSON.stringify({
           tokenId,
           amountAtoms: displayTokensToAtoms(amount),
-          recipientScript: recipient,
+          recipientScript: recipientScript(recipient, network),
           ...walletFields(),
           funding,
           feeRateSatPerVb: satPerVb ?? undefined,
@@ -212,8 +220,13 @@ function TokenContent() {
       // Tokens live on the ordinals address, which in most wallets is not the
       // one holding BTC.
       const pf = await fetch(`/api/v3/wallet/${ordinalsAddress || address}/portfolio`).then((r) => r.json());
-      const utxo = pf.data?.tokenUtxos?.find((u: { tokenId: string }) => u.tokenId === tokenId);
-      if (!utxo) throw new Error("No token UTXO to list");
+      // One listing sells from one carrier: take the smallest that covers the
+      // amount, so a large holding is not tied up by a small ask.
+      const listAtoms = BigInt(displayTokensToAtoms(amount));
+      const utxo = (pf.data?.tokenUtxos ?? [])
+        .filter((u: { tokenId: string; amountAtoms: string }) => u.tokenId === tokenId && BigInt(u.amountAtoms) >= listAtoms)
+        .sort((a: { amountAtoms: string }, b: { amountAtoms: string }) => (BigInt(a.amountAtoms) < BigInt(b.amountAtoms) ? -1 : 1))[0];
+      if (!utxo) throw new Error("No single token balance of yours covers that amount");
       const pr = await fetch("/api/v3/market/listings/prepare", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -221,7 +234,7 @@ function TokenContent() {
           tokenId,
           sourceTxid: utxo.txid,
           sourceVout: String(utxo.vout),
-          amountAtoms: amount,
+          amountAtoms: listAtoms.toString(),
           totalPriceSats: price,
           expiryBlocks: listingBlocks,
           ...walletFields(),
@@ -467,8 +480,8 @@ function TokenContent() {
                 {tab === "list" && (
                   <>
                     <label className="block">
-                      <span className="eyebrow">Listed amount · atoms</span>
-                      <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="100000000" className="field mt-2" />
+                      <span className="eyebrow">Listed amount · display tokens</span>
+                      <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="1000000" className="field mt-2" />
                     </label>
                     <label className="block">
                       <span className="eyebrow">Asking price · sats</span>
@@ -495,8 +508,11 @@ function TokenContent() {
                 )}
                 {tab === "transfer" && (
                   <label className="block">
-                    <span className="eyebrow">Recipient scriptPubKey · hex</span>
-                    <input value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="0014…" className="field mt-2" />
+                    <span className="eyebrow">Recipient address</span>
+                    <input value={recipient} onChange={(e) => setRecipient(e.target.value.trim())} placeholder="bc1p… (their token / ordinals address)" className="field mt-2" />
+                    <span className="mt-2 block text-xs leading-relaxed text-bone-dim">
+                      Use the address their wallet keeps tokens on — the taproot (bc1p…) one in Xverse, Magic Eden or Leather.
+                    </span>
                   </label>
                 )}
                 {tab === "transfer" ? (

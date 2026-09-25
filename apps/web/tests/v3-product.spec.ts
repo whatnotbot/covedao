@@ -114,7 +114,7 @@ test("E2E-003 transfer: Alice transfers to Bob (backing + supply unchanged)", as
   await page.getByRole("button", { name: /connect wallet/i }).click();
   await page.getByRole("button", { name: "Transfer" }).click();
   await page.getByLabel(/Amount . display tokens/i).fill("60000000");
-  await page.getByLabel(/Recipient scriptPubKey/i).fill(scriptOf(IDENTITIES.bob.privHex));
+  await page.getByLabel(/Recipient address/i).fill(IDENTITIES.bob.address);
   await page.getByRole("button", { name: "Transfer", exact: true }).last().click();
   await expect(page.getByText(/transfer broadcast/i).first()).toBeVisible({ timeout: 60_000 });
   await mineAndWait(1);
@@ -148,7 +148,7 @@ test("E2E-005 list P2P: Alice lists part of a token UTXO", async ({ browser }) =
   await page.goto(`${BASE}/token/${aliceTokenId}`);
   await page.getByRole("button", { name: /connect wallet/i }).click();
   await page.getByRole("button", { name: "List", exact: true }).click();
-  await page.getByLabel(/Listed amount/i).fill((1_000_000n * 100_000_000n).toString());
+  await page.getByLabel(/Listed amount/i).fill("1000000");
   await page.getByLabel(/Asking price/i).fill("100000");
   await page.getByRole("button", { name: /sign & create listing/i }).click();
   await expect(page.getByText(/listing created/i).first()).toBeVisible({ timeout: 60_000 });
@@ -189,7 +189,7 @@ test("E2E-008 cancel: Alice cancels a second listing", async ({ browser }) => {
   await page.goto(`${BASE}/token/${aliceTokenId}`);
   await page.getByRole("button", { name: /connect wallet/i }).click();
   await page.getByRole("button", { name: "List", exact: true }).click();
-  await page.getByLabel(/Listed amount/i).fill((1_000_000n * 100_000_000n).toString());
+  await page.getByLabel(/Listed amount/i).fill("1000000");
   await page.getByLabel(/Asking price/i).fill("100000");
   await page.getByRole("button", { name: /sign & create listing/i }).click();
   await expect(page.getByText(/listing created/i).first()).toBeVisible({ timeout: 60_000 });

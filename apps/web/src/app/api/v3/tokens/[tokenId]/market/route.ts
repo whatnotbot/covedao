@@ -2,7 +2,7 @@ import { ok, handleError } from "@/lib/api";
 import { getV3Services } from "@/lib/v3-server";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { unitPriceSats } from "@/lib/ohlc";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { schema } from "@crclaunch/db";
 
 export const dynamic = "force-dynamic";
@@ -50,8 +50,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ tokenId:
       })
       .from(schema.coveV3MarketTrades)
       .where(where)
-      .orderBy(asc(schema.coveV3MarketTrades.blockHeight))
-      .limit(SCAN_LIMIT);
+      .orderBy(desc(schema.coveV3MarketTrades.blockHeight))
+      .limit(SCAN_LIMIT)
+      // The newest SCAN_LIMIT, returned oldest first: capping an ascending
+      // scan instead dropped the latest trades once history grew.
+      .then((r) => r.reverse());
 
     // Open asks, cheapest first — the "floor" is the best one a buyer can take.
     const listings = await db

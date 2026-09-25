@@ -192,6 +192,12 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
   // Regtest defaults match the deterministic protocol fixture; staging must set
   // these explicitly.
   const guardianPriv = hexOrNull(env.COVE_GUARDIAN_PRIVATE_KEY_HEX) ?? (network === "regtest" ? REGTEST_GUARDIAN_PRIV : null);
+  // Off regtest the Guardian key is named explicitly. Falling back to the
+  // recovery key silently put one key behind both the signing and the
+  // recovery path of every vault.
+  if (!guardianPriv && network !== "regtest") {
+    throw new AppError("GUARDIAN_UNAVAILABLE", "COVE_GUARDIAN_PRIVATE_KEY_HEX is required off regtest");
+  }
   const recoveryPriv = hexOrNull(env.COVE_RECOVERY_PRIVATE_KEY_HEX) ?? (network === "regtest" ? REGTEST_RECOVERY_PRIV : null);
   const feePriv = hexOrNull(env.COVE_FEE_PRIVATE_KEY_HEX) ?? (network === "regtest" ? REGTEST_FEE_PRIV : null);
 
@@ -206,10 +212,13 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
     coreRpcPassword,
     coreRpcUrlSecondary,
     feeScript: p2wpkh(feePriv),
-    guardianXOnly: xonly(guardianPriv ?? recoveryPriv),
+    guardianXOnly: xonly(guardianPriv!),
     recoveryKeyXOnly: xonly(recoveryPriv),
     guardianPrivateKey: guardianPriv,
-    activationHeight: 0n,
+    // Where the indexer starts. Required in practice on a public test network:
+    // a pruned node cannot serve the blocks before it, and nothing Cove made
+    // exists there anyway.
+    activationHeight: BigInt(env.COVE_ACTIVATION_HEIGHT ?? "0"),
     buyFeeBps: COVE_FEE_CONFIG.buyFeeBps,
     buyFeeFlatSatsAtTopStage: COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage,
     discoveryEnvelope: ["true", "1", "yes", "on"].includes((env.COVE_V3_DISCOVERY_ENVELOPE ?? "").toLowerCase()),

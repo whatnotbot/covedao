@@ -2,7 +2,7 @@ import { ok, fail, handleError } from "@/lib/api";
 import { getV3Services } from "@/lib/v3-server";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { bucketTrades, summarize, BUCKET_MS, type Interval } from "@/lib/ohlc";
-import { and, asc, eq, isNotNull, inArray } from "drizzle-orm";
+import { and, desc, eq, isNotNull, inArray } from "drizzle-orm";
 import { schema } from "@crclaunch/db";
 
 export const dynamic = "force-dynamic";
@@ -55,8 +55,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ tokenId:
           eq(schema.coveV3MarketTrades.canonical, true),
         ),
       )
-      .orderBy(asc(schema.coveV3MarketTrades.blockHeight))
-      .limit(MAX_TRADES);
+      .orderBy(desc(schema.coveV3MarketTrades.blockHeight))
+      .limit(MAX_TRADES)
+      // The newest MAX_TRADES, returned oldest first: capping an ascending
+      // scan instead dropped the latest trades once history grew.
+      .then((r) => r.reverse());
 
     // Curve trades: a valid MINT or REDEEM carries the amount and the satoshis
     // that moved to or from the reserve, which is exactly a price.
@@ -78,8 +81,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ tokenId:
           isNotNull(schema.coveV3Events.grossSats),
         ),
       )
-      .orderBy(asc(schema.coveV3Events.blockHeight))
-      .limit(MAX_TRADES);
+      .orderBy(desc(schema.coveV3Events.blockHeight))
+      .limit(MAX_TRADES)
+      // The newest MAX_TRADES, returned oldest first: capping an ascending
+      // scan instead dropped the latest trades once history grew.
+      .then((r) => r.reverse());
 
     const market = rows.map((r) => ({
       timestamp: r.createdAt.getTime(),

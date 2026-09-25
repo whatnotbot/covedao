@@ -26,7 +26,11 @@ export async function persistentWorker(params: {
   const tip = BigInt(info.blocks);
   let indexed = 0;
 
-  for (let h = state.cursor.height + 1n; h <= tip; h++) {
+  // Nothing below the activation height can hold Cove state, so a fresh
+  // indexer starts there. Walking from genesis instead reads every historical
+  // block — hours on mainnet, and impossible on a pruned node.
+  const start = state.cursor.height + 1n > params.config.genesisHeight ? state.cursor.height + 1n : params.config.genesisHeight;
+  for (let h = start; h <= tip; h++) {
     const hash = await provider.getBlockHash(Number(h));
     if (state.undoByHeight.get(h)?.blockHash === hash) continue; // idempotent
     const block = await provider.getBlock(hash);
@@ -58,7 +62,11 @@ export async function reorgPersistentToTip(params: {
 
   // the cursor may point past the (post-invalidate) Core tip; cap the ancestor walk
   let ancestor = state.cursor.height > tipHeight ? tipHeight : state.cursor.height;
-  while (ancestor > 0n) {
+  // A reorg cannot reach below the activation height: there is no Cove state
+  // there to undo, and no block the indexer ever read.
+  const floor = params.config.genesisHeight > 0n ? params.config.genesisHeight - 1n : 0n;
+  if (ancestor < floor) ancestor = floor;
+  while (ancestor > floor) {
     const coreHash = await provider.getBlockHash(Number(ancestor));
     const local = state.undoByHeight.get(ancestor);
     if (local && local.blockHash === coreHash) break;

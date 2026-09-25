@@ -123,7 +123,7 @@ test("X-003 transfer from Taproot to another Taproot wallet", async ({ browser }
   await page.getByRole("button", { name: /connect wallet/i }).click();
   await page.getByRole("button", { name: "Transfer" }).click();
   await page.getByLabel(/Amount . display tokens/i).fill("30000000");
-  await page.getByLabel(/Recipient scriptPubKey/i).fill(erin.ordinalsScript);
+  await page.getByLabel(/Recipient address/i).fill(erin.ordinalsAddress);
   await page.getByRole("button", { name: "Transfer", exact: true }).last().click();
   await expect(page.getByText(/transfer broadcast/i).first()).toBeVisible({ timeout: 60_000 });
   await mineAndWait(1);
@@ -154,7 +154,7 @@ test("X-005 list with a Taproot BIP-322 signature", async ({ browser }) => {
   await page.goto(`${BASE}/token/${tokenId}`);
   await page.getByRole("button", { name: /connect wallet/i }).click();
   await page.getByRole("button", { name: "List", exact: true }).click();
-  await page.getByLabel(/Listed amount/i).fill((10_000_000n * T).toString());
+  await page.getByLabel(/Listed amount/i).fill("10000000");
   await page.getByLabel(/Asking price/i).fill("50000");
   await page.getByRole("button", { name: /sign & create listing/i }).click();
   await expect(page.getByText(/listing created/i).first()).toBeVisible({ timeout: 60_000 });
@@ -193,7 +193,7 @@ test("X-007 cancel with a Taproot signature", async ({ browser }) => {
   await page.goto(`${BASE}/token/${tokenId}`);
   await page.getByRole("button", { name: /connect wallet/i }).click();
   await page.getByRole("button", { name: "List", exact: true }).click();
-  await page.getByLabel(/Listed amount/i).fill((5_000_000n * T).toString());
+  await page.getByLabel(/Listed amount/i).fill("5000000");
   await page.getByLabel(/Asking price/i).fill("40000");
   await page.getByRole("button", { name: /sign & create listing/i }).click();
   await expect(page.getByText(/listing created/i).first()).toBeVisible({ timeout: 60_000 });

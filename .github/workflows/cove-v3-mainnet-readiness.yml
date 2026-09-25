@@ -170,7 +170,14 @@ jobs:
       # COVE_V3_MAINNET_PROFILE_HASH is the OUT-OF-BAND committed hash the
       # Guardian's reported hash is compared against (audit §C9 — this check
       # used to compare the computed hash to itself and could never fail).
-      - name: Readiness --runtime (fixture + Core quorum + REAL Guardian → READY_FOR_CONTROLLED_MAINNET_CANARY)
+      # Every signal the CLI can satisfy without a live mainnet indexer/worker
+      # must PASS against the REAL Guardian. The remaining gates
+      # (indexerHealthy, stateRootVerified, workerHealthy, releaseManifestOk)
+      # are real probes since audit §P1-1 — they require a synced indexer, a
+      # held worker lock, and committed state-root/release-manifest hashes, so
+      # the correct CI outcome is READ_ONLY / NOT_READY. Asserting READY here
+      # would mean the probes had been faked again.
+      - name: Readiness --runtime (fixture + Core quorum + REAL Guardian → all reachable signals PASS, fails closed at READ_ONLY)
         run: |
           EXPECTED=$(COVE_V3_MAINNET_PROFILE_PATH=test/fixtures/mainnet-profile.json \
             pnpm --silent cove:v3-mainnet-readiness --static | awk '/profile hash:/ {print $3}')
@@ -192,7 +199,16 @@ jobs:
           set -e
           echo "$OUT"
           echo "readiness exit code: $CODE"
-          echo "$OUT" | grep -q "READY_FOR_CONTROLLED_MAINNET_CANARY"
+          # Every signal reachable from CI must PASS against the real Guardian.
+          for signal in "primary Core" "secondary Core" "Core agreement" \
+                        "Guardian reachable" "Guardian profile hash" "Guardian key" \
+                        "custody backend" "audit" "signing journal"; do
+            echo "$OUT" | grep -qE "^${signal} +PASS" || { echo "SIGNAL NOT PASS: $signal"; exit 1; }
+          done
+          # ...and with no live indexer/worker it must still fail closed.
+          echo "$OUT" | grep -q "stage: READ_ONLY"
+          echo "$OUT" | grep -q "NOT_READY"
+          test "$CODE" -ne 0
 
       # A wrong committed hash must fail closed — proves the check is real.
       - name: Readiness rejects a mismatched committed profile hash

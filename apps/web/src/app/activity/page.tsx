@@ -1,6 +1,9 @@
 "use client";
+import { DEMO_EVENTS } from "@/lib/demo-tokens";
 
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+
+import { Suspense, useEffect, useState } from "react";
 
 interface Event {
   txid: string;
@@ -10,11 +13,19 @@ interface Event {
   valid: boolean;
 }
 
-export default function ActivityPage() {
+function ActivityContent() {
+  const searchParams = useSearchParams();
+  // Client-side design-preview path: no API calls, no writes.
+  const demo = searchParams.get("demo") === "1";
   const [events, setEvents] = useState<Event[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    if (demo) {
+      setEvents(DEMO_EVENTS);
+      setLoaded(true);
+      return;
+    }
     void fetch("/api/v3/activity")
       .then((r) => r.json())
       .then((j) => {
@@ -54,5 +65,17 @@ export default function ActivityPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * useSearchParams opts this route into client-side rendering, which Next
+ * requires to sit behind a Suspense boundary.
+ */
+export default function ActivityPage() {
+  return (
+    <Suspense fallback={<div className="panel px-6 py-16 text-center text-sm text-bone-dim">Loading…</div>}>
+      <ActivityContent />
+    </Suspense>
   );
 }

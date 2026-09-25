@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+
+import { Suspense, useEffect, useState } from "react";
+import { DEMO_LISTINGS } from "@/lib/demo-tokens";
 import { useWallet } from "@/components/WalletProvider";
 import { fmtBtc, fmtTokens } from "@/lib/format";
 import { verifyClientIntent } from "@crclaunch/wallets";
@@ -16,7 +19,10 @@ interface Listing {
   sellerTokenScript: string;
 }
 
-export default function MarketPage() {
+function MarketContent() {
+  const searchParams = useSearchParams();
+  // Client-side design-preview path: no API calls, no writes.
+  const demo = searchParams.get("demo") === "1";
   const { connected, script, connect, signPsbt, signBip322, getUtxos } = useWallet();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -25,6 +31,11 @@ export default function MarketPage() {
   const [err, setErr] = useState("");
 
   useEffect(() => {
+    if (demo) {
+      setListings(DEMO_LISTINGS);
+      setLoaded(true);
+      return;
+    }
     void fetch("/api/v3/market/listings")
       .then((r) => r.json())
       .then((j) => {
@@ -136,4 +147,16 @@ export default function MarketPage() {
 
 function Empty({ message }: { message: string }) {
   return <div className="border border-dashed border-rule bg-ink-3 px-6 py-12 text-center text-bone-dim">{message}</div>;
+}
+
+/**
+ * useSearchParams opts this route into client-side rendering, which Next
+ * requires to sit behind a Suspense boundary.
+ */
+export default function MarketPage() {
+  return (
+    <Suspense fallback={<div className="panel px-6 py-16 text-center text-sm text-bone-dim">Loading…</div>}>
+      <MarketContent />
+    </Suspense>
+  );
 }

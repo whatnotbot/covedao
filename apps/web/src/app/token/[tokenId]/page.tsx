@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams, useSearchParams } from "next/navigation";
 import { useWallet } from "@/components/WalletProvider";
 import { verifyClientIntent } from "@crclaunch/wallets";
-import { fmtBtc, fmtTokens, displayTokensToAtoms } from "@/lib/format";
+import { fmtBtc, fmtTokens, fmtInt, displayTokensToAtoms } from "@/lib/format";
+import { DEMO_TOKEN_DETAIL } from "@/lib/demo-tokens";
 
 interface Detail {
   tokenId: string;
@@ -26,8 +28,11 @@ interface Detail {
   activeListingCount: number;
 }
 
-export default function TokenPage() {
+function TokenContent() {
   const params = useParams<{ tokenId: string }>();
+  const search = useSearchParams();
+  // Client-side render path for design review. Never calls the API, never writes.
+  const demo = search.get("demo") === "1";
   const tokenId = params.tokenId;
   const { connected, address, script, connect, signPsbt, signBip322, getUtxos } = useWallet();
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -42,6 +47,11 @@ export default function TokenPage() {
   const [txid, setTxid] = useState("");
 
   useEffect(() => {
+    if (demo) {
+      setDetail(DEMO_TOKEN_DETAIL as unknown as Detail);
+      setLoaded(true);
+      return;
+    }
     void fetch(`/api/v3/tokens/${tokenId}`)
       .then((r) => r.json())
       .then((j) => {
@@ -225,87 +235,236 @@ export default function TokenPage() {
     }
   }
 
-  if (!loaded) return <div className="text-bone-dim">Loading token…</div>;
-  if (!detail) return <div className="text-bone-dim">Token not found.</div>;
+  if (!loaded) return <DetailSkeleton />;
+  if (!detail) {
+    return (
+      <section className="panel px-6 py-16 text-center sm:px-10">
+        <span className="chip chip-rejected">Not found</span>
+        <div className="mt-4 text-bone">No such token</div>
+        <p className="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-bone-dim">
+          Nothing with this tokenId has confirmed on Bitcoin. A token appears here once its DEPLOY
+          transaction is in a block.
+        </p>
+        <Link href="/explore" className="btn-ghost mt-5">Back to explore</Link>
+      </section>
+    );
+  }
+
+  const issued = BigInt(detail.issuedSupplyAtoms);
+  const cap = BigInt(detail.publicCapAtoms);
+  const pct = cap > 0n ? Number((issued * 10_000n) / cap) / 100 : 0;
+  const atCap = issued >= cap;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl text-bone">{detail.displayName} <span className="text-bone-dim">${detail.ticker}</span></h1>
-        <p className="mt-1 break-all font-mono text-xs text-bone-dim">tokenId {detail.tokenId}</p>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="space-y-3 border border-rule bg-ink-2 p-5 text-sm">
-          <h2 className="text-bone">Backing & supply</h2>
-          <KV k="Issued public supply" v={fmtTokens(BigInt(detail.issuedSupplyAtoms))} />
-          <KV k="Public cap" v={fmtTokens(BigInt(detail.publicCapAtoms))} />
-          <KV k="Remaining capacity" v={fmtTokens(BigInt(detail.remainingCapacityAtoms))} />
-          <KV k="BTC backing" v={fmtBtc(BigInt(detail.backingSats))} />
-          <KV k="Curve stage" v={String(detail.curveStage)} />
-          <KV k="Holders" v={String(detail.holderCount)} />
-          <KV k="Deploy txid" v={<span className="font-mono text-xs">{detail.deployTxid.slice(0, 16)}…</span>} />
-        </div>
-
-        <div className="border border-rule bg-ink-2 p-5">
-          <div className="mb-4 flex gap-2 text-sm">
-            {(["buy", "sell", "transfer", "list"] as const).map((t) => (
-              <button key={t} onClick={() => setTab(t)} className={`px-3 py-1.5 ${tab === t ?"bg-brand text-white" : "text-gray-400 hover:text-white"}`}>
-                {t === "buy" ? "Buy" : t === "sell" ? "Instant Sell" : t === "transfer" ? "Transfer" : "List for Sale"}
-              </button>
-            ))}
+    <div className="space-y-px">
+      {/* ── Identity ─────────────────────────────────────────────────── */}
+      <section className="panel px-6 py-8 sm:px-10">
+        {demo ? (
+          <p className="mb-5 inline-block border border-pending/40 bg-pending/10 px-3 py-1.5 text-label uppercase tracking-label text-pending">
+            Demo data · not from the chain
+          </p>
+        ) : null}
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="eyebrow">Token</p>
+            <h1 className="mt-3 text-4xl text-bone">{detail.ticker}</h1>
+            <p className="mt-1 text-sm text-bone-dim">{detail.displayName}</p>
           </div>
-          {!connected ? (
-            <button onClick={() => void connect()} className="w-full bg-signal px-6 py-3 text-bone hover:bg-[#F0A253]">Connect wallet</button>
-          ) : (
-            <div className="space-y-3">
-              {tab !== "list" && (
-                <label className="block">
-                  <span className="text-xs text-bone-dim">{tab === "transfer" ? "Amount (display tokens)" : "Amount (whole display tokens)"}</span>
-                  <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 84000000" className="mt-1 w-full border border-rule bg-bg px-4 py-2 text-sm text-bone outline-none focus:border-brand" />
-                </label>
-              )}
-              {tab === "list" && (
-                <>
-                  <label className="block">
-                    <span className="text-xs text-bone-dim">Listed amount (atoms)</span>
-                    <input value={amount} placeholder="Listed amount (atoms)" onChange={(e) => setAmount(e.target.value)} className="mt-1 w-full border border-rule bg-bg px-4 py-2 text-sm text-bone outline-none focus:border-brand" />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs text-bone-dim">Total asking price (sats)</span>
-                    <input value={price} placeholder="Total asking price (sats)" onChange={(e) => setPrice(e.target.value)} className="mt-1 w-full border border-rule bg-bg px-4 py-2 text-sm text-bone outline-none focus:border-brand" />
-                  </label>
-                </>
-              )}
-              {tab === "transfer" && (
-                <label className="block">
-                  <span className="text-xs text-bone-dim">Recipient scriptPubKey (hex)</span>
-                  <input value={recipient} placeholder="Recipient scriptPubKey" onChange={(e) => setRecipient(e.target.value)} className="mt-1 w-full border border-rule bg-bg px-4 py-2 text-sm text-bone outline-none focus:border-brand" />
-                </label>
-              )}
-              <button
-                onClick={tab === "buy" ? buy : tab === "sell" ? sell : tab === "transfer" ? transfer : list}
-                disabled={busy}
-                className="w-full bg-signal px-6 py-3 text-bone hover:bg-[#F0A253] disabled:opacity-50"
-              >
-                {busy ? "Working…" : tab === "buy" ? "Buy from Backing" : tab === "sell" ? "Redeem to Backing" : tab === "transfer" ? "Transfer" : "Sign & Create Listing"}
-              </button>
-            </div>
-          )}
-          {msg && <p className="mt-3 text-sm text-success">{msg}</p>}
-          {err && <p className="mt-3 text-sm text-danger">{err}</p>}
-          {txid && <p className="mt-1 font-mono text-xs text-bone-dim">{txid}</p>}
+          <span className={atCap ? "chip chip-pending" : "chip chip-verified"}>
+            {atCap ? "At cap" : "Open"}
+          </span>
         </div>
+        {detail.description ? (
+          <p className="mt-5 max-w-xl text-sm leading-relaxed text-bone-dim">{detail.description}</p>
+        ) : null}
+
+        {/* The curve is the single most important thing on this page. */}
+        <div className="mt-8">
+          <div className="flex items-baseline justify-between text-label uppercase tracking-label text-bone-dim">
+            <span>Issued</span>
+            <span>Stage {detail.curveStage} / 20</span>
+          </div>
+          <div className="mt-2 h-1.5 w-full bg-rule">
+            <div className="h-1.5 bg-signal" style={{ width: `${Math.min(pct, 100)}%` }} />
+          </div>
+          <div className="mt-2 flex items-baseline justify-between text-xs tabular-nums">
+            <span className="text-bone">{fmtTokens(issued)} <span className="text-bone-dim">({pct.toFixed(1)}%)</span></span>
+            <span className="text-bone-dim">{fmtTokens(cap)} cap</span>
+          </div>
+        </div>
+
+        <div className="mt-8 grid grid-cols-2 gap-px bg-rule sm:grid-cols-4">
+          <Tile value={fmtBtc(BigInt(detail.backingSats))} label="BTC backing" />
+          <Tile value={fmtTokens(BigInt(detail.remainingCapacityAtoms))} label="Remaining" />
+          <Tile value={fmtInt(detail.holderCount)} label="Holders" />
+          <Tile
+            value={detail.bestAskSats ? fmtBtc(BigInt(detail.bestAskSats)) : "—"}
+            label={detail.activeListingCount ? `Best ask · ${detail.activeListingCount} listed` : "Best ask"}
+          />
+        </div>
+      </section>
+
+      {/* ── Actions ──────────────────────────────────────────────────── */}
+      <section className="panel px-6 py-8 sm:px-10">
+        <p className="eyebrow">Trade</p>
+        <div className="mt-5 grid gap-px bg-rule lg:grid-cols-[1fr_1.1fr]">
+          <div className="bg-ink-3 px-5 py-5">
+            <div className="flex flex-wrap">
+              {(["buy", "sell", "transfer", "list"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={
+                    tab === t
+                      ? "border border-signal bg-signal px-3 py-1.5 text-label uppercase tracking-label text-ink"
+                      : "border border-rule px-3 py-1.5 text-label uppercase tracking-label text-bone-dim transition-colors hover:text-bone"
+                  }
+                >
+                  {t === "buy" ? "Buy" : t === "sell" ? "Sell" : t === "transfer" ? "Transfer" : "List"}
+                </button>
+              ))}
+            </div>
+
+            <p className="mt-4 text-xs leading-relaxed text-bone-dim">
+              {tab === "buy"
+                ? "BTC enters the deterministic reserve; the curve decides the price. No oracle, no discretion."
+                : tab === "sell"
+                  ? "Redeem to the reserve for the exact R-delta, minus the protocol fee."
+                  : tab === "transfer"
+                    ? "Move tokens to another script. One Bitcoin transaction, settled on-chain."
+                    : "List a real token UTXO at a fixed BTC price. Settles atomically when a buyer fills it."}
+            </p>
+
+            {!connected ? (
+              <button onClick={() => void connect()} className="btn mt-5 w-full">
+                Connect wallet
+              </button>
+            ) : (
+              <div className="mt-5 space-y-4">
+                {tab !== "list" && (
+                  <label className="block">
+                    <span className="eyebrow">Amount · display tokens</span>
+                    <input
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder="84000000"
+                      className="field mt-2"
+                    />
+                  </label>
+                )}
+                {tab === "list" && (
+                  <>
+                    <label className="block">
+                      <span className="eyebrow">Listed amount · atoms</span>
+                      <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="100000000" className="field mt-2" />
+                    </label>
+                    <label className="block">
+                      <span className="eyebrow">Asking price · sats</span>
+                      <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="41500" className="field mt-2" />
+                    </label>
+                  </>
+                )}
+                {tab === "transfer" && (
+                  <label className="block">
+                    <span className="eyebrow">Recipient scriptPubKey · hex</span>
+                    <input value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="0014…" className="field mt-2" />
+                  </label>
+                )}
+                <button
+                  onClick={tab === "buy" ? buy : tab === "sell" ? sell : tab === "transfer" ? transfer : list}
+                  disabled={busy}
+                  className="btn w-full"
+                >
+                  {busy
+                    ? "Working…"
+                    : tab === "buy"
+                      ? "Buy from backing"
+                      : tab === "sell"
+                        ? "Redeem to backing"
+                        : tab === "transfer"
+                          ? "Transfer"
+                          : "Sign & create listing"}
+                </button>
+              </div>
+            )}
+
+            {msg ? (
+              <p className="mt-4 border border-verified/40 bg-verified/10 px-3 py-2 text-xs text-verified">{msg}</p>
+            ) : null}
+            {err ? (
+              <p className="mt-4 border border-rejected/40 bg-rejected/10 px-3 py-2 text-xs text-rejected">{err}</p>
+            ) : null}
+            {txid ? <p className="hex mt-2">{txid}</p> : null}
+          </div>
+
+          {/* ── The verifiable facts. This is what separates Cove from a
+                 dashboard: every one of these can be checked on-chain. ── */}
+          <div className="bg-ink-3 px-5 py-5">
+            <p className="eyebrow">On-chain record</p>
+            <dl className="mt-4 space-y-3">
+              <Fact k="Deploy txid" v={detail.deployTxid} mono />
+              <Fact k="Deploy height" v={fmtInt(Number(detail.deployHeight))} />
+              <Fact k="Backing outpoint" v={`${detail.backingOutpoint.txid}:${detail.backingOutpoint.vout}`} mono />
+              <Fact k="State hash" v={detail.stateHash} mono />
+              <Fact k="Policy version" v={`V${detail.policyVersion}`} />
+              <Fact k="tokenId" v={detail.tokenId} mono />
+            </dl>
+            <p className="mt-5 text-xs leading-relaxed text-bone-dim">
+              Every value above is derivable from confirmed blocks. Run the indexer and you should
+              reach the same state hash.
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Tile({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="tile">
+      <div className="text-lg tabular-nums text-bone">{value}</div>
+      <div className="tile-label">{label}</div>
+    </div>
+  );
+}
+
+function Fact({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+  return (
+    <div>
+      <dt className="text-label uppercase tracking-label text-bone-dim">{k}</dt>
+      <dd className={mono ? "hex mt-1 text-bone-2" : "mt-1 text-sm tabular-nums text-bone-2"}>{v}</dd>
+    </div>
+  );
+}
+
+function DetailSkeleton() {
+  return (
+    <div className="panel px-6 py-8 sm:px-10">
+      <div className="h-3 w-16 animate-pulse bg-rule-bright" />
+      <div className="mt-4 h-9 w-40 animate-pulse bg-rule-bright" />
+      <div className="mt-2 h-3 w-28 animate-pulse bg-rule" />
+      <div className="mt-8 h-1.5 w-full bg-rule" />
+      <div className="mt-8 grid grid-cols-2 gap-px bg-rule sm:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="bg-ink-3 px-4 py-5">
+            <div className="h-5 w-24 animate-pulse bg-rule" />
+            <div className="mt-2 h-2.5 w-16 animate-pulse bg-rule" />
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function KV({ k, v }: { k: string; v: React.ReactNode }) {
+/**
+ * useSearchParams opts this route into client-side rendering, which Next
+ * requires to sit behind a Suspense boundary.
+ */
+export default function TokenPage() {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-border/40 py-1.5 last:border-0">
-      <span className="text-bone-dim">{k}</span>
-      <span className="text-right text-bone">{v}</span>
-    </div>
+    <Suspense fallback={<div className="panel px-6 py-16 text-center text-sm text-bone-dim">Loading…</div>}>
+      <TokenContent />
+    </Suspense>
   );
 }

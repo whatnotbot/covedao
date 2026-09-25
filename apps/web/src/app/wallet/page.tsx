@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+
+import { Suspense, useEffect, useState } from "react";
 import { useWallet } from "@/components/WalletProvider";
 import { fmtBtc, fmtTokens } from "@/lib/format";
+import { DEMO_PORTFOLIO } from "@/lib/demo-tokens";
 import { verifyClientIntent } from "@crclaunch/wallets";
 
 interface Portfolio {
@@ -12,7 +15,10 @@ interface Portfolio {
   fills: { id: string; listingId: string; tokenId: string; status: string; amountAtoms: string; totalPriceSats: string; marketFeeSats: string; minerFeeSats: string; unsignedTxDigest: string | null; psbtBase64: string | null; txid: string | null }[];
 }
 
-export default function WalletPage() {
+function WalletContent() {
+  const searchParams = useSearchParams();
+  // Client-side design-preview path: no API calls, no writes.
+  const demo = searchParams.get("demo") === "1";
   const { connected, address, script, connect, signPsbt, signBip322 } = useWallet();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -21,12 +27,22 @@ export default function WalletPage() {
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
+    if (demo) {
+      setPortfolio(DEMO_PORTFOLIO as unknown as Portfolio);
+      setLoaded(true);
+      return;
+    }
     if (!connected || !address) return;
     void refresh();
-  }, [connected, address]);
+  }, [connected, address, demo]);
 
   async function refresh() {
     if (!address) return;
+    if (demo) {
+      setPortfolio(DEMO_PORTFOLIO as unknown as Portfolio);
+      setLoaded(true);
+      return;
+    }
     const r = await fetch(`/api/v3/wallet/${address}/portfolio`).then((r) => r.json());
     if (r.ok) setPortfolio(r.data);
     setLoaded(true);
@@ -97,7 +113,7 @@ export default function WalletPage() {
     }
   }
 
-  if (!connected) {
+  if (!connected && !demo) {
     return (
       <div className="border border-dashed border-rule bg-ink-3 px-6 py-12 text-center">
         <p className="text-bone-dim">Connect a wallet to view holdings.</p>
@@ -177,5 +193,17 @@ export default function WalletPage() {
       {msg && <p className="text-sm text-success">{msg}</p>}
       {err && <p className="text-sm text-danger">{err}</p>}
     </div>
+  );
+}
+
+/**
+ * useSearchParams opts this route into client-side rendering, which Next
+ * requires to sit behind a Suspense boundary.
+ */
+export default function WalletPage() {
+  return (
+    <Suspense fallback={<div className="panel px-6 py-16 text-center text-sm text-bone-dim">Loading…</div>}>
+      <WalletContent />
+    </Suspense>
   );
 }

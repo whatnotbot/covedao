@@ -13,7 +13,8 @@
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "csv-proof": "tsx src/csv-proof.ts"
+    "csv-proof": "tsx src/csv-proof.ts",
+    "ceremony-keys": "tsx src/ceremony-keys.ts"
   },
   "dependencies": {
     "@crclaunch/bitcoin": "workspace:*",

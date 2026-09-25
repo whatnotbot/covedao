@@ -41,6 +41,7 @@
     "cove:v3-regtest-lifecycle": "pnpm --filter @crclaunch/cove-guardian v3-regtest-lifecycle",
     "cove:v3-mainnet-profile-lifecycle": "pnpm --filter @crclaunch/cove-guardian v3-mainnet-profile-lifecycle",
     "cove:csv-proof": "pnpm --filter @crclaunch/cove-vault csv-proof",
+    "cove:ceremony-keys": "pnpm --filter @crclaunch/cove-vault ceremony-keys",
     "cove:v3-mainnet-readiness": "pnpm --filter @crclaunch/cove-app readiness",
     "check:secrets": "node scripts/check-secrets.mjs",
     "check:v3-architecture": "node scripts/check-v3-architecture.mjs",

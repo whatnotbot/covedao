@@ -38,6 +38,7 @@ data/
 uploads/
 .cove-signet-keys.json
 .cove-owner-signer.wif
+.ceremony/
 .cove-signer-b.wif
 .cove-mutinynet-signer-b.wif
 .cove-proof.json

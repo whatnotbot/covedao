@@ -35,6 +35,7 @@ export async function POST(req: Request) {
         expiryHeight: BigInt(listing.expiryHeight),
       },
       strField(body, "signatureB64"),
+      strField(body, "sellerTokenPublicKey") || undefined,
     );
     return ok({ listingId });
   } catch (e) {

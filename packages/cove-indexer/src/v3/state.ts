@@ -38,7 +38,9 @@ import type {
 /**
  * Canonical V3 indexer state machine (§6/§9-§13). Applies valid Cove
  * transitions atomically per block and records an undo journal for reorgs.
- * Invalid Cove transactions are recorded as events and never mutate state.
+ * Invalid Cove transactions are recorded as events and never apply their
+ * operation — but any token carrier a transaction spends without validly
+ * moving it is burned, whatever kind of transaction spent it.
  * Balances are always derived from the token-UTXO set (never stored).
  */
 
@@ -152,7 +154,11 @@ export class V3IndexerState {
       const rawHex = block.txs[txIndex]!;
       const txid = txidOf(rawHex);
       const parsed = parseCoveTx(rawHex);
-      if (parsed.kind === "NON_COVE") continue;
+      if (parsed.kind === "NON_COVE") {
+        const burn = this.burnUnaccountedInputs(txid, rawHex);
+        if (burn) ops.push(burn);
+        continue;
+      }
 
       let op: V3Event["operation"] = null;
       let valid = false;
@@ -175,6 +181,10 @@ export class V3IndexerState {
         curve = r.curve ?? null;
         if (r.valid && undo) ops.push(undo);
       }
+      // Whatever the transaction did validly has already consumed its token
+      // inputs; any carrier it still spends was not accounted for and is burned.
+      const burn = this.burnUnaccountedInputs(txid, rawHex);
+      if (burn) ops.push(burn);
 
       const event: V3Event = {
         txid,
@@ -201,6 +211,27 @@ export class V3IndexerState {
     return events;
   }
 
+  /**
+   * Remove every live token UTXO this transaction spends. Called after the
+   * transaction's own Cove operation (if any) has consumed the inputs it
+   * validly moved, so only carriers spent outside the protocol remain.
+   *
+   * Without this, a carrier swept by an ordinary wallet stayed "unspent" here
+   * forever: the holder's balance showed tokens that no longer existed and
+   * that nobody could ever move or redeem.
+   */
+  private burnUnaccountedInputs(txid: string, rawHex: string): UndoOp | null {
+    const spentUtxos: V3TokenUtxo[] = [];
+    for (const input of bitcoin.Transaction.fromHex(rawHex).ins) {
+      const key = outpointKey(Buffer.from(input.hash).reverse().toString("hex"), input.index);
+      const live = this.tokenUtxos.get(key);
+      if (!live) continue;
+      this.tokenUtxos.delete(key);
+      spentUtxos.push(live);
+    }
+    return spentUtxos.length > 0 ? { kind: "BURN", spendingTxid: txid, spentUtxos } : null;
+  }
+
   /** Reverse the block at `height` (reorg support). */
   undoBlock(height: bigint): void {
     const undo = this.undoByHeight.get(height);
@@ -225,6 +256,10 @@ export class V3IndexerState {
         }
         case "TRANSFER": {
           for (const u of op.createdUtxos) this.tokenUtxos.delete(outpointKey(u.txid, u.vout));
+          for (const u of op.spentUtxos) this.tokenUtxos.set(outpointKey(u.txid, u.vout), u);
+          break;
+        }
+        case "BURN": {
           for (const u of op.spentUtxos) this.tokenUtxos.set(outpointKey(u.txid, u.vout), u);
           break;
         }

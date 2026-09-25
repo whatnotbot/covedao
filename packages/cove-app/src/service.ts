@@ -20,8 +20,10 @@ import {
   type ResolvedInput,
   type GuardianTransitionSigner,
   type TransitionSignRequest,
+  validateMintTransitionV3,
+  validateRedeemTransitionV3,
 } from "@crclaunch/cove-guardian/v3";
-import { loadCanonicalViewSnapshotFromDb, computeHealth, getTokenUtxosByScriptDb } from "@crclaunch/cove-indexer/v3";
+import { loadCanonicalViewSnapshotFromDb, computeHealth, getTokenUtxosByScriptDb, getLiveTokenUtxosAtDb } from "@crclaunch/cove-indexer/v3";
 import { grossBuy, grossRedeem, deterministicFee, stageScaledFlatSats, checkRedeemPayout } from "@crclaunch/cove-economics";
 import { ATOMS_PER_TOKEN, PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
 import { canonicalTicker, computeTokenId, OP_MINT, OP_REDEEM, type ParsedEnvelopeV2 } from "@crclaunch/cove-wire";
@@ -520,6 +522,16 @@ export class V3AppService {
         throw new AppError("FUNDING_INPUT_INVALID", "funding input script does not match wallet");
       }
     }
+    // A token carrier spent as plain BTC burns the tokens on it. Single-address
+    // wallets keep carriers and coins at the same script, so the script check
+    // above cannot catch this.
+    const carriers = await getLiveTokenUtxosAtDb(this.db, this.config.network, params.candidates);
+    if (carriers.length > 0) {
+      throw new AppError(
+        "FUNDING_INPUT_IS_TOKEN",
+        `funding input ${carriers[0]!.txid}:${carriers[0]!.vout} holds tokens and cannot pay for a trade`,
+      );
+    }
     const rates = await this.feeRates();
     // Neither a rate nor an amount supplied: use the Standard tier. The old
     // default was a flat 1,000 sats regardless of size, which is what made a
@@ -852,8 +864,13 @@ export class V3AppService {
       recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, buyFeeBps: this.config.buyFeeBps,
       buyFeeFlatSatsAtTopStage: this.config.buyFeeFlatSatsAtTopStage,
       discoveryTicker };
-    const signed = await this.transitionSigner.signMint(req);
-    if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
+    // Validate now so a bad build fails before the wallet is asked, but do NOT
+    // sign: a Guardian signature reserves the vault outpoint, and reserving it
+    // for a build that is never submitted let anyone freeze a token's trading
+    // by building and walking away. The Guardian signs at submit, once the
+    // buyer's own inputs are signed.
+    const checked = await validateMintTransitionV3({ ...req, guardianXOnly: this.config.guardianXOnly });
+    if (!checked.ok) throw new AppError("GUARDIAN_REJECTED", `${checked.reason}: ${checked.detail}`);
     const psbtBase64 = result.psbt.toBase64();
     const digest = unsignedTxDigest(result.psbt);
     const session = await createTxSession(this.db, {
@@ -899,15 +916,23 @@ export class V3AppService {
     const psbt = parsePsbt(params.signedPsbtBase64, btcNetwork(this.config.network));
     if (unsignedTxDigest(psbt) !== session.unsignedTxDigest) throw new AppError("PSBT_MUTATED", "unsigned tx digest changed");
     for (let i = 1; i < psbt.data.inputs.length; i++) validateInputSignature(psbt, i);
-    // Finalize only the buyer BTC inputs; input 0 is the backing vault, which the
-    // Guardian already finalized (its finalScriptWitness is set at build time).
-    for (let i = 1; i < psbt.data.inputs.length; i++) psbt.finalizeInput(i);
-    const rawTxHex = psbt.extractTransaction().toHex();
     const view = this.overlayPendingBacking(
       await this.loadView(session.tokenId!),
       session.tokenId!,
       await this.loadBackingAt(session.tokenId!, session.backingTxid, session.backingVout),
     );
+    // Only now, with the buyer committed, does the Guardian sign (and reserve)
+    // the vault input.
+    const discoveryTicker = this.config.discoveryEnvelope
+      ? (await getV3TokenDetail(this.db, this.config.network, session.tokenId!))?.ticker
+      : undefined;
+    const signed = await this.transitionSigner.signMint({ psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, buyFeeBps: this.config.buyFeeBps,
+      buyFeeFlatSatsAtTopStage: this.config.buyFeeFlatSatsAtTopStage,
+      discoveryTicker });
+    if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
+    for (let i = 1; i < psbt.data.inputs.length; i++) psbt.finalizeInput(i);
+    const rawTxHex = psbt.extractTransaction().toHex();
     const validated = await validateFinalizedMintTransaction({
       rawTxHex,
       view,
@@ -1076,8 +1101,9 @@ export class V3AppService {
     const req: TransitionSignRequest = { psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
       recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, redeemFeeBps: this.config.redeemFeeBps,
       redeemFeeFlatSats: this.config.redeemFeeFlatSats };
-    const signed = await this.transitionSigner.signRedeem(req);
-    if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
+    // Validate only; the Guardian signs at submit (see buildBackingBuy).
+    const checked = await validateRedeemTransitionV3({ ...req, guardianXOnly: this.config.guardianXOnly });
+    if (!checked.ok) throw new AppError("GUARDIAN_REJECTED", `${checked.reason}: ${checked.detail}`);
     const psbtBase64 = result.psbt.toBase64();
     const digest = unsignedTxDigest(result.psbt);
     const session = await createTxSession(this.db, {
@@ -1123,14 +1149,19 @@ export class V3AppService {
     const psbt = parsePsbt(params.signedPsbtBase64, btcNetwork(this.config.network));
     if (unsignedTxDigest(psbt) !== session.unsignedTxDigest) throw new AppError("PSBT_MUTATED", "unsigned tx digest changed");
     for (let i = 1; i < psbt.data.inputs.length; i++) validateInputSignature(psbt, i);
-    // Finalize only the seller token inputs; input 0 is the backing vault (Guardian-finalized).
-    for (let i = 1; i < psbt.data.inputs.length; i++) psbt.finalizeInput(i);
-    const rawTxHex = psbt.extractTransaction().toHex();
+    // The view must include the token carriers being redeemed.
+    const spent = psbt.txInputs.map((i) => ({ txid: Buffer.from(i.hash).reverse().toString("hex"), vout: i.index }));
     const view = this.overlayPendingBacking(
-      await this.loadView(session.tokenId!),
+      await this.loadView(session.tokenId!, spent),
       session.tokenId!,
       await this.loadBackingAt(session.tokenId!, session.backingTxid, session.backingVout),
     );
+    const signed = await this.transitionSigner.signRedeem({ psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
+      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, redeemFeeBps: this.config.redeemFeeBps,
+      redeemFeeFlatSats: this.config.redeemFeeFlatSats });
+    if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
+    for (let i = 1; i < psbt.data.inputs.length; i++) psbt.finalizeInput(i);
+    const rawTxHex = psbt.extractTransaction().toHex();
     const validated = await validateFinalizedRedeemTransaction({
       rawTxHex,
       view,
@@ -1424,8 +1455,8 @@ export class V3AppService {
     return { listing, listingId, message: listingMessageToSign(listing), expiryHeight };
   }
 
-  createListing(listing: ListingV1, signatureB64: string) {
-    return this.market.createListing({ ...listing, signatureB64 });
+  createListing(listing: ListingV1, signatureB64: string, sellerTokenPublicKey?: string) {
+    return this.market.createListing({ ...listing, signatureB64, sellerTokenPublicKey });
   }
 
   prepareCancellation(listingId: string, nonceHex: string) {

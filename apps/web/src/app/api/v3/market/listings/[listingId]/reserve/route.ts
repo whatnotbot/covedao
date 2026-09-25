@@ -19,6 +19,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ listing
       buyerTokenScript: strField(body, "buyerTokenScript"),
       buyerChangeScript: strField(body, "buyerChangeScript"),
       buyerFundInputs: resolved.map((f) => ({ txid: f.txid, vout: f.vout, script: f.script.toString("hex"), valueSats: f.valueSats })),
+      buyerFundPublicKey: strField(body, "buyerFundPublicKey") || undefined,
       reserveNonce: strField(body, "nonceHex"),
       signatureB64: strField(body, "signatureB64"),
     });

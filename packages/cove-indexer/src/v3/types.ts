@@ -129,4 +129,15 @@ export type UndoOp =
       spendingTxid: string;
       spentUtxos: V3TokenUtxo[];
       createdUtxos: V3TokenUtxo[];
+    }
+  | {
+      /**
+       * Token UTXOs spent by a transaction that did not validly move them — a
+       * plain wallet send, an invalid Cove transaction, or a valid one that
+       * spent a carrier it did not account for. The tokens are gone: Bitcoin
+       * spent the coin that held them.
+       */
+      kind: "BURN";
+      spendingTxid: string;
+      spentUtxos: V3TokenUtxo[];
     };

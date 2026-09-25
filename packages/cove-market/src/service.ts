@@ -13,6 +13,7 @@ import { TOKEN_CARRIER_SATS, type CoveCanonicalView } from "@crclaunch/cove-cove
 import { buildTransferPsbtV2, type ResolvedInput } from "@crclaunch/cove-guardian/v3";
 import { loadCanonicalViewSnapshotFromDb } from "@crclaunch/cove-indexer/v3";
 import { deterministicFee, dustThreshold } from "@crclaunch/cove-economics";
+import { scriptForKind, spendKindOf } from "@crclaunch/bitcoin";
 import { MarketError } from "./errors.js";
 import type { MarketConfig } from "./config.js";
 import type { ListingV1, CancellationV1 } from "./types.js";
@@ -40,6 +41,8 @@ export interface BuyerFundInput {
 
 export interface CreateListingInput extends ListingV1 {
   signatureB64: string;
+  /** Public key of sellerTokenScript (hex); required unless it is native segwit. */
+  sellerTokenPublicKey?: string;
 }
 
 export interface ReserveListingInput {
@@ -47,6 +50,8 @@ export interface ReserveListingInput {
   buyerTokenScript: string; // hex
   buyerChangeScript: string; // hex
   buyerFundInputs: BuyerFundInput[];
+  /** Public key of the buyer's funding script (hex); required unless it is native segwit. */
+  buyerFundPublicKey?: string;
   /** 32-byte hex nonce the buyer signed (§M4). */
   reserveNonce: string;
   /** BIP-322 signature over the reservation message (§M4). */
@@ -100,6 +105,28 @@ function listingToV1(row: ListingSelect): ListingV1 {
  */
 const P2P_OP_RETURN_SCRIPT_BYTES = 57;
 
+/**
+ * Check that `publicKeyHex` controls `scriptHex`, and that one is supplied when
+ * the script needs it. A native-segwit script carries its own key hash; any
+ * other kind cannot be put in a signable PSBT without the key.
+ */
+function assertKeyControls(scriptHex: string, publicKeyHex: string | undefined, network: bitcoin.networks.Network, who: string): void {
+  const script = Buffer.from(scriptHex, "hex");
+  const kind = spendKindOf(script);
+  if (kind === null) throw new MarketError("UNSUPPORTED_ADDRESS", `${who} address type is not supported`);
+  if (!publicKeyHex) {
+    if (kind === "p2wpkh") return;
+    throw new MarketError("PUBLIC_KEY_REQUIRED", `${who} public key is required for a ${kind} address`);
+  }
+  let derived: Buffer;
+  try {
+    derived = scriptForKind(kind, Buffer.from(publicKeyHex, "hex"), network);
+  } catch {
+    throw new MarketError("PUBLIC_KEY_REQUIRED", `${who} public key is invalid`);
+  }
+  if (!derived.equals(script)) throw new MarketError("PUBLIC_KEY_REQUIRED", `${who} public key does not control that address`);
+}
+
 function fillFundInputs(fill: FillSelect): BuyerFundInput[] {
   const raw = fill.buyerFundInputs as unknown as { txid: string; vout: number; script: string; valueSats: string }[];
   return raw.map((f) => ({ txid: f.txid, vout: f.vout, script: f.script, valueSats: BigInt(f.valueSats) }));
@@ -116,6 +143,11 @@ export class MarketService {
     readonly provider: CoreRpcProvider,
     readonly config: MarketConfig,
   ) {}
+
+  /** The market fee on a fill: a percentage, floored so it is never dust. */
+  marketFeeFor(totalPriceSats: bigint): bigint {
+    return deterministicFee(totalPriceSats, this.config.p2pFeeBps, 0n, this.config.p2pFeeMinSats);
+  }
 
   /** Resolve the seller's source token UTXO from the canonical V3 DB + Core. */
   private async resolveSource(listing: ListingV1): Promise<SourceResolution> {
@@ -181,6 +213,7 @@ export class MarketService {
       );
     }
 
+    assertKeyControls(input.sellerTokenScript, input.sellerTokenPublicKey, btcNetwork(this.config.network), "seller token");
     if (!verifyListingAuthorization(input, input.signatureB64)) {
       throw new MarketError("LISTING_BAD_SIGNATURE", "listing BIP-322 signature invalid");
     }
@@ -190,7 +223,7 @@ export class MarketService {
       throw new MarketError("SELLER_PAYOUT_DUST", "seller payout below relay dust");
     }
     assertSettlementCap(input.totalPriceSats, this.config.maxP2pSettlementSats);
-    const marketFee = deterministicFee(input.totalPriceSats, this.config.p2pFeeBps);
+    const marketFee = this.marketFeeFor(input.totalPriceSats);
     if (marketFee < dustThreshold(this.config.feeScript)) {
       throw new MarketError("MARKET_FEE_DUST", "p2p fee below relay dust");
     }
@@ -221,6 +254,7 @@ export class MarketService {
         expiryHeight: input.expiryHeight,
         nonce: input.nonce,
         signatureB64: input.signatureB64,
+        sellerTokenPublicKey: input.sellerTokenPublicKey ?? null,
         status: "ACTIVE",
       });
       await tx.insert(schema.coveV3MarketListingInputs).values({
@@ -291,6 +325,25 @@ export class MarketService {
       throw new MarketError("LISTING_BAD_SIGNATURE", "reservation BIP-322 signature invalid");
     }
     await assertMarketReady({ db: this.db, config: this.config, provider: this.provider });
+    for (const f of input.buyerFundInputs) {
+      if (f.script !== input.buyerChangeScript) {
+        throw new MarketError("BUYER_FUNDS_INSUFFICIENT", "every funding coin must belong to the buyer's payment address");
+      }
+    }
+    assertKeyControls(input.buyerChangeScript, input.buyerFundPublicKey, btcNetwork(this.config.network), "buyer payment");
+    // A token carrier spent as BTC burns its tokens.
+    const carriers = await this.db
+      .select({ txid: schema.coveV3TokenUtxos.txid, vout: schema.coveV3TokenUtxos.vout })
+      .from(schema.coveV3TokenUtxos)
+      .where(and(
+        eq(schema.coveV3TokenUtxos.network, this.config.network),
+        isNull(schema.coveV3TokenUtxos.spentByTxid),
+        eq(schema.coveV3TokenUtxos.scriptPubKey, input.buyerChangeScript),
+      ));
+    const carrierKeys = new Set(carriers.map((c) => `${c.txid}:${c.vout}`));
+    if (input.buyerFundInputs.some((f) => carrierKeys.has(`${f.txid}:${f.vout}`))) {
+      throw new MarketError("BUYER_FUNDS_INSUFFICIENT", "a funding coin holds tokens and cannot pay for a purchase");
+    }
     const tip = BigInt(await this.provider.getBestHeight());
 
     const fillId = await this.db.transaction(async (tx) => {
@@ -309,7 +362,7 @@ export class MarketService {
 
       await this.resolveSource(listingToV1(row));
 
-      const marketFee = deterministicFee(row.totalPriceSats, this.config.p2pFeeBps);
+      const marketFee = this.marketFeeFor(row.totalPriceSats);
       const [inserted] = await tx
         .insert(schema.coveV3MarketFills)
         .values({
@@ -319,6 +372,7 @@ export class MarketService {
           buyerTokenScript: input.buyerTokenScript,
           buyerChangeScript: input.buyerChangeScript,
           buyerFundInputs: input.buyerFundInputs.map((f) => ({ txid: f.txid, vout: f.vout, script: f.script, valueSats: f.valueSats.toString() })),
+          buyerFundPublicKey: input.buyerFundPublicKey ?? null,
           amountAtoms: row.amountAtoms,
           totalPriceSats: row.totalPriceSats,
           marketFeeSats: marketFee,
@@ -369,7 +423,7 @@ export class MarketService {
       tokenOutputs.push({ script: asBuffer(listing.sellerTokenChangeScript), amountAtoms: changeAtoms });
     }
     const extraCarrierSats = BigInt(tokenOutputs.length) * TOKEN_CARRIER_SATS - source.valueSats;
-    const marketFee = deterministicFee(listing.totalPriceSats, this.config.p2pFeeBps);
+    const marketFee = this.marketFeeFor(listing.totalPriceSats);
     const btcOutputs = [
       { script: asBuffer(listing.sellerPayoutScript), valueSats: listing.totalPriceSats },
       { script: this.config.feeScript, valueSats: marketFee },
@@ -379,6 +433,7 @@ export class MarketService {
       vout: f.vout,
       script: asBuffer(f.script),
       valueSats: f.valueSats,
+      publicKey: fill.buyerFundPublicKey ? asBuffer(fill.buyerFundPublicKey) : undefined,
     }));
 
     // Size the fee against the transaction that is actually about to exist:
@@ -417,7 +472,13 @@ export class MarketService {
     const result = buildTransferPsbtV2({
       network: btcNetwork(this.config.network),
       tokenId: Buffer.from(listing.tokenId, "hex"),
-      tokenInputs: [{ txid: listing.sourceTxid, vout: listing.sourceVout, script: source.scriptPubKey, valueSats: source.valueSats }],
+      tokenInputs: [{
+        txid: listing.sourceTxid,
+        vout: listing.sourceVout,
+        script: source.scriptPubKey,
+        valueSats: source.valueSats,
+        publicKey: listing.sellerTokenPublicKey ? asBuffer(listing.sellerTokenPublicKey) : undefined,
+      }],
       tokenInputTotalAtoms: listing.sourceAmountAtoms,
       tokenOutputs,
       funderInputs,
@@ -463,9 +524,15 @@ export class MarketService {
     }
     for (let i = 1; i <= fundCount; i++) validateP2wpkhPartialSig(psbt, i);
 
+    // The buyer is done; now the seller needs time to come back and approve.
     await this.db
       .update(schema.coveV3MarketFills)
-      .set({ psbtBase64: psbtB64, status: "BUYER_SIGNED", updatedAt: new Date() })
+      .set({
+        psbtBase64: psbtB64,
+        status: "BUYER_SIGNED",
+        reservationExpiresAt: new Date(Date.now() + this.config.sellerSignTtlSeconds * 1000),
+        updatedAt: new Date(),
+      })
       .where(eq(schema.coveV3MarketFills.id, fillId));
   }
 
@@ -644,6 +711,35 @@ export class MarketService {
       }
       await this.invalidateListing(listing.listingId, "source spent in mempool by an external tx");
       invalidated++;
+    }
+
+    // (C2) A signed fill waiting on its seller is dead the moment the buyer's
+    // coins are spent elsewhere. Release the listing now rather than holding
+    // it for the whole seller window.
+    const waiting = await this.db
+      .select()
+      .from(schema.coveV3MarketFills)
+      .where(and(eq(schema.coveV3MarketFills.network, this.config.network), eq(schema.coveV3MarketFills.status, "BUYER_SIGNED")));
+    for (const fill of waiting) {
+      let dead = false;
+      for (const f of fillFundInputs(fill)) {
+        if (!(await this.provider.getTxout(f.txid, f.vout))) {
+          dead = true;
+          break;
+        }
+      }
+      if (!dead) continue;
+      await this.db.transaction(async (tx) => {
+        await tx
+          .update(schema.coveV3MarketFills)
+          .set({ status: "EXPIRED", failureReason: "buyer funding spent elsewhere", updatedAt: new Date() })
+          .where(eq(schema.coveV3MarketFills.id, fill.id));
+        await tx
+          .update(schema.coveV3MarketListings)
+          .set({ status: "ACTIVE", updatedAt: new Date() })
+          .where(and(eq(schema.coveV3MarketListings.listingId, fill.listingId), eq(schema.coveV3MarketListings.status, "RESERVED")));
+      });
+      expired++;
     }
 
     // (D) Expire listings + reservations.

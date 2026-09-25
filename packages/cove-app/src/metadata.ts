@@ -38,7 +38,8 @@ function httpsUrl(raw: string | null | undefined): string | null {
 export function validateMetadata(input: TokenMetadataInput): TokenMetadataInput {
   return {
     displayName: bounded(input.displayName, MAX_NAME),
-    description: bounded(input.description, MAX_DESC),
+    // A description is optional: plenty of tokens launch with a name alone.
+    description: (input.description ?? "").trim() === "" ? "" : bounded(input.description, MAX_DESC),
     websiteUrl: httpsUrl(input.websiteUrl),
     xUrl: httpsUrl(input.xUrl),
     imageUrl: httpsUrl(input.imageUrl),

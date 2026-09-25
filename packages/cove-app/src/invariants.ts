@@ -1,4 +1,4 @@
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, or, isNull, sql } from "drizzle-orm";
 import { schema, type Database } from "@crclaunch/db";
 import { ATOMS_PER_TOKEN } from "@crclaunch/curve";
 import { requiredBackingSats } from "@crclaunch/cove-economics";
@@ -41,15 +41,21 @@ export async function checkBackingInvariant(db: Database, network: string): Prom
   return out;
 }
 
-/** sum(unspent canonical token UTXOs) == issued public supply. */
+/** sum(unspent canonical token UTXOs) + sum(burned) == issued public supply. */
 export async function checkSupplyInvariant(db: Database, network: string): Promise<InvariantResult[]> {
   const tokens = await db.select().from(schema.coveV3Tokens).where(and(eq(schema.coveV3Tokens.network, network), eq(schema.coveV3Tokens.canonical, true)));
   const backing = await db.select().from(schema.coveV3BackingStates).where(and(eq(schema.coveV3BackingStates.network, network), eq(schema.coveV3BackingStates.canonical, true)));
   const issued = new Map(backing.map((b) => [b.tokenId, b.issuedSupplyAtoms]));
+  // A burned carrier is spent, but its tokens were issued and still count
+  // against supply: the curve never walks back down for them.
   const rows = await db
     .select({ tokenId: schema.coveV3TokenUtxos.tokenId, sum: sql<bigint>`sum(${schema.coveV3TokenUtxos.amountAtoms})` })
     .from(schema.coveV3TokenUtxos)
-    .where(and(eq(schema.coveV3TokenUtxos.network, network), eq(schema.coveV3TokenUtxos.canonical, true), isNull(schema.coveV3TokenUtxos.spentByTxid)))
+    .where(and(
+      eq(schema.coveV3TokenUtxos.network, network),
+      eq(schema.coveV3TokenUtxos.canonical, true),
+      or(isNull(schema.coveV3TokenUtxos.spentByTxid), eq(schema.coveV3TokenUtxos.burned, true)),
+    ))
     .groupBy(schema.coveV3TokenUtxos.tokenId);
   const sumByToken = new Map(rows.map((r) => [r.tokenId, r.sum ?? 0n]));
   const out: InvariantResult[] = [];

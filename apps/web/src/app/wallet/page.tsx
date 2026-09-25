@@ -19,7 +19,7 @@ function WalletContent() {
   const searchParams = useSearchParams();
   // Client-side design-preview path: no API calls, no writes.
   const demo = searchParams.get("demo") === "1";
-  const { connected, address, ordinalsAddress, script, connect, signPsbt, signBip322 } = useWallet();
+  const { connected, address, ordinalsAddress, script, ordinalsScript, connect, signPsbt, signBip322 } = useWallet();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [msg, setMsg] = useState("");
@@ -67,6 +67,8 @@ function WalletContent() {
           minerFeeSats: fill.minerFeeSats,
           netSats: fill.totalPriceSats,
           walletScript: script,
+          // Token change from a partial sale returns to the ordinals address.
+          ordinalsScript: ordinalsScript || script,
           stateHash: null,
           unsignedTxDigest: fill.unsignedTxDigest,
         });

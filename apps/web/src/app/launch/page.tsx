@@ -24,9 +24,9 @@ interface Prepared {
 
 export default function LaunchPage() {
   const { connected, walletFields, connect, signPsbt, getUtxos } = useWallet();
-  const [name, setName] = useState("E2E Frog");
-  const [ticker, setTicker] = useState("FROG");
-  const [description, setDescription] = useState("A deterministic backing test token.");
+  const [name, setName] = useState("");
+  const [ticker, setTicker] = useState("");
+  const [description, setDescription] = useState("");
   const [website, setWebsite] = useState("");
   const [xUrl, setXUrl] = useState("");
   const [imageUrl, setImageUrl] = useState("");
@@ -111,9 +111,9 @@ export default function LaunchPage() {
       </div>
 
       <div className="space-y-3">
-        <Field label="Name" value={name} onChange={setName} />
-        <Field label="Ticker (1–16 uppercase alphanumeric)" value={ticker} onChange={(v) => setTicker(v.toUpperCase())} />
-        <Field label="Description" value={description} onChange={setDescription} />
+        <Field label="Name" value={name} onChange={setName} placeholder="Frog Coin" />
+        <Field label="Ticker (1–16 uppercase alphanumeric)" value={ticker} onChange={(v) => setTicker(v.toUpperCase())} placeholder="FROG" />
+        <Field label="Description" value={description} onChange={setDescription} placeholder="What is this token for?" />
         <Field label="Website (https)" value={website} onChange={setWebsite} />
         <Field label="X (https)" value={xUrl} onChange={setXUrl} />
         <Field label="Image URL (https)" value={imageUrl} onChange={setImageUrl} />
@@ -135,7 +135,7 @@ export default function LaunchPage() {
       </div>
 
       {!prepared ? (
-        <button onClick={prepare} disabled={busy} className="w-full bg-signal px-6 py-3 text-bone hover:bg-[#F0A253] disabled:opacity-50">
+        <button onClick={prepare} disabled={busy || !name.trim() || !ticker.trim()} className="w-full bg-signal px-6 py-3 text-bone hover:bg-[#F0A253] disabled:opacity-50">
           {busy ? "Preparing…" : "Review launch identity"}
         </button>
       ) : (
@@ -182,11 +182,11 @@ export default function LaunchPage() {
   );
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
   return (
     <label className="block">
       <span className="text-xs text-bone-dim">{label}</span>
-      <input value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full border border-rule bg-ink-2 px-4 py-2 text-sm text-bone outline-none focus:border-brand" />
+      <input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full border border-rule bg-ink-2 px-4 py-2 text-sm text-bone outline-none focus:border-brand" />
     </label>
   );
 }

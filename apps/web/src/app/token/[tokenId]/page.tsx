@@ -233,7 +233,11 @@ function TokenContent() {
       const cr = await fetch("/api/v3/market/listings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ listing: pj.data.listing, signatureB64: sig }),
+        body: JSON.stringify({
+          listing: pj.data.listing,
+          signatureB64: sig,
+          sellerTokenPublicKey: walletFields().ordinalsPublicKey,
+        }),
       });
       const cj = await cr.json();
       if (!cj.ok) throw new Error(errorText(cj));

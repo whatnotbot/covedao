@@ -132,6 +132,14 @@ export class V3Store {
         for (const u of op.createdUtxos) await tx.insert(tables.coveV3TokenUtxos).values(this.utxoRow(u));
         break;
       }
+      case "BURN": {
+        for (const u of op.spentUtxos) {
+          await tx.update(tables.coveV3TokenUtxos)
+            .set({ spentByTxid: op.spendingTxid, spentHeight: block.height, spentBlockHash: block.hash, burned: true })
+            .where(and(eq(tables.coveV3TokenUtxos.network, n), eq(tables.coveV3TokenUtxos.txid, u.txid), eq(tables.coveV3TokenUtxos.vout, u.vout)));
+        }
+        break;
+      }
     }
   }
 
@@ -173,6 +181,14 @@ export class V3Store {
             await tx.insert(tables.coveV3TokenUtxos).values(this.utxoRow(u)).onConflictDoUpdate({
               target: [tables.coveV3TokenUtxos.network, tables.coveV3TokenUtxos.txid, tables.coveV3TokenUtxos.vout],
               set: { spentByTxid: null, spentHeight: null, spentBlockHash: null },
+            });
+          }
+          break;
+        case "BURN":
+          for (const u of op.spentUtxos) {
+            await tx.insert(tables.coveV3TokenUtxos).values(this.utxoRow(u)).onConflictDoUpdate({
+              target: [tables.coveV3TokenUtxos.network, tables.coveV3TokenUtxos.txid, tables.coveV3TokenUtxos.vout],
+              set: { spentByTxid: null, spentHeight: null, spentBlockHash: null, burned: false },
             });
           }
           break;

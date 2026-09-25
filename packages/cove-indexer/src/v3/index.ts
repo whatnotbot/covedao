@@ -18,6 +18,7 @@ export { reindexDb } from "./reindex.js";
 
 export {
   getTokenUtxosByScriptDb,
+  getLiveTokenUtxosAtDb,
   getBalanceByScriptDb,
   getTokenHoldersDb,
   getCurrentBackingDb,

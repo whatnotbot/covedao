@@ -22,7 +22,10 @@ export {
 } from "./order/hash.js";
 export {
   signBip322P2wpkh,
+  signBip322P2tr,
+  verifyBip322,
   verifyBip322P2wpkh,
+  bip322MessageHash,
   verifyListingAuthorization,
   verifyCancellationAuthorization,
   verifyReservationAuthorization,

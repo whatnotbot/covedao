@@ -66,6 +66,8 @@ let aliceTokenId: string;
 test("E2E-001 launch: Alice launches FROG through the UI", async ({ browser }) => {
   const page = await walletPage(browser, IDENTITIES.alice);
   await page.goto(`${BASE}/launch`);
+  await page.getByLabel("Name").fill("E2E Frog");
+  await page.getByLabel(/^Ticker/).fill("FROG");
 
   // connect
   await page.getByRole("button", { name: /review launch identity/i }).click();

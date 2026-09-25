@@ -63,6 +63,11 @@ interface TestWallet {
     adapterId: string;
     paymentAddress: string;
     paymentScript: string;
+    paymentPublicKey?: string;
+    /** A two-address signer (shaped like Xverse); absent for a single-address one. */
+    ordinalsAddress?: string;
+    ordinalsScript?: string;
+    ordinalsPublicKey?: string;
     network: string;
     capabilities: WalletCapabilities;
   }>;
@@ -94,13 +99,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const connectTestWallet = useCallback(async (wallet: TestWallet) => {
     const c = await wallet.connect();
-    const account = { address: c.paymentAddress, script: c.paymentScript, publicKey: "" };
+    const account = { address: c.paymentAddress, script: c.paymentScript, publicKey: c.paymentPublicKey ?? "" };
     setConn({
       walletId: c.adapterId,
       // A single-address signer uses the same address for both roles, which is
       // legitimate: plenty of native-segwit wallets work that way.
       payments: account,
-      ordinals: account,
+      ordinals: c.ordinalsAddress && c.ordinalsScript
+        ? { address: c.ordinalsAddress, script: c.ordinalsScript, publicKey: c.ordinalsPublicKey ?? "" }
+        : account,
       isTestWallet: true,
     });
     setCapabilities(c.capabilities);

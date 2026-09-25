@@ -35,6 +35,11 @@ export { inputsOwnedBy } from "./resolve";
  * is a wallet picker, and Cove has its own design to answer to.
  */
 
+/** bc1p… / tb1p… / bcrt1p… — a segwit v1 (taproot) address. */
+function isTaprootAddress(address: string): boolean {
+  return /^(bc|tb|bcrt)1p/i.test(address);
+}
+
 function fail(walletName: string, e: unknown): never {
   const message = e instanceof Error ? e.message : String(e);
   if (/cancel|reject|denied|user/i.test(message)) {
@@ -218,10 +223,12 @@ export const ADAPTERS: WalletAdapter[] = [
           extractTx: false,
         }),
       ),
-    signMessage: async (network, _address, message) => {
+    signMessage: async (network, address, message) => {
+      // Leather signs with whichever of its two addresses we name by type; the
+      // server verifies against the address it was asked for, so they must match.
       const r = await leather.signMessage(message, {
         network,
-        paymentType: LeatherAddressType.P2WPKH,
+        paymentType: isTaprootAddress(address) ? LeatherAddressType.P2TR : LeatherAddressType.P2WPKH,
       });
       return r.base64 ?? r.hex;
     },

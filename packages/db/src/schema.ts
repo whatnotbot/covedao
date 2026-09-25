@@ -547,6 +547,8 @@ export const coveV3TokenUtxos = pgTable(
     spentByTxid: text("spent_by_txid"),
     spentHeight: atoms("spent_height"),
     spentBlockHash: text("spent_block_hash"),
+    /** Spent outside the protocol: the tokens it held no longer exist. */
+    burned: boolean("burned").notNull().default(false),
     canonical: boolean("canonical").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -646,6 +648,12 @@ export const coveV3MarketListings = pgTable(
     expiryHeight: atoms("expiry_height").notNull(),
     nonce: text("nonce").notNull(),
     signatureB64: text("signature_b64").notNull(),
+    /**
+     * The public key behind sellerTokenScript. Not part of the signed order —
+     * a Taproot or nested-segwit carrier cannot be put in a signable PSBT
+     * without it, and the scriptPubKey alone does not reveal it.
+     */
+    sellerTokenPublicKey: text("seller_token_public_key"),
     status: text("status").notNull().default("ACTIVE"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -693,6 +701,8 @@ export const coveV3MarketFills = pgTable(
     buyerChangeScript: text("buyer_change_script").notNull(),
     /** Buyer BTC inputs (jsonb): [{txid, vout, script, valueSats}] captured at reserve. */
     buyerFundInputs: jsonb("buyer_fund_inputs").notNull(),
+    /** Public key behind the buyer's funding script (needed for nested segwit / Taproot). */
+    buyerFundPublicKey: text("buyer_fund_public_key"),
     amountAtoms: atoms("amount_atoms").notNull(),
     totalPriceSats: atoms("total_price_sats").notNull(),
     marketFeeSats: atoms("market_fee_sats").notNull(),

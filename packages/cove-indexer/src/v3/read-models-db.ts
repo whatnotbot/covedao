@@ -1,4 +1,4 @@
-import { eq, and, isNull, desc } from "drizzle-orm";
+import { eq, and, or, isNull, desc } from "drizzle-orm";
 import { schema, type Database } from "@crclaunch/db";
 import { balanceByScript, currentBacking, tokenHolders, tokenUtxosByScript, type TokenDetail } from "./read-models.js";
 
@@ -17,6 +17,25 @@ export async function getTokenUtxosByScriptDb(db: Database, network: string, scr
         eq(schema.coveV3TokenUtxos.scriptPubKey, scriptPubKey),
         eq(schema.coveV3TokenUtxos.canonical, true),
         isNull(schema.coveV3TokenUtxos.spentByTxid),
+      ),
+    );
+}
+
+/**
+ * The live token UTXOs among `outpoints`. Used to refuse a token carrier as
+ * BTC funding: spending one in a buy or sell would burn the tokens it holds.
+ */
+export async function getLiveTokenUtxosAtDb(db: Database, network: string, outpoints: { txid: string; vout: number }[]) {
+  if (outpoints.length === 0) return [];
+  return db
+    .select()
+    .from(schema.coveV3TokenUtxos)
+    .where(
+      and(
+        eq(schema.coveV3TokenUtxos.network, network),
+        eq(schema.coveV3TokenUtxos.canonical, true),
+        isNull(schema.coveV3TokenUtxos.spentByTxid),
+        or(...outpoints.map((o) => and(eq(schema.coveV3TokenUtxos.txid, o.txid), eq(schema.coveV3TokenUtxos.vout, o.vout)))),
       ),
     );
 }

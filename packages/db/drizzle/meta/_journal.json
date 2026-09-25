@@ -43,6 +43,20 @@
       "when": 1790353035705,
       "tag": "0005_smooth_king_bedlam",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790353550146,
+      "tag": "0006_tiresome_sphinx",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790354810302,
+      "tag": "0007_tired_wild_child",
+      "breakpoints": true
     }
   ]
 }

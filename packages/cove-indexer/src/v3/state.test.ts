@@ -229,3 +229,67 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
     expect(state.tokens.size).toBe(1);
   });
 });
+
+describe("V3IndexerState — carriers spent outside the protocol are burned", () => {
+  function deployAndMint(state: V3IndexerState) {
+    const tokenId = computeTokenId({ chainIdentity: CHAIN_BITCOIN_REGTEST, policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
+    const s0 = s0StateV2({ tokenId: tokenId.toString("hex") });
+    const deployHex = tx(
+      [{ txid: "d0".repeat(32), vout: 0 }],
+      [
+        { script: opReturn(encodeDeployV2({ policyVersion: 3, ticker: "FROG", tokenNonce: NONCE })), value: 0n },
+        { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS },
+      ],
+    );
+    state.applyBlock(block(1, [deployHex]));
+    const minted = applyMintV2(s0, MINT_AMOUNT);
+    const fee = deterministicFee(minted.grossSats, COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(0n, COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage));
+    const mintHex = tx(
+      [{ txid: bitcoin.Transaction.fromHex(deployHex).getId(), vout: 1 }],
+      [
+        { script: opReturn(encodeMintV2({ tokenId, amount: MINT_AMOUNT, recipientVout: 2 })), value: 0n },
+        { script: vaultScript(minted.nextState), value: RESERVE_ANCHOR_SATS + minted.nextState.backingSats },
+        { script: Buffer.from("0014" + "a".repeat(40), "hex"), value: 1_000n },
+        { script: feeScript, value: fee },
+      ],
+    );
+    state.applyBlock(block(2, [mintHex]));
+    return { tokenId, tokenIdHex: tokenId.toString("hex"), carrier: { txid: bitcoin.Transaction.fromHex(mintHex).getId(), vout: 2 } };
+  }
+
+  it("a plain wallet send of a carrier removes its tokens, and undo restores them", () => {
+    const state = new V3IndexerState(config());
+    const { tokenIdHex, carrier } = deployAndMint(state);
+    const rootBefore = state.stateRoot();
+
+    const sweepHex = tx([carrier], [{ script: Buffer.from("0014" + "e".repeat(40), "hex"), value: 900n }]);
+    state.applyBlock(block(3, [sweepHex]));
+
+    expect(state.tokenUtxos.has(`${carrier.txid}:${carrier.vout}`)).toBe(false);
+    // The tokens were issued and stay issued: supply and backing do not move.
+    expect(state.backing.get(tokenIdHex)!.state.issuedPublicSupplyAtoms).toBe(MINT_AMOUNT);
+    const undo = state.undoByHeight.get(3n)!;
+    expect(undo.ops).toEqual([
+      expect.objectContaining({ kind: "BURN", spendingTxid: bitcoin.Transaction.fromHex(sweepHex).getId() }),
+    ]);
+
+    state.undoBlock(3n);
+    expect(state.tokenUtxos.get(`${carrier.txid}:${carrier.vout}`)!.amountAtoms).toBe(MINT_AMOUNT);
+    expect(state.stateRoot()).toBe(rootBefore);
+  });
+
+  it("an invalid Cove transaction that spends a carrier burns it too", () => {
+    const state = new V3IndexerState(config());
+    const { tokenId, carrier } = deployAndMint(state);
+
+    // Allocates more than the input holds: invalid, but Bitcoin still spent the carrier.
+    const overHex = tx([carrier], [
+      { script: opReturn(encodeTransferV2({ tokenId, allocations: [{ vout: 1, amount: MINT_AMOUNT * 2n }] })), value: 0n },
+      { script: Buffer.from("0014" + "b".repeat(40), "hex"), value: 1_000n },
+    ]);
+    const events = state.applyBlock(block(3, [overHex]));
+
+    expect(events[0]!.valid).toBe(false);
+    expect(state.tokenUtxos.size).toBe(0);
+  });
+});

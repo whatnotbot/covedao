@@ -26,10 +26,15 @@ export function isSighashAll(sig: Buffer): boolean {
   return sighashTypeOf(sig) === bitcoin.Transaction.SIGHASH_ALL;
 }
 
-/** The single partial signature on a P2WPKH input, or null. */
+/**
+ * The signature on an input, or null: an ECDSA partial signature (native or
+ * nested segwit) or a Taproot key-path signature, whichever the wallet wrote.
+ */
 export function partialSigOfInput(psbt: bitcoin.Psbt, inputIndex: number): Buffer | null {
   const input = psbt.data.inputs[inputIndex];
-  if (!input || !input.partialSig || input.partialSig.length === 0) return null;
+  if (!input) return null;
+  if (input.tapKeySig && input.tapKeySig.length > 0) return Buffer.from(input.tapKeySig);
+  if (!input.partialSig || input.partialSig.length === 0) return null;
   return Buffer.from(input.partialSig[0]!.signature);
 }
 

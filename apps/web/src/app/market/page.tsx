@@ -31,7 +31,7 @@ function MarketContent() {
   const searchParams = useSearchParams();
   // Client-side design-preview path: no API calls, no writes.
   const demo = searchParams.get("demo") === "1";
-  const { connected, script, ordinalsScript, connect, signPsbt, signBip322, getUtxos } = useWallet();
+  const { connected, script, publicKey, ordinalsScript, connect, signPsbt, signBip322, getUtxos } = useWallet();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [buying, setBuying] = useState<string | null>(null);
@@ -83,6 +83,7 @@ function MarketContent() {
           // the one that paid.
           buyerTokenScript: ordinalsScript || script,
           buyerChangeScript: script,
+          buyerFundPublicKey: publicKey || undefined,
           funding,
           nonceHex: pj.data.reserveNonce,
           signatureB64,
@@ -102,7 +103,16 @@ function MarketContent() {
 
       // §M3: independently re-derive the P2P outputs from the user's own input
       // before signing (the server-supplied digest alone is circular).
-      if (bj.data.intent) verifyClientIntent(bj.data.psbtBase64, bj.data.intent);
+      // The wallet's own scripts and the price on the listing it clicked are the
+      // user's facts; the server's copy of them is not trusted.
+      if (!bj.data.intent) throw new Error("server did not describe the purchase");
+      verifyClientIntent(bj.data.psbtBase64, {
+        ...bj.data.intent,
+        walletScript: script,
+        ordinalsScript: ordinalsScript || script,
+        grossSats: listing.totalPriceSats,
+        tokenAmountAtoms: listing.amountAtoms,
+      });
 
       const signed = await signPsbt(bj.data.psbtBase64, "P2P_BUY");
       const sr = await fetch(`/api/v3/market/fills/${fillId}/buyer-signature`, {

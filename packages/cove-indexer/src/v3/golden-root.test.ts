@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
-import { s0StateV2, applyMintV2 } from "@crclaunch/cove-covenant";
+import { s0StateV2, applyMintV2, applyRedeemV2 } from "@crclaunch/cove-covenant";
 import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
 import { CHAIN_BITCOIN_REGTEST, computeTokenId, encodeDeployV2, encodeMintV2, encodeRedeemV2, encodeTransferV2 } from "@crclaunch/cove-wire";
 import { COVE_FEE_CONFIG, deterministicFee, stageScaledFlatSats } from "@crclaunch/cove-economics";
@@ -78,12 +78,14 @@ function fullLifecycleState(): V3IndexerState {
   state.applyBlock(block(3, [transferHex]));
 
   // REDEEM full
+  const redeemed = applyRedeemV2(minted.nextState, MINT_AMOUNT);
+  const redeemFee = deterministicFee(redeemed.grossSats, COVE_FEE_CONFIG.redeemFeeBps, COVE_FEE_CONFIG.redeemFeeFlatSats);
   const redeemWire = encodeRedeemV2({ tokenId, redeemAmount: MINT_AMOUNT, changeAllocations: [] });
   const redeemHex = tx([{ txid: mintTxid, vout: 1 }, { txid: transferTxid, vout: 1 }], [
     { script: opReturn(redeemWire), value: 0n },
     { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS },
-    { script: bobScript, value: 48_856n },
-    { script: feeScript, value: 2_500n },
+    { script: bobScript, value: redeemed.grossSats - redeemFee },
+    { script: feeScript, value: redeemFee },
   ]);
   const redeemTxid = bitcoin.Transaction.fromHex(redeemHex).getId();
   state.applyBlock(block(4, [redeemHex]));
@@ -108,12 +110,15 @@ function fullLifecycleState(): V3IndexerState {
     { script: aliceScript, value: 1_000n },
   ]);
   state.applyBlock(block(6, [p2pHex]));
+  // Every step must be valid, or the golden silently freezes a broken fixture.
+  const invalid = state.events.filter((e) => !e.valid);
+  if (invalid.length > 0) throw new Error(`fixture has invalid ops: ${invalid.map((e) => `${e.operation}:${e.reason}`).join(", ")}`);
 
   return state;
 }
 
 /** Frozen deterministic state-root golden for the full 6-op lifecycle fixture. */
-export const V3_STATE_ROOT_GOLDEN = "b5c782bf7398ed8c4d74f468021504eaa833bc0e1023d603c4cfbc6e60064c46";
+export const V3_STATE_ROOT_GOLDEN = "f405ca1670bcf4b35f6758434612928bce674806cbb3447b8f585fb5adb23fea";
 
 describe("deterministic V3 state-root golden (§18)", () => {
   it("matches the frozen golden root", () => {

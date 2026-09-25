@@ -68,6 +68,10 @@ function assertOp(op: unknown): asserts op is UndoOp {
       )
         throw new Error("MALFORMED_UNDO: REDEEM fields");
       return;
+    case "BURN":
+      if (typeof op.spendingTxid !== "string" || !Array.isArray(op.spentUtxos) || !op.spentUtxos.every(isUtxo))
+        throw new Error("MALFORMED_UNDO: BURN fields");
+      return;
     default:
       throw new Error(`MALFORMED_UNDO: unknown kind ${String(op.kind)}`);
   }

@@ -11,8 +11,18 @@ export interface MarketConfig {
   /** Chain identity this market operates on; listings must match (§M5). */
   chainIdentity: string;
   p2pFeeBps: bigint;
+  /** The market fee never drops below this, so a small fill is never refused for a dust fee. */
+  p2pFeeMinSats: bigint;
   feeScript: Buffer;
+  /** How long a buyer holds a listing while their own wallet signs. */
   reservationTtlSeconds: number;
+  /**
+   * How long a seller has to countersign once the buyer has signed. The seller
+   * is usually not online at the moment someone buys, so this has to be long
+   * enough to come back and approve. The buyer's coins are only committed to
+   * this one transaction; spending them elsewhere cancels the fill.
+   */
+  sellerSignTtlSeconds: number;
   maxListingBlocks: bigint;
   maxMinerFeeSats: bigint;
   /** Canary P2P settlement cap (sats); undefined = uncapped (dev/regtest only). */
@@ -38,8 +48,10 @@ export function defaultMarketConfig(network: MarketConfig["network"], feeScript:
     network,
     chainIdentity,
     p2pFeeBps: COVE_FEE_CONFIG.p2pFeeBps,
+    p2pFeeMinSats: COVE_FEE_CONFIG.p2pFeeMinSats,
     feeScript,
-    reservationTtlSeconds: 90,
+    reservationTtlSeconds: 300,
+    sellerSignTtlSeconds: 24 * 60 * 60,
     maxListingBlocks: 21_000n, // ~5 months at 10-min blocks; operational, not protocol
     maxMinerFeeSats: 20_000n,
   };
@@ -61,8 +73,10 @@ export function mainnetMarketConfig(params: {
     network: "mainnet",
     chainIdentity: params.chainIdentity ?? CHAIN_BITCOIN_MAINNET,
     p2pFeeBps: BigInt(params.p2pFeeBps),
+    p2pFeeMinSats: COVE_FEE_CONFIG.p2pFeeMinSats,
     feeScript: params.feeScript,
-    reservationTtlSeconds: 90,
+    reservationTtlSeconds: 300,
+    sellerSignTtlSeconds: 24 * 60 * 60,
     maxListingBlocks: 21_000n,
     maxMinerFeeSats: 20_000n,
     maxP2pSettlementSats: params.maxP2pSettlementSats,

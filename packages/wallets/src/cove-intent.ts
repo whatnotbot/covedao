@@ -202,6 +202,26 @@ export function verifyClientIntent(
           `(${gross} price + ${protocolFee} protocol fee + ${expectedMinerFee} miner fee)`,
       );
     }
+  } else if (intent.operation === "P2P_BUY") {
+    // The buyer pays the seller the agreed price and the market its fee, and
+    // nothing else leaves: whatever goes to other people, minus the seller's
+    // own carrier coming in, can be at most price + fee.
+    if (gross === null || protocolFee === null) mismatch("purchase intent is missing its price");
+    const othersIn = psbt.data.inputs.reduce(
+      (s, i) => (isMine(i.witnessUtxo?.script.toString("hex")) ? s : s + BigInt(i.witnessUtxo?.value ?? 0)),
+      0n,
+    );
+    const othersOut = outputs.reduce((s, o) => (isMine(o.scriptHex) ? s : s + o.value), 0n);
+    const paidToOthers = othersOut - othersIn;
+    if (paidToOthers > gross + protocolFee) {
+      mismatch(
+        `this purchase pays others ${paidToOthers} sats, more than the ` +
+          `${gross} price + ${protocolFee} fee you were shown`,
+      );
+    }
+    if (!outputs.some((o) => !isMine(o.scriptHex) && o.value === gross)) {
+      mismatch(`no ${gross}-sat payment to the seller`);
+    }
   } else if (intent.operation === "REDEEM") {
     if (net === null) mismatch("redeem intent is missing its payout");
     const expected = net - expectedMinerFee;

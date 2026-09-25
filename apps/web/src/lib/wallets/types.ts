@@ -38,9 +38,8 @@ export interface SignPsbtRequest {
    *
    * Cove works this out by matching each input's script against the two
    * connected addresses, rather than asking the wallet to guess. The backing
-   * vault input is deliberately absent: the Guardian has already signed it,
-   * and a wallet that tried would only produce a signature that invalidates
-   * the transaction.
+   * vault input is deliberately absent: only the Guardian can sign it, which
+   * it does after the user, when the transaction is submitted.
    */
   inputsByAddress: { address: string; indexes: number[] }[];
 }
@@ -50,6 +49,8 @@ export interface WalletAdapter {
   name: string;
   /** Where to get it, shown when it is not installed. */
   installUrl: string;
+  /** The wallet has no test networks; the picker says so instead of failing on connect. */
+  mainnetOnly?: boolean;
   isInstalled(): Promise<boolean>;
   connect(network: CoveNetwork): Promise<WalletConnection>;
   /**

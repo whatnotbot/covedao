@@ -61,6 +61,27 @@ function serialized(result: { base64: string | null; hex: string }): string {
 
 const SIGHASH_ALL = bitcoin.Transaction.SIGHASH_ALL;
 
+/** One call to Xverse's JSON-RPC provider; throws its error message on refusal. */
+async function xverseRpc<T>(method: string, params: Record<string, unknown>): Promise<T> {
+  const provider = (window as unknown as {
+    XverseProviders?: { BitcoinProvider?: { request(m: string, p: unknown): Promise<unknown> } };
+  }).XverseProviders?.BitcoinProvider;
+  if (!provider) throw new WalletError("NOT_INSTALLED", "Xverse is not installed");
+  const res = (await provider.request(method, params)) as {
+    result?: T;
+    error?: { code?: number; message?: string };
+  };
+  if (res?.error) {
+    // 4001 / -32000 is the user closing or rejecting the prompt.
+    if (res.error.code === 4001 || /reject|cancel/i.test(res.error.message ?? "")) {
+      throw new WalletError("REJECTED", "You declined the request in Xverse");
+    }
+    throw new WalletError("FAILED", res.error.message ?? "Xverse refused the request");
+  }
+  if (!res?.result) throw new WalletError("FAILED", "Xverse returned nothing");
+  return res.result;
+}
+
 /**
  * Every wallet is asked for the same thing: sign these indexes, with
  * SIGHASH_ALL, and do not finalize. They differ only in how they want to be
@@ -70,6 +91,7 @@ function makeAdapter(spec: {
   id: WalletId;
   name: string;
   installUrl: string;
+  mainnetOnly?: boolean;
   isInstalled: () => boolean | Promise<boolean>;
   getAddresses: (network: BrowserNetwork) => Promise<SdkAddress[]>;
   sign: (psbt: Psbt, network: BrowserNetwork, request: SignPsbtRequest) => Promise<string>;
@@ -79,6 +101,7 @@ function makeAdapter(spec: {
     id: spec.id,
     name: spec.name,
     installUrl: spec.installUrl,
+    mainnetOnly: spec.mainnetOnly,
     async isInstalled() {
       try {
         return await spec.isInstalled();
@@ -137,19 +160,27 @@ export const ADAPTERS: WalletAdapter[] = [
     installUrl: "https://www.xverse.app/download",
     isInstalled: () => xverse.isInstalled(),
     getAddresses: (network) => xverse.getAddresses(network) as Promise<SdkAddress[]>,
-    sign: async (psbt, network, request) =>
-      serialized(
-        await xverse.signPsbt(psbt, {
-          network,
-          inputsToSign: inputsToSign(request),
-          finalize: false,
-          extractTx: false,
-        }),
-      ),
-    signMessage: async (network, address, message) => {
+    // Xverse's current RPC, not the SDK's legacy `signTransaction` token API,
+    // which current Xverse builds fail on ("(intermediate value).map is not a
+    // function") before the user ever sees the request.
+    sign: async (psbt, _network, request) => {
+      const signInputs: Record<string, number[]> = {};
+      for (const g of request.inputsByAddress) signInputs[g.address] = g.indexes;
+      const r = await xverseRpc<{ psbt: string }>("signPsbt", {
+        psbt: psbt.toBase64(),
+        signInputs,
+        broadcast: false,
+      });
+      return r.psbt;
+    },
+    signMessage: async (_network, address, message) => {
       // Once, not twice: each call is a prompt the user has to approve.
-      const r = await xverse.signMessage(message, address, network);
-      return r.base64 ?? r.hex;
+      const r = await xverseRpc<{ signature: string }>("signMessage", {
+        address,
+        message,
+        protocol: "BIP322",
+      });
+      return r.signature;
     },
   }),
   makeAdapter({
@@ -158,10 +189,25 @@ export const ADAPTERS: WalletAdapter[] = [
     installUrl: "https://unisat.io/download",
     isInstalled: () => unisat.isInstalled(),
     getAddresses: (network) => unisat.getAddresses(network) as Promise<SdkAddress[]>,
-    // Unisat decides for itself which inputs it can sign; it has the keys for
-    // exactly the addresses it gave us and no others.
-    sign: async (psbt) =>
-      serialized(await unisat.signPsbt(psbt, { finalize: false, extractTx: false })),
+    // Called directly: the SDK neither passes the input list (so Unisat would
+    // try every input it can) nor surfaces Unisat's own error text.
+    sign: async (psbt, _network, request) => {
+      const u = (window as unknown as {
+        unisat?: { signPsbt(hex: string, o: unknown): Promise<string> };
+      }).unisat;
+      if (!u) throw new WalletError("NOT_INSTALLED", "Unisat is not installed");
+      const toSignInputs = request.inputsByAddress.flatMap((g) =>
+        g.indexes.map((index) => ({ index, address: g.address, sighashTypes: [SIGHASH_ALL] })),
+      );
+      try {
+        const hex = await u.signPsbt(psbt.toHex(), { autoFinalized: false, toSignInputs });
+        return Psbt.fromHex(hex).toBase64();
+      } catch (e) {
+        const err = e as { code?: number; message?: string };
+        if (err?.code === 4001) throw new WalletError("REJECTED", "You declined the request in Unisat");
+        throw new WalletError("FAILED", err?.message ?? "Unisat could not sign");
+      }
+    },
     signMessage: async (_network, _address, message) => {
       const r = await unisat.signMessage(message, "bip322-simple");
       return r.base64 ?? r.hex;
@@ -171,6 +217,7 @@ export const ADAPTERS: WalletAdapter[] = [
     id: "magiceden",
     name: "Magic Eden",
     installUrl: "https://wallet.magiceden.io/",
+    mainnetOnly: true,
     isInstalled: () => magiceden.isInstalled(),
     getAddresses: (network) => magiceden.getAddresses(network) as Promise<SdkAddress[]>,
     sign: async (psbt, network, request) =>
@@ -237,6 +284,7 @@ export const ADAPTERS: WalletAdapter[] = [
     id: "phantom",
     name: "Phantom",
     installUrl: "https://phantom.app/download",
+    mainnetOnly: true,
     isInstalled: () => phantom.isInstalled(),
     getAddresses: (network) => phantom.getAddresses(network) as Promise<SdkAddress[]>,
     sign: async (psbt, network, request) =>
@@ -257,6 +305,7 @@ export const ADAPTERS: WalletAdapter[] = [
     id: "oyl",
     name: "Oyl",
     installUrl: "https://www.oyl.io/",
+    mainnetOnly: true,
     isInstalled: () => oyl.isInstalled(),
     getAddresses: (network) => oyl.getAddresses(network) as Promise<SdkAddress[]>,
     sign: async (psbt, network) =>

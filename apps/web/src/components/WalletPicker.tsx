@@ -12,6 +12,8 @@ import { WalletError, type WalletId } from "@/lib/wallets/types";
  * get them — a picker that hides what you do not have looks broken to someone
  * who has not installed anything yet.
  */
+const NETWORK = process.env.NEXT_PUBLIC_COVE_NETWORK ?? "regtest";
+
 export function WalletPicker() {
   const { pickerOpen, closePicker, connect } = useWallet();
   const [installed, setInstalled] = useState<Set<WalletId> | null>(null);
@@ -93,11 +95,12 @@ export function WalletPicker() {
         <div className="grid gap-px bg-rule">
           {ordered.map((a) => {
             const have = installed?.has(a.id) ?? false;
+            const wrongNet = a.mainnetOnly === true && NETWORK !== "mainnet";
             return (
               <button
                 key={a.id}
                 type="button"
-                disabled={busy !== null}
+                disabled={busy !== null || (have && wrongNet)}
                 onClick={() => (have ? void pick(a.id) : window.open(a.installUrl, "_blank", "noopener"))}
                 className="flex items-center justify-between bg-ink-3 px-5 py-4 text-left transition-colors hover:bg-ink-2 disabled:opacity-50"
               >
@@ -107,9 +110,11 @@ export function WalletPicker() {
                     ? "Waiting…"
                     : installed === null
                       ? "…"
-                      : have
-                        ? "Connect"
-                        : "Install →"}
+                      : have && wrongNet
+                        ? "Mainnet only"
+                        : have
+                          ? "Connect"
+                          : "Install →"}
                 </span>
               </button>
             );

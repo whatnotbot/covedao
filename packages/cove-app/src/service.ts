@@ -613,12 +613,18 @@ export class V3AppService {
       }
     }
     const shortfall = priceAt(Math.max(1, chosen.length));
+    const need = params.targetSats + shortfall.minerFeeSats;
+    // Two-address wallets are the usual way to land here: coins sent to the
+    // token (taproot) address are never spent for trades.
+    const twoAddress = params.wallet.payments.script !== params.wallet.ordinals.script;
     throw new AppError(
       "INSUFFICIENT_BTC",
-      `wallet has ${sum} sats across ${chosen.length} inputs but ` +
-        `${params.targetSats + shortfall.minerFeeSats} is required ` +
-        `(${params.targetSats} for the trade, ${shortfall.minerFeeSats} for the miner at ` +
-        `${shortfall.satPerVb} sat/vB)`,
+      `Your payment address has ${sum} sats; this needs ${need} ` +
+        `(${params.targetSats} for the trade, ${shortfall.minerFeeSats} network fee at ` +
+        `${shortfall.satPerVb} sat/vB).` +
+        (twoAddress
+          ? " Cove pays only from your wallet's payment (BTC) address, not its token (taproot) address — send BTC there first."
+          : ""),
     );
   }
 

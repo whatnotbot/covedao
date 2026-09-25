@@ -167,12 +167,32 @@ async function stopAndRestartBitcoind(rpc: RegtestRpc): Promise<void> {
       break; // down
     }
   }
-  await new Promise<void>((resolve, reject) => {
+
+  // The RPC goes down before the datadir LOCK + RPC port are fully released, so
+  // a restart can flake with "bitcoind exited with code 1". Give the old process
+  // a moment to release them, then retry the daemon start a few times.
+  await new Promise((r) => setTimeout(r, 2_000));
+
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await startBitcoindDaemon();
+      await waitForRpc(rpc);
+      return;
+    } catch (e) {
+      lastErr = e as Error;
+      await new Promise((r) => setTimeout(r, 2_000));
+    }
+  }
+  throw lastErr ?? new Error("bitcoind restart failed");
+}
+
+function startBitcoindDaemon(): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     const child = spawn("bitcoind", bitcoindArgs(), { stdio: "ignore" });
     child.on("error", reject);
     child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`bitcoind exited with code ${code}`))));
   });
-  await waitForRpc(rpc);
 }
 
 /** Decode a block's txs, resolving Cove actor prevouts from the full node. */

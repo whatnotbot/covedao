@@ -11,7 +11,7 @@ import { Sparkline } from "@/components/Sparkline";
 import { Tile } from "@/components/Tile";
 import { useSparklines } from "@/lib/use-sparklines";
 import { unitPriceSats } from "@/lib/ohlc";
-import { verifyClientIntent } from "@crclaunch/wallets";
+import { buyListing } from "@/lib/trade";
 import { FeePicker, useFeeRates } from "@/components/FeePicker";
 
 interface Listing {
@@ -65,63 +65,11 @@ function MarketContent() {
     setBuying(listing.listingId);
     setMsg("");
     try {
-      const funding = await getUtxos();
-      // §M4: require a signed nonce to reserve — prepare, sign, then reserve.
-      const pr = await fetch(`/api/v3/market/listings/${listing.listingId}/reserve/prepare`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ buyerTokenScript: ordinalsScript || script }),
-      });
-      const pj = await pr.json();
-      if (!pj.ok) throw new Error(errorText(pj));
-      const signatureB64 = await signBip322(pj.data.message);
-      const rr = await fetch(`/api/v3/market/listings/${listing.listingId}/reserve`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          // Bought tokens go to the ordinals address; BTC change returns to
-          // the one that paid.
-          buyerTokenScript: ordinalsScript || script,
-          buyerChangeScript: script,
-          buyerFundPublicKey: publicKey || undefined,
-          funding,
-          nonceHex: pj.data.reserveNonce,
-          signatureB64,
-        }),
-      });
-      const rj = await rr.json();
-      if (!rj.ok) throw new Error(errorText(rj));
-      const fillId = rj.data.fillId;
-
-      const br = await fetch(`/api/v3/market/fills/${fillId}/build`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ feeRateSatPerVb: satPerVb ?? undefined }),
-      });
-      const bj = await br.json();
-      if (!bj.ok) throw new Error(errorText(bj));
-
-      // §M3: independently re-derive the P2P outputs from the user's own input
-      // before signing (the server-supplied digest alone is circular).
-      // The wallet's own scripts and the price on the listing it clicked are the
-      // user's facts; the server's copy of them is not trusted.
-      if (!bj.data.intent) throw new Error("server did not describe the purchase");
-      verifyClientIntent(bj.data.psbtBase64, {
-        ...bj.data.intent,
-        walletScript: script,
-        ordinalsScript: ordinalsScript || script,
-        grossSats: listing.totalPriceSats,
-        tokenAmountAtoms: listing.amountAtoms,
-      });
-
-      const signed = await signPsbt(bj.data.psbtBase64, "P2P_BUY");
-      const sr = await fetch(`/api/v3/market/fills/${fillId}/buyer-signature`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ signedPsbtBase64: signed }),
-      });
-      const sj = await sr.json();
-      if (!sj.ok) throw new Error(errorText(sj));
+      const fillId = await buyListing(
+        listing,
+        { script, publicKey, ordinalsScript, signPsbt, signBip322, getUtxos },
+        satPerVb,
+      );
       setMsg(`Buyer signed — waiting for seller (fill ${fillId.slice(0, 8)})…`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -282,10 +230,6 @@ function MarketContent() {
   );
 }
 
-/** The server's own words when it has them; the short copy otherwise. */
-function errorText(j: { error?: { message?: string; detail?: string } }): string {
-  return j.error?.detail || j.error?.message || "Something went wrong.";
-}
 
 /** Status is protocol state, so it gets the semantic chips, not grey text. */
 function statusChip(status: string): string {

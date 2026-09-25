@@ -52,6 +52,12 @@ export interface V3AppConfig {
   redeemFeeFlatSats: bigint;
   /** Canary P2P settlement cap (mainnet: from the profile). */
   maxP2pSettlementSats?: bigint;
+  /**
+   * Per-mint limits the Guardian enforces, so the app can quote within them
+   * instead of building a mint the Guardian will refuse. Mainnet: from the
+   * profile. Absent: the development risk policy.
+   */
+  mintLimits?: { maxMintAtoms: bigint; maxGrossSats: bigint | null; minGrossSats: bigint };
   maxMinerFeeSats: bigint;
   maxListingBlocks: bigint;
   reservationTtlSeconds: number;
@@ -63,6 +69,7 @@ export interface V3AppConfig {
   guardianAuthToken?: string;
 }
 
+const PUBLIC_SUPPLY_ATOMS_CAP = 1_000_000_000n * 100_000_000n;
 const REGTEST_GUARDIAN_PRIV = Buffer.alloc(32, 0x42);
 const REGTEST_RECOVERY_PRIV = Buffer.alloc(32, 0x43);
 const REGTEST_FEE_PRIV = Buffer.alloc(32, 0x44);
@@ -180,6 +187,11 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
       redeemFeeBps: BigInt(profile.redeemFeeBps!),
       redeemFeeFlatSats: COVE_FEE_CONFIG.redeemFeeFlatSats,
       maxP2pSettlementSats: profile.canary.maxP2pSettlementSats ?? undefined,
+      mintLimits: {
+        maxMintAtoms: profile.canary.maxMintAtoms ?? PUBLIC_SUPPLY_ATOMS_CAP,
+        maxGrossSats: profile.canary.maxSingleBuySats ?? null,
+        minGrossSats: profile.canary.minMintGrossSats ?? 0n,
+      },
       maxMinerFeeSats: 20_000n,
       maxListingBlocks: 21_000n,
       reservationTtlSeconds: 90,

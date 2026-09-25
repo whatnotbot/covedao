@@ -7,6 +7,9 @@ import { useWallet } from "@/components/WalletProvider";
 import { fmtBtc, fmtTokens } from "@/lib/format";
 import { DEMO_PORTFOLIO } from "@/lib/demo-tokens";
 import { verifyClientIntent } from "@crclaunch/wallets";
+import { sendTokens } from "@/lib/trade";
+import { displayTokensToAtoms } from "@/lib/format";
+import { useFeeRates } from "@/components/FeePicker";
 
 interface Portfolio {
   holdings: { tokenId: string; amountAtoms: string; utxoCount: number }[];
@@ -19,7 +22,12 @@ function WalletContent() {
   const searchParams = useSearchParams();
   // Client-side design-preview path: no API calls, no writes.
   const demo = searchParams.get("demo") === "1";
-  const { connected, address, ordinalsAddress, script, ordinalsScript, connect, signPsbt, signBip322 } = useWallet();
+  const { connected, address, ordinalsAddress, script, ordinalsScript, network, walletFields, connect, signPsbt, signBip322, getUtxos } = useWallet();
+  const { satPerVb } = useFeeRates();
+  // Which holding has its Send form open, and what is typed into it.
+  const [sending, setSending] = useState<string | null>(null);
+  const [sendAmount, setSendAmount] = useState("");
+  const [sendTo, setSendTo] = useState("");
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [msg, setMsg] = useState("");
@@ -85,6 +93,33 @@ function WalletContent() {
       const fj = await fr.json();
       if (!fj.ok) throw new Error(fj.error?.message ?? "finalize failed");
       setMsg(`Sale broadcast ${fj.data.txid.slice(0, 16)}…`);
+      await refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function send(tokenId: string) {
+    setErr("");
+    setMsg("");
+    setBusy(`send-${tokenId}`);
+    try {
+      const txid = await sendTokens({
+        tokenId,
+        amountAtoms: displayTokensToAtoms(sendAmount),
+        recipient: sendTo,
+        network,
+        walletFields: walletFields(),
+        getUtxos,
+        signPsbt,
+        satPerVb,
+      });
+      setMsg(`Sent. It arrives when the next block confirms it (${txid.slice(0, 16)}…).`);
+      setSending(null);
+      setSendAmount("");
+      setSendTo("");
       await refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -161,11 +196,41 @@ function WalletContent() {
         ) : (
           <div className="mt-2 grid gap-3 sm:grid-cols-2">
             {portfolio.holdings.map((h) => (
-              <a key={h.tokenId} href={`/token/${h.tokenId}`} className="border border-rule bg-ink-2 p-4">
-                <div className="font-mono text-xs text-bone-dim">{h.tokenId.slice(0, 16)}…</div>
-                <div className="mt-1 text-xl text-bone">{fmtTokens(BigInt(h.amountAtoms))}</div>
-                <div className="text-xs text-bone-dim">{h.utxoCount} token UTXO{h.utxoCount === 1 ? "" : "s"}</div>
-              </a>
+              <div key={h.tokenId} className="border border-rule bg-ink-2 p-4">
+                <a href={`/token/${h.tokenId}`} className="block">
+                  <div className="font-mono text-xs text-bone-dim">{h.tokenId.slice(0, 16)}…</div>
+                  <div className="mt-1 text-xl text-bone">{fmtTokens(BigInt(h.amountAtoms))}</div>
+                  <div className="text-xs text-bone-dim">{h.utxoCount} token UTXO{h.utxoCount === 1 ? "" : "s"}</div>
+                </a>
+                {sending === h.tokenId ? (
+                  <div className="mt-3 space-y-2">
+                    <input
+                      aria-label="Send amount"
+                      value={sendAmount}
+                      onChange={(e) => setSendAmount(e.target.value)}
+                      placeholder="How many tokens"
+                      className="field"
+                    />
+                    <input
+                      aria-label="Send to address"
+                      value={sendTo}
+                      onChange={(e) => setSendTo(e.target.value.trim())}
+                      placeholder="Their token address (bc1p…)"
+                      className="field"
+                    />
+                    <div className="grid grid-cols-2 gap-px bg-rule">
+                      <button onClick={() => setSending(null)} className="btn-ghost w-full border-0">Cancel</button>
+                      <button onClick={() => void send(h.tokenId)} disabled={busy !== null} className="btn w-full">
+                        {busy === `send-${h.tokenId}` ? "Sending…" : "Send"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => setSending(h.tokenId)} className="mt-3 border border-rule px-3 py-1.5 text-xs text-bone-2 hover:text-bone">
+                    Send
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         )}

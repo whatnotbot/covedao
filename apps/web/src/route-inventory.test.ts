@@ -18,6 +18,7 @@ const REQUIRED_ROUTES = [
   "/api/v3/launch/build",
   "/api/v3/launch/submit",
   "/api/v3/backing/buy/quote",
+  "/api/v3/backing/buy/quote-sats",
   "/api/v3/backing/buy/build",
   "/api/v3/backing/buy/submit",
   "/api/v3/backing/redeem/quote",

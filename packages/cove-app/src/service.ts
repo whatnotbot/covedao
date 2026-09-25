@@ -40,6 +40,7 @@ import {
   type ListingV1,
 } from "@crclaunch/cove-market";
 import { AppError } from "./errors.js";
+import { DEV_RISK_POLICY } from "./transition-signer.js";
 import type { V3AppConfig, V3Network } from "./config.js";
 import { checkCoreAgreement, verifyMainnetGenesis } from "./readiness.js";
 import { unsignedTxDigest, parsePsbt, btcNetwork, validateInputSignature, walletDeltaSats } from "./psbt.js";
@@ -755,6 +756,72 @@ export class V3AppService {
   }
 
   // ── backing buy ───────────────────────────────────────────────────────────
+
+  /**
+   * The most whole tokens `budgetSats` buys from the curve right now: curve
+   * price + protocol fee + the 1,000-sat token carrier. The network fee is
+   * separate, because it depends on the wallet's coins and the fee rate.
+   *
+   * People think in sats, not token counts; the mint form asks for sats and
+   * shows what they buy.
+   */
+  /** The per-mint limits the Guardian will enforce on this network. */
+  mintLimits(): { maxMintAtoms: bigint; maxGrossSats: bigint | null; minGrossSats: bigint } {
+    return (
+      this.config.mintLimits ?? {
+        maxMintAtoms: DEV_RISK_POLICY.maxMintAtoms,
+        maxGrossSats: DEV_RISK_POLICY.maxGrossSats,
+        minGrossSats: DEV_RISK_POLICY.minMintGrossSats,
+      }
+    );
+  }
+
+  async quoteBuyForSats(tokenId: string, budgetSats: bigint): Promise<{
+    amountAtoms: bigint;
+    grossSats: bigint;
+    feeSats: bigint;
+    carrierSats: bigint;
+    totalSats: bigint;
+    /** Why it stopped where it did — the budget, the per-mint limit, or the curve running out. */
+    limitedBy: "budget" | "per-mint limit" | "supply";
+    minGrossSats: bigint;
+    maxGrossSats: bigint | null;
+  }> {
+    const backing = await this.loadBacking(tokenId);
+    const supplyTokens = backing.state.issuedPublicSupplyAtoms / ATOMS_PER_TOKEN;
+    const remaining = (PUBLIC_SUPPLY_ATOMS - backing.state.issuedPublicSupplyAtoms) / ATOMS_PER_TOKEN;
+    const flat = stageScaledFlatSats(supplyTokens, this.config.buyFeeFlatSatsAtTopStage);
+    const costOf = (n: bigint) => {
+      const gross = grossBuy(supplyTokens, n);
+      const fee = deterministicFee(gross, this.config.buyFeeBps, flat);
+      return { gross, fee, total: gross + fee + TOKEN_CARRIER_SATS };
+    };
+    const limits = this.mintLimits();
+    const perMintTokens = limits.maxMintAtoms / ATOMS_PER_TOKEN;
+    const fits = (n: bigint) => {
+      const c = costOf(n);
+      return c.total <= budgetSats && (limits.maxGrossSats === null || c.gross <= limits.maxGrossSats);
+    };
+    // The curve only ever gets more expensive, so cost is monotonic in n.
+    let lo = 0n;
+    let hi = remaining < perMintTokens ? remaining : perMintTokens;
+    while (lo < hi) {
+      const mid = (lo + hi + 1n) / 2n;
+      if (fits(mid)) lo = mid;
+      else hi = mid - 1n;
+    }
+    const c = costOf(lo);
+    const next = lo < remaining ? costOf(lo + 1n) : null;
+    const limitedBy =
+      lo === remaining ? "supply"
+        : lo === perMintTokens || (next !== null && next.total <= budgetSats) ? "per-mint limit"
+          : "budget";
+    const base = { carrierSats: TOKEN_CARRIER_SATS, limitedBy, minGrossSats: limits.minGrossSats, maxGrossSats: limits.maxGrossSats } as const;
+    if (lo === 0n || c.gross < limits.minGrossSats) {
+      return { ...base, amountAtoms: 0n, grossSats: 0n, feeSats: 0n, totalSats: 0n, limitedBy: "budget" };
+    }
+    return { ...base, amountAtoms: lo * ATOMS_PER_TOKEN, grossSats: c.gross, feeSats: c.fee, totalSats: c.total };
+  }
 
   async quoteBackingBuy(tokenId: string, amountAtoms: bigint): Promise<BackingQuote> {
     if (amountAtoms <= 0n || amountAtoms % ATOMS_PER_TOKEN !== 0n) throw new AppError("TOKEN_AMOUNT_INVALID", "backing buy requires whole display tokens");

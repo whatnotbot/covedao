@@ -62,6 +62,29 @@ async function walletPage(browser: Browser, identity: { privHex: string; address
 }
 
 let aliceTokenId: string;
+/** What Alice's mint actually produced; later steps count from it. */
+let minted: bigint;
+const T = 100_000_000n;
+
+/** List through the API — the UI only offers listing once a token is fully minted. */
+async function apiList(identity: { privHex: string; address: string }, tokenId: string, tokens: bigint, priceSats: number) {
+  const script = scriptOf(identity.privHex);
+  const pf = await fetch(`${BASE}/api/v3/wallet/${identity.address}/portfolio`).then((r) => r.json());
+  const utxo = pf.data.tokenUtxos.find((u: { tokenId: string; amountAtoms: string }) => u.tokenId === tokenId && BigInt(u.amountAtoms) >= tokens * T);
+  const prep = await fetch(`${BASE}/api/v3/market/listings/prepare`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tokenId, sourceTxid: utxo.txid, sourceVout: String(utxo.vout), amountAtoms: (tokens * T).toString(), totalPriceSats: String(priceSats), expiryBlocks: "1008", walletScript: script, walletAddress: identity.address }),
+  }).then((r) => r.json());
+  const sig = signBip322WithKey(prep.data.message, identity.privHex);
+  const made = await fetch(`${BASE}/api/v3/market/listings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ listing: prep.data.listing, signatureB64: sig }),
+  }).then((r) => r.json());
+  expect(made.ok).toBe(true);
+  return made.data.listingId as string;
+}
 
 test("E2E-001 launch: Alice launches FROG through the UI", async ({ browser }) => {
   const page = await walletPage(browser, IDENTITIES.alice);
@@ -87,71 +110,70 @@ test("E2E-001 launch: Alice launches FROG through the UI", async ({ browser }) =
   expect(aliceTokenId).toMatch(/^[0-9a-f]{64}$/);
 });
 
-test("E2E-002 backing buy: Alice buys 84M from Cove Backing", async ({ browser }) => {
+test("E2E-002 mint: Alice mints by spending sats", async ({ browser }) => {
   const page = await walletPage(browser, IDENTITIES.alice);
   await page.goto(`${BASE}/token/${aliceTokenId}`);
   await page.getByRole("button", { name: /connect wallet/i }).click();
-  await page.getByLabel(/Amount . display tokens/i).fill("84000000");
+  // Before mint-out the only trades are with the curve.
+  await expect(page.getByRole("button", { name: "List", exact: true })).toHaveCount(0);
+  await page.getByLabel(/Spend . sats/i).fill("50000");
+  await expect(page.getByText(/≈ .* FROG/)).toBeVisible({ timeout: 30_000 });
+  const q = await fetch(`${BASE}/api/v3/backing/buy/quote-sats`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tokenId: aliceTokenId, budgetSats: "50000" }) }).then((r) => r.json());
+  minted = BigInt(q.data.amountAtoms);
+  expect(minted).toBeGreaterThan(60_000_000n * T);
   // Two steps on purpose: the price, the protocol fee and the network fee are
   // on screen before anything is built or signed.
-  await page.getByRole("button", { name: /review purchase/i }).click();
-  await expect(page.getByText(/you are buying/i)).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: /review mint/i }).click();
+  await expect(page.getByText(/you are minting/i)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Curve price", { exact: true })).toBeVisible();
   await expect(page.getByText(/^you pay$/i)).toBeVisible();
   await page.getByRole("button", { name: /confirm . sign/i }).click();
-  await expect(page.getByText(/buy broadcast/i).first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/^minted\./i).first()).toBeVisible({ timeout: 60_000 });
   await mineAndWait(1);
 
   const detail = await fetch(`${BASE}/api/v3/tokens/${aliceTokenId}`).then((r) => r.json());
-  expect(BigInt(detail.data.issuedSupplyAtoms)).toBe(84_000_000n * 100_000_000n);
+  expect(BigInt(detail.data.issuedSupplyAtoms)).toBe(minted);
   const pf = await fetch(`${BASE}/api/v3/wallet/${IDENTITIES.alice.address}/portfolio`).then((r) => r.json());
   expect(pf.data.holdings.length).toBe(1);
 });
 
 test("E2E-003 transfer: Alice transfers to Bob (backing + supply unchanged)", async ({ browser }) => {
   const page = await walletPage(browser, IDENTITIES.alice);
-  await page.goto(`${BASE}/token/${aliceTokenId}`);
+  await page.goto(`${BASE}/wallet`);
   await page.getByRole("button", { name: /connect wallet/i }).click();
-  await page.getByRole("button", { name: "Transfer" }).click();
-  await page.getByLabel(/Amount . display tokens/i).fill("60000000");
-  await page.getByLabel(/Recipient address/i).fill(IDENTITIES.bob.address);
-  await page.getByRole("button", { name: "Transfer", exact: true }).last().click();
-  await expect(page.getByText(/transfer broadcast/i).first()).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("button", { name: "Send", exact: true }).first().click();
+  await page.getByLabel("Send amount").fill("60000000");
+  await page.getByLabel("Send to address").fill(IDENTITIES.bob.address);
+  await page.getByRole("button", { name: "Send", exact: true }).last().click();
+  await expect(page.getByText(/^sent\./i).first()).toBeVisible({ timeout: 60_000 });
   await mineAndWait(1);
 
   const pf = await fetch(`${BASE}/api/v3/wallet/${IDENTITIES.bob.address}/portfolio`).then((r) => r.json());
   expect(pf.data.holdings.length).toBe(1);
   const detail = await fetch(`${BASE}/api/v3/tokens/${aliceTokenId}`).then((r) => r.json());
-  // supply unchanged (still 84M); backing unchanged by a transfer
-  expect(BigInt(detail.data.issuedSupplyAtoms)).toBe(84_000_000n * 100_000_000n);
+  // supply unchanged by a transfer
+  expect(BigInt(detail.data.issuedSupplyAtoms)).toBe(minted);
 });
 
 test("E2E-004 redeem: Bob instant-sells to Cove Backing", async ({ browser }) => {
   const page = await walletPage(browser, IDENTITIES.bob);
   await page.goto(`${BASE}/token/${aliceTokenId}`);
   await page.getByRole("button", { name: /connect wallet/i }).click();
-  await page.getByRole("button", { name: "Sell", exact: true }).click();
-  await page.getByLabel(/Amount . display tokens/i).fill("60000000");
-  await page.getByRole("button", { name: /review sale/i }).click();
-  await expect(page.getByText(/you are selling/i)).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Redeem", exact: true }).click();
+  await page.getByLabel(/^Redeem/).fill("60000000");
+  await page.getByRole("button", { name: /review redeem/i }).click();
+  await expect(page.getByText(/you are redeeming/i)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/^you receive$/i)).toBeVisible();
   await page.getByRole("button", { name: /confirm . sign/i }).click();
-  await expect(page.getByText(/redeem broadcast/i).first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/^redeemed\./i).first()).toBeVisible({ timeout: 60_000 });
   await mineAndWait(1);
 
   const detail = await fetch(`${BASE}/api/v3/tokens/${aliceTokenId}`).then((r) => r.json());
-  expect(BigInt(detail.data.issuedSupplyAtoms)).toBe(24_000_000n * 100_000_000n);
+  expect(BigInt(detail.data.issuedSupplyAtoms)).toBe(minted - 60_000_000n * T);
 });
 
-test("E2E-005 list P2P: Alice lists part of a token UTXO", async ({ browser }) => {
-  const page = await walletPage(browser, IDENTITIES.alice);
-  await page.goto(`${BASE}/token/${aliceTokenId}`);
-  await page.getByRole("button", { name: /connect wallet/i }).click();
-  await page.getByRole("button", { name: "List", exact: true }).click();
-  await page.getByLabel(/Listed amount/i).fill("1000000");
-  await page.getByLabel(/Asking price/i).fill("100000");
-  await page.getByRole("button", { name: /sign & create listing/i }).click();
-  await expect(page.getByText(/listing created/i).first()).toBeVisible({ timeout: 60_000 });
+test("E2E-005 list P2P: Alice lists part of a token UTXO", async () => {
+  await apiList(IDENTITIES.alice, aliceTokenId, 1_000_000n, 100_000);
 
   const listings = await fetch(`${BASE}/api/v3/market/listings`).then((r) => r.json());
   expect(listings.data.length).toBe(1);
@@ -181,21 +203,72 @@ test("E2E-006 P2P buy: Bob fills Alice's listing atomically", async ({ browser }
   const filled = alicePf.data.listings.find((l: { listingId: string }) => l.listingId === listingId);
   expect(filled.status).toBe("FILLED");
   const detail = await fetch(`${BASE}/api/v3/tokens/${aliceTokenId}`).then((r) => r.json());
-  expect(BigInt(detail.data.issuedSupplyAtoms)).toBe(24_000_000n * 100_000_000n);
+  expect(BigInt(detail.data.issuedSupplyAtoms)).toBe(minted - 60_000_000n * T);
 });
 
 test("E2E-008 cancel: Alice cancels a second listing", async ({ browser }) => {
+  await apiList(IDENTITIES.alice, aliceTokenId, 1_000_000n, 100_000);
   const page = await walletPage(browser, IDENTITIES.alice);
-  await page.goto(`${BASE}/token/${aliceTokenId}`);
-  await page.getByRole("button", { name: /connect wallet/i }).click();
-  await page.getByRole("button", { name: "List", exact: true }).click();
-  await page.getByLabel(/Listed amount/i).fill("1000000");
-  await page.getByLabel(/Asking price/i).fill("100000");
-  await page.getByRole("button", { name: /sign & create listing/i }).click();
-  await expect(page.getByText(/listing created/i).first()).toBeVisible({ timeout: 60_000 });
-
   await page.goto(`${BASE}/wallet`);
   await page.getByRole("button", { name: /connect wallet/i }).click();
   await page.getByRole("button", { name: "Cancel", exact: true }).first().click();
   await expect(page.getByText(/listing cancelled/i).first()).toBeVisible({ timeout: 60_000 });
+});
+
+test("E2E-009 mint-out: the page switches to Buy / Sell / Redeem, and the market works", async ({ browser }) => {
+  // Carol launches and mints the whole curve in one go.
+  const carol = await walletPage(browser, IDENTITIES.carol);
+  await carol.goto(`${BASE}/launch`);
+  await carol.getByLabel("Name").fill("Full Coin");
+  await carol.getByLabel(/^Ticker/).fill("FULL");
+  await carol.getByRole("button", { name: /review launch identity/i }).click();
+  await carol.getByRole("button", { name: /connect wallet/i }).click();
+  await carol.getByRole("button", { name: /build, review and sign/i }).click();
+  await expect(carol.getByText(/broadcast/i).first()).toBeVisible({ timeout: 60_000 });
+  await mineAndWait(1);
+  const tokens = await fetch(`${BASE}/api/v3/tokens?search=FULL`).then((r) => r.json());
+  const fullId = tokens.data.find((t: { ticker: string }) => t.ticker === "FULL").tokenId as string;
+
+  // One mint is capped (1,000,000 sats of curve price on test networks), so
+  // minting out takes many. The page stops each one at the cap and says so.
+  await carol.goto(`${BASE}/token/${fullId}`);
+  await carol.getByRole("button", { name: /connect wallet/i }).click();
+  for (let i = 0; i < 40; i++) {
+    const d = await fetch(`${BASE}/api/v3/tokens/${fullId}`).then((r) => r.json());
+    if (BigInt(d.data.issuedSupplyAtoms) >= 1_000_000_000n * T) break;
+    await carol.getByLabel(/Spend . sats/i).fill("2000000");
+    await expect(carol.getByText(/most one mint can take|last tokens on the curve/i)).toBeVisible({ timeout: 30_000 });
+    await carol.getByRole("button", { name: /review mint/i }).click();
+    await carol.getByRole("button", { name: /confirm . sign/i }).click();
+    await expect(carol.getByText(/^minted\./i).first()).toBeVisible({ timeout: 60_000 });
+    await mineAndWait(1);
+  }
+
+  // Graduated: Mint is gone; Buy, Sell and Redeem are offered.
+  await carol.reload();
+  await carol.getByRole("button", { name: /connect wallet/i }).click();
+  await expect(carol.getByRole("button", { name: "Mint", exact: true })).toHaveCount(0);
+  await carol.getByRole("button", { name: "Sell", exact: true }).click();
+  await carol.getByLabel(/^Sell/).fill("1000000");
+  await carol.getByLabel(/For . sats/i).fill("60000");
+  await carol.getByRole("button", { name: /list for sale/i }).click();
+  await expect(carol.getByText(/listing created/i).first()).toBeVisible({ timeout: 60_000 });
+
+  // Bob buys it from the token page.
+  const bob = await walletPage(browser, IDENTITIES.bob);
+  await bob.goto(`${BASE}/token/${fullId}`);
+  await bob.getByRole("button", { name: /connect wallet/i }).click();
+  await bob.getByRole("button", { name: "Buy", exact: true }).first().click();
+  await bob.getByRole("button", { name: "Buy", exact: true }).last().click();
+  await expect(bob.getByText(/seller now has 24 hours/i).first()).toBeVisible({ timeout: 60_000 });
+
+  // Carol approves on her Wallet page.
+  await carol.goto(`${BASE}/wallet`);
+  await carol.getByRole("button", { name: /connect wallet/i }).click();
+  await carol.getByRole("button", { name: /review & sign sale/i }).first().click();
+  await expect(carol.getByText(/sale broadcast/i).first()).toBeVisible({ timeout: 60_000 });
+  await mineAndWait(1);
+  const bobPf = await fetch(`${BASE}/api/v3/wallet/${IDENTITIES.bob.address}/portfolio`).then((r) => r.json());
+  const h = bobPf.data.holdings.find((x: { tokenId: string }) => x.tokenId === fullId);
+  expect(BigInt(h.amountAtoms)).toBe(1_000_000n * T);
 });

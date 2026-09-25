@@ -29,7 +29,7 @@ function failClosedTransport(): GuardianTransport {
   };
 }
 
-const DEV_RISK_POLICY: GuardianRiskPolicy = {
+export const DEV_RISK_POLICY: GuardianRiskPolicy = {
   maxGrossSats: 1_000_000n,
   // Dev is deliberately permissive: the regtest harnesses mint the whole
   // curve in single steps. Production sets 2,100,000 tokens and a 5,000-sat

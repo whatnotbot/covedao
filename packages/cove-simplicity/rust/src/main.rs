@@ -29,7 +29,7 @@ fn main() {
     assert!(jet::le_64(prev_supply, sum_supply));
     assert!(jet::eq_64(sum_supply, next_supply));
     // No overmint: public supply cap = 840,000,000 display tokens.
-    assert!(jet::le_64(next_supply, 840_000_000));
+    assert!(jet::le_64(next_supply, 1_000_000_000));
     // Positive amount.
     assert!(jet::lt_64(0, amount));
     // Reserve movement: reserve grows by exactly the curve contribution; NO overflow.

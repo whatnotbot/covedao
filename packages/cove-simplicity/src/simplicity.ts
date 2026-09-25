@@ -20,13 +20,19 @@ import { dirname, join } from "node:path";
 /** Historical/dev CMRs (COVE_POLICY_V1/V2, preserved). */
 export const MINT_CMR_V1 = "118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2";
 export const REDEEM_CMR_V2 = "a15ac4cbc450ac2dd113b1a9de178450ccc893a5213d8a2f56471fcd9aa274b7";
+/**
+ * The MINT CMR from when the public cap was 840,000,000 tokens. The cap is
+ * asserted inside the predicate, so raising it to 1,000,000,000 recompiled to a
+ * different commitment. Kept for reference; no live deployment used it.
+ */
+export const MINT_CMR_CAP840 = "0b594eb3fadec17b45bb1d245ae18f8c512a1ba42751f820cd28351ced6c8377";
 
 /**
  * Production CMRs (COVE_POLICY_V3): the predicates now enforce the u64
  * overflow/borrow flags directly (see rust/src/mint.simf + redeem.simf). These
  * are the ONLY CMRs new deployments should use.
  */
-export const MINT_CMR = "0b594eb3fadec17b45bb1d245ae18f8c512a1ba42751f820cd28351ced6c8377";
+export const MINT_CMR = "ccdb02000fdb372bfa2e166b9fe0192715d555fc5720f8008ee741fe1a0d58ec";
 export const REDEEM_CMR = "37e681b3e70a34acc3b38680c06fbe4f1b2799bede2607c6c9ed7fcac8c95d56";
 
 export interface MintWitness {

@@ -14,13 +14,13 @@ import {
 } from "../src/index.js";
 
 describe("raise economics", () => {
-  it("CURVE-005 (golden): full raise = 24,196,788 sats", () => {
-    expect(getTheoreticalFullRaise()).toBe(24_196_788n);
+  it("CURVE-005 (golden): full raise = 28,805,700 sats", () => {
+    expect(getTheoreticalFullRaise()).toBe(28_805_700n);
   });
 
   it("reserve contribution before fees = 0.24196788 BTC", () => {
     const sats = getTheoreticalFullRaise();
-    expect(sats).toBe(24_196_788n);
+    expect(sats).toBe(28_805_700n);
     expect(sats * 100_000_000n / 100_000_000n).toBe(sats);
   });
 
@@ -53,14 +53,14 @@ describe("raise economics", () => {
       "Stage 6 price must exceed stage 5 price.",
     );
     expect(validateCurveConfig({ tokensPerStage: 41_000_000n }).join(" ")).toContain(
-      "Full raise must be 24,196,788 sats",
+      "Full raise must be 28805700 sats",
     );
   });
 
-  it("V1 tokenomics are standardized (84/16, zero premine/team)", () => {
+  it("tokenomics are standardized (100% public, zero premine/team/reserve)", () => {
     expect(TOTAL_SUPPLY_TOKENS).toBe(1_000_000_000n);
-    expect(PUBLIC_SUPPLY_TOKENS).toBe(840_000_000n);
-    expect(GRADUATION_RESERVE_TOKENS).toBe(160_000_000n);
+    expect(PUBLIC_SUPPLY_TOKENS).toBe(1_000_000_000n);
+    expect(GRADUATION_RESERVE_TOKENS).toBe(0n);
     expect(CREATOR_PREMINE_TOKENS).toBe(0n);
     expect(TEAM_ALLOCATION_TOKENS).toBe(0n);
     expect(PUBLIC_SUPPLY_TOKENS + GRADUATION_RESERVE_TOKENS).toBe(TOTAL_SUPPLY_TOKENS);
@@ -76,7 +76,7 @@ describe("raise economics", () => {
     expect(getPublicMintProgress(PUBLIC_SUPPLY_TOKENS).bps).toBe(10_000);
     expect(getPublicMintProgress(PUBLIC_SUPPLY_TOKENS / 2n).bps).toBe(5_000);
     // 63% example from spec.
-    const p = getPublicMintProgress(529_200_000n);
+    const p = getPublicMintProgress(630_000_000n);
     expect(p.bps).toBe(6_300);
   });
 
@@ -90,7 +90,7 @@ describe("raise economics", () => {
 
   it("getRemainingPublicSupply clamps at zero", () => {
     expect(getRemainingPublicSupply(0n)).toBe(PUBLIC_SUPPLY_TOKENS);
-    expect(getRemainingPublicSupply(840_000_000n)).toBe(0n);
-    expect(getRemainingPublicSupply(900_000_000n)).toBe(0n);
+    expect(getRemainingPublicSupply(1_000_000_000n)).toBe(0n);
+    expect(getRemainingPublicSupply(1_100_000_000n)).toBe(0n);
   });
 });

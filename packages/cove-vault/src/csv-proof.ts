@@ -34,7 +34,7 @@ const S0_HASH = Buffer.from(
   "e27d7047a2a2f05a3f7ac319e12207c11487b59dcb212402785c129b85c518e2",
   "hex",
 );
-const CMR = Buffer.from("0b594eb3fadec17b45bb1d245ae18f8c512a1ba42751f820cd28351ced6c8377", "hex");
+const CMR = Buffer.from("ccdb02000fdb372bfa2e166b9fe0192715d555fc5720f8008ee741fe1a0d58ec", "hex");
 const POLICY_IDENTITY = policyIdentityHash({
   version: 3,
   operation: 3,

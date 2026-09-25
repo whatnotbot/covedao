@@ -54,7 +54,7 @@ async function expectAgree(w: MintWitness): Promise<void> {
 
 describe("Simplicity CMR is frozen (V3)", () => {
   it("MINT_CMR matches the compiled V3 program", () => {
-    expect(MINT_CMR).toBe("0b594eb3fadec17b45bb1d245ae18f8c512a1ba42751f820cd28351ced6c8377");
+    expect(MINT_CMR).toBe("ccdb02000fdb372bfa2e166b9fe0192715d555fc5720f8008ee741fe1a0d58ec");
   });
   it("historical V1 CMR is preserved", () => {
     expect(MINT_CMR_V1).toBe("118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2");

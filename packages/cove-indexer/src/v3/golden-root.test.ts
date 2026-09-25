@@ -113,7 +113,7 @@ function fullLifecycleState(): V3IndexerState {
 }
 
 /** Frozen deterministic state-root golden for the full 6-op lifecycle fixture. */
-export const V3_STATE_ROOT_GOLDEN = "bedca56f5964366bb0dd0b7c023c77d56b37d301a8799d6a98ac18b807f190f8";
+export const V3_STATE_ROOT_GOLDEN = "5db11b18d0b1e5616151aae7d52f3feef1015affc6383bd1d22edd5fac4bf1bd";
 
 describe("deterministic V3 state-root golden (§18)", () => {
   it("matches the frozen golden root", () => {

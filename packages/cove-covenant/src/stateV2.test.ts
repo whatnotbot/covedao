@@ -35,8 +35,8 @@ describe("CoveStateV2 (§6)", () => {
       stateVersion: 2,
       policyVersion: 3,
       tokenId: "cd".repeat(32),
-      issuedPublicSupplyAtoms: 42_000_000n * 100_000_000n,
-      backingSats: 21_000n,
+      issuedPublicSupplyAtoms: 50_000_000n * 100_000_000n,
+      backingSats: 25_000n,
       curveStage: 2,
     };
     expect(deserializeStateV2(serializeStateV2(s))).toEqual(s);
@@ -44,7 +44,7 @@ describe("CoveStateV2 (§6)", () => {
 
   it("rejects nonzero supply/backing invariant violations on serialize", () => {
     expect(() =>
-      serializeStateV2({ ...S0, issuedPublicSupplyAtoms: 840_000_001n * 100_000_000n }),
+      serializeStateV2({ ...S0, issuedPublicSupplyAtoms: 1_000_000_001n * 100_000_000n }),
     ).toThrow(/out of range/);
     expect(() => serializeStateV2({ ...S0, tokenId: "00".repeat(32) })).toThrow(/nonzero/);
   });

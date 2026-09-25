@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { CURVES, PUBLIC_SUPPLY, TOTAL_SUPPLY, RESERVED, geometric20, linearRamp } from "./curve.js";
 
 describe("supply model", () => {
-  it("total = public + reserved = 1,000,000,000", () => {
+  it("the entire 1,000,000,000 supply is public — nothing is reserved", () => {
     expect(PUBLIC_SUPPLY + RESERVED).toBe(TOTAL_SUPPLY);
-    expect(PUBLIC_SUPPLY).toBe(840_000_000n);
-    expect(RESERVED).toBe(160_000_000n);
+    expect(PUBLIC_SUPPLY).toBe(1_000_000_000n);
+    expect(RESERVED).toBe(0n);
   });
 });
 
@@ -44,16 +44,16 @@ describe("curve properties (all candidates)", () => {
 describe("FROZEN curve: geometric20 (existing 20-stage)", () => {
   it("priceAt golden", () => {
     expect(geometric20.priceAt(0n)).toBe(500n);
-    expect(geometric20.priceAt(420_000_000n)).toBe(10_054n); // start of stage 11
+    expect(geometric20.priceAt(500_000_000n)).toBe(10_054n); // start of stage 11
     expect(geometric20.priceAt(PUBLIC_SUPPLY)).toBe(149_731n);
   });
 
-  it("costToBuy golden: 42M tokens from supply 0 = 21,000 sats (stage 1)", () => {
-    expect(geometric20.costToBuy(0n, 42_000_000n)).toBe(21_000n);
+  it("costToBuy golden: 50M tokens from supply 0 = 25,000 sats (stage 1)", () => {
+    expect(geometric20.costToBuy(0n, 50_000_000n)).toBe(25_000n);
   });
 
-  it("final reserve == 24,196,788 sats (≈ 0.242 BTC benchmark)", () => {
-    expect(geometric20.costToBuy(0n, PUBLIC_SUPPLY)).toBe(24_196_788n);
+  it("final reserve == 28,805,700 sats (≈ 0.288 BTC benchmark)", () => {
+    expect(geometric20.costToBuy(0n, PUBLIC_SUPPLY)).toBe(28_805_700n);
   });
 
   it("marginal price at 100% == 149,731 sats/M", () => {
@@ -62,7 +62,7 @@ describe("FROZEN curve: geometric20 (existing 20-stage)", () => {
 });
 
 describe("rejected candidates (documented, not frozen)", () => {
-  it("linear ramp raises 63,210,000 sats (2.6× the benchmark) — rejected", () => {
-    expect(linearRamp.costToBuy(0n, PUBLIC_SUPPLY)).toBe(63_210_000n);
+  it("linear ramp raises 75,250,000 sats (2.6× the benchmark) — rejected", () => {
+    expect(linearRamp.costToBuy(0n, PUBLIC_SUPPLY)).toBe(75_250_000n);
   });
 });

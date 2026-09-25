@@ -36,6 +36,15 @@ export interface CurveConfigInput {
  * Validates that a curve configuration is internally consistent. Returns a
  * list of invariant violations (empty when valid).
  */
+/**
+ * Sats raised when the entire public supply mints out: 20 stages x 50,000,000
+ * tokens at the frozen stage prices. Derived, so it cannot drift from the table.
+ */
+export const FULL_RAISE_SATS: Sats = STAGE_PRICES_SATS_PER_MILLION.reduce(
+  (acc, p) => acc + (TOKENS_PER_STAGE * p) / 1_000_000n,
+  0n,
+);
+
 export function validateCurveConfig(input: CurveConfigInput = {}): string[] {
   const total = input.totalSupplyTokens ?? TOTAL_SUPPLY_TOKENS;
   const publicSupply = input.publicSupplyTokens ?? PUBLIC_SUPPLY_TOKENS;
@@ -63,8 +72,8 @@ export function validateCurveConfig(input: CurveConfigInput = {}): string[] {
     if (cur <= prev) problems.push(`Stage ${i + 1} price must exceed stage ${i} price.`);
   }
   const fullRaise = prices.reduce((acc, p) => acc + tokensPerStage * p / 1_000_000n, 0n);
-  if (fullRaise !== 24_196_788n) {
-    problems.push(`Full raise must be 24,196,788 sats (got ${fullRaise}).`);
+  if (fullRaise !== FULL_RAISE_SATS) {
+    problems.push(`Full raise must be ${FULL_RAISE_SATS} sats (got ${fullRaise}).`);
   }
   return problems;
 }

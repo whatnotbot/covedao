@@ -49,7 +49,7 @@ describe("mock chain end-to-end", () => {
     expect(token!.confirmedMintedAtoms).toBe(0n);
 
     // MINT full supply (single tx for brevity)
-    const curve = 24_196_788n;
+    const curve = 28_805_700n;
     const platformFee = computePlatformFee(curve, 100n);
     const minerFee = 450n;
     const mint = await adapter.buildMint({
@@ -146,14 +146,14 @@ describe("mock chain end-to-end", () => {
     // Both mint the final tokens from the same stale supply snapshot.
     const mint1 = await adapter.buildMint({
       deploymentId: token.deploymentId, ticker: "RACE", buyerAddress: b1, treasuryAddress: TREASURY,
-      tokenAmountAtoms: PUBLIC_SUPPLY_TOKENS, curveContributionSats: 24_196_788n,
-      platformFeeSats: computePlatformFee(24_196_788n, 100n), minerFeeSats: 450n,
+      tokenAmountAtoms: PUBLIC_SUPPLY_TOKENS, curveContributionSats: 28_805_700n,
+      platformFeeSats: computePlatformFee(28_805_700n, 100n), minerFeeSats: 450n,
       currentSupplyAtoms: 0n, stateHash,
     });
     const mint2 = await adapter.buildMint({
       deploymentId: token.deploymentId, ticker: "RACE", buyerAddress: b2, treasuryAddress: TREASURY,
-      tokenAmountAtoms: PUBLIC_SUPPLY_TOKENS, curveContributionSats: 24_196_788n,
-      platformFeeSats: computePlatformFee(24_196_788n, 100n), minerFeeSats: 450n,
+      tokenAmountAtoms: PUBLIC_SUPPLY_TOKENS, curveContributionSats: 28_805_700n,
+      platformFeeSats: computePlatformFee(28_805_700n, 100n), minerFeeSats: 450n,
       currentSupplyAtoms: 0n, stateHash,
     });
 

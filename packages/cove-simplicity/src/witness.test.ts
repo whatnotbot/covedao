@@ -43,8 +43,8 @@ describe("buildMintSimplicityWitness (canonical, no caller-supplied values)", ()
     expect(w.prevSupply).toBe(0n);
     expect(w.nextSupply).toBe(84_000_000n);
     expect(w.prevReserve).toBe(0n);
-    expect(w.nextReserve).toBe(49_350n);
-    expect(w.contribution).toBe(49_350n);
+    expect(w.nextReserve).toBe(47_950n);
+    expect(w.contribution).toBe(47_950n);
   });
 
   it("rejects a non-canonical successor state", () => {
@@ -101,9 +101,9 @@ describe("buildRedeemSimplicityWitness (canonical, no caller-supplied values)", 
     expect(w.amount).toBe(84_000_000n);
     expect(w.oldSupply).toBe(84_000_000n);
     expect(w.newSupply).toBe(0n);
-    expect(w.oldBacking).toBe(49_350n);
+    expect(w.oldBacking).toBe(47_950n);
     expect(w.newBacking).toBe(0n);
-    expect(w.payout).toBe(49_350n);
+    expect(w.payout).toBe(47_950n);
   });
 
   it("rejects a non-canonical successor state", () => {

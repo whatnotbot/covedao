@@ -261,7 +261,7 @@ async function main(): Promise<void> {
   }), "MINT");
   const mint1Txid = await broadcastValidated(mint1Val);
   await rpc.generateToAddress(1, mineAddr);
-  assert(mint1.grossSats === 49_350n, `mint gross ${mint1.grossSats}`);
+  assert(mint1.grossSats === 47_950n, `mint gross ${mint1.grossSats}`);
   const aliceCarrier: OutPoint = { txid: mint1Txid, vout: 2 };
   view.mint({
     tokenId, nextState: mint1.nextState,
@@ -313,8 +313,8 @@ async function main(): Promise<void> {
   }), "REDEEM");
   const redeemTxid = await broadcastValidated(redeemVal);
   await rpc.generateToAddress(1, mineAddr);
-  assert(redeem.grossSats === 49_350n, `redeem gross ${redeem.grossSats}`);
-  assert(redeem.netSats === 48_856n, `redeem net ${redeem.netSats}`);
+  assert(redeem.grossSats === 47_950n, `redeem gross ${redeem.grossSats}`);
+  assert(redeem.netSats === 47_470n, `redeem net ${redeem.netSats}`);
   assert(redeem.changeAtoms === 0n, "full redeem must have zero token change");
   view.redeem({
     tokenId, nextState: redeem.nextState,

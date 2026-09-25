@@ -15,8 +15,8 @@ const S0 = {
 };
 const S1 = {
   ...S0,
-  publicSupplyAtoms: 42_000_000n * 100_000_000n,
-  reserveSats: 21_000n,
+  publicSupplyAtoms: 50_000_000n * 100_000_000n,
+  reserveSats: 25_000n,
   curveStage: 2,
 };
 
@@ -58,9 +58,9 @@ describe("state-committed P2TR derivation", () => {
   it("golden: S1 output key + address", () => {
     const o = deriveStateOutput(internalKey, S1, bitcoin.networks.regtest);
     expect(o.outputKey.toString("hex")).toBe(
-      "d15aa47b989f9cb170f86e4a274626d804943d8df0b88ab73b0dd39aa8c087a0",
+      "815cc399ba6322ec0c0644d44ebdb370fd6705fc57726066c8f17f464cea57f8",
     );
-    expect(o.address).toBe("bcrt1p69d2g7ucn7wtzu8cde9zw33xmqzfg0vd7zug4demphfe42xqs7sqd6uej6");
+    expect(o.address).toBe("bcrt1ps9wv8xd6vv3wcrqxgn2ya0dnwr7kwp0u2aexqekg79l5vn822luq6medju");
   });
 
   it("stateTweak: golden TapTweak scalar and Q = P + tweak·G", () => {

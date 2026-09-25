@@ -4,25 +4,25 @@ import { deterministicFee } from "./fee.js";
 import { PUBLIC_SUPPLY } from "./curve.js";
 
 const M = 1_000_000n;
-const STAGE = 42n * M;
+const STAGE = 50n * M;
 
 describe("requiredBackingSats R(s) golden vectors (geometric20)", () => {
-  it("R(0) = 0, R(42M) = 21,000, R(84M) = 49,350", () => {
+  it("R(0) = 0, R(50M) = 25,000, R(100M) = 58,750", () => {
     expect(requiredBackingSats(0n)).toBe(0n);
-    expect(requiredBackingSats(STAGE)).toBe(21_000n);
-    expect(requiredBackingSats(2n * STAGE)).toBe(49_350n);
+    expect(requiredBackingSats(STAGE)).toBe(25_000n);
+    expect(requiredBackingSats(2n * STAGE)).toBe(58_750n);
   });
-  it("R(840M) = 24,196,788 sats (full raise)", () => {
-    expect(requiredBackingSats(PUBLIC_SUPPLY)).toBe(24_196_788n);
+  it("R(1B) = 28,805,700 sats (full raise)", () => {
+    expect(requiredBackingSats(PUBLIC_SUPPLY)).toBe(28_805_700n);
   });
 });
 
 describe("quoteBuy / quoteRedeem golden vectors", () => {
-  it("buy 42M from 0 = 21,000 gross, 210 fee (1%)", () => {
-    expect(quoteBuy(0n, STAGE)).toEqual({ gross: 21_000n, fee: 210n, net: 21_210n });
+  it("buy 50M from 0 = 25,000 gross, 250 fee (1%)", () => {
+    expect(quoteBuy(0n, STAGE)).toEqual({ gross: 25_000n, fee: 250n, net: 25_250n });
   });
-  it("redeem 42M from 42M = 21,000 gross, 210 fee (1%)", () => {
-    expect(quoteRedeem(STAGE, STAGE)).toEqual({ gross: 21_000n, fee: 210n, net: 20_790n });
+  it("redeem 50M from 50M = 25,000 gross, 250 fee (1%)", () => {
+    expect(quoteRedeem(STAGE, STAGE)).toEqual({ gross: 25_000n, fee: 250n, net: 24_750n });
   });
   it("deterministicFee rounds up", () => {
     expect(deterministicFee(1n, 100n)).toBe(1n); // 0.01 sat → 1 sat
@@ -64,7 +64,7 @@ describe("P0 invariant: buy→redeem round trip cannot drain backing", () => {
       return seed % n;
     };
     for (let i = 0; i < 2000; i++) {
-      const s = rand(20n) * STAGE + rand(STAGE); // 0..840M
+      const s = rand(20n) * STAGE + rand(STAGE); // 0..1B
       const maxQ = PUBLIC_SUPPLY - s;
       const q = 1n + rand(maxQ);
       const b = grossBuy(s, q);
@@ -75,10 +75,10 @@ describe("P0 invariant: buy→redeem round trip cannot drain backing", () => {
 
   it("redemption reduces issued supply and releases capacity for re-buy", () => {
     // Sell out, redeem 10M, re-buy 10M: capacity is restored.
-    expect(requiredBackingSats(PUBLIC_SUPPLY)).toBe(24_196_788n);
+    expect(requiredBackingSats(PUBLIC_SUPPLY)).toBe(28_805_700n);
     const afterRedeem = PUBLIC_SUPPLY - 10n * M;
     const redeemGross = grossRedeem(PUBLIC_SUPPLY, 10n * M);
-    expect(requiredBackingSats(afterRedeem)).toBe(24_196_788n - redeemGross);
+    expect(requiredBackingSats(afterRedeem)).toBe(28_805_700n - redeemGross);
     // 10M is buyable again from afterRedeem.
     expect(() => grossBuy(afterRedeem, 10n * M)).not.toThrow();
     expect(requiredBackingSats(afterRedeem) + grossBuy(afterRedeem, 10n * M)).toBe(

@@ -155,10 +155,10 @@ describe("Cove MINT (combined settlement + min contribution)", () => {
   it("advances stage after filling stage 1 (500 → 675 sats/M)", () => {
     const s = deployedState();
     // Fill stage 1 exactly: 42M tokens → 21,000 curve + 210 fee = 21,210 settlement.
-    applyCoveOperation(s, mintTx(atoms(42_000_000), 0n, 21_210n), CFG);
+    applyCoveOperation(s, mintTx(atoms(50_000_000), 0n, 25_250n), CFG);
     expect(s.tokens.get(DEPLOY_TXID)!.currentStage).toBe(2);
     // Next 2M tokens at stage 2: 1,350 curve + 14 fee = 1,364 settlement.
-    const next = mintTx(atoms(2_000_000), atoms(42_000_000), 1_364n);
+    const next = mintTx(atoms(2_000_000), atoms(50_000_000), 1_364n);
     expect(validateCoveOperation(s, next, CFG)).toEqual({ valid: true, reason: null });
   });
 
@@ -200,7 +200,7 @@ describe("Cove MINT (combined settlement + min contribution)", () => {
 
   it("rejects overmint beyond public supply", () => {
     const s = deployedState();
-    expect(validateCoveOperation(s, mintTx(atoms(840_000_001), 0n, 0n), CFG)).toEqual({
+    expect(validateCoveOperation(s, mintTx(atoms(1_000_000_001), 0n, 0n), CFG)).toEqual({
       valid: false,
       reason: "OVERMINT",
     });

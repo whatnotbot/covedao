@@ -30,7 +30,6 @@
     "mainnet-config": "tsx src/mainnet-config.ts",
     "mainnet-canary": "tsx src/mainnet-canary.ts",
     "regtest-reorg": "tsx src/regtest-reorg.ts",
-    "liquidity-demo": "tsx src/liquidity-demo.ts",
     "v3:persistent-lifecycle": "tsx src/v3/persistent-lifecycle.ts",
     "v3:persistent-reorg-matrix": "tsx src/v3/persistent-reorg-matrix.ts"
   },

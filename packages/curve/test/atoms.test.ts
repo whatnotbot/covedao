@@ -49,18 +49,18 @@ describe("Golden economics (unchanged by atom model)", () => {
   });
 
   it("full public mint (840,000,000 display tokens) → 24,196,788 sats", () => {
-    expect(getTheoreticalFullRaise()).toBe(24_196_788n);
-    const q = quoteExactTokens({ desiredTokens: 840_000_000n, currentSupply: 0n });
-    expect(q.curveContributionSats).toBe(24_196_788n);
+    expect(getTheoreticalFullRaise()).toBe(28_805_700n);
+    const q = quoteExactTokens({ desiredTokens: 1_000_000_000n, currentSupply: 0n });
+    expect(q.curveContributionSats).toBe(28_805_700n);
   });
 
-  it("stage boundary crossing is preserved (42M/stage)", () => {
-    // Stage 1 is exactly 42,000,000 display tokens at 500 sats/1M = 21,000 sats.
-    const stage1 = quoteExactTokens({ desiredTokens: 42_000_000n, currentSupply: 0n });
-    expect(stage1.curveContributionSats).toBe(21_000n);
+  it("stage boundary crossing is preserved (50M/stage)", () => {
+    // Stage 1 is exactly 50,000,000 display tokens at 500 sats/1M = 25,000 sats.
+    const stage1 = quoteExactTokens({ desiredTokens: 50_000_000n, currentSupply: 0n });
+    expect(stage1.curveContributionSats).toBe(25_000n);
     expect(stage1.endingStage).toBe(1);
     // Next token starts stage 2 at 675 sats/1M.
-    const stage2 = quoteExactTokens({ desiredTokens: 1n, currentSupply: 42_000_000n });
+    const stage2 = quoteExactTokens({ desiredTokens: 1n, currentSupply: 50_000_000n });
     expect(stage2.curveContributionSats).toBe(1n); // ceil(1*675/1M)
     expect(stage2.startingStage).toBe(2);
   });

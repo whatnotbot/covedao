@@ -58,8 +58,8 @@ describe("stage pricing", () => {
   });
 
   it("getStageSupplyRange returns inclusive ranges", () => {
-    expect(getStageSupplyRange(1)).toEqual({ start: 0n, end: 42_000_000n });
-    expect(getStageSupplyRange(20)).toEqual({ start: 798_000_000n, end: 840_000_000n });
+    expect(getStageSupplyRange(1)).toEqual({ start: 0n, end: 50_000_000n });
+    expect(getStageSupplyRange(20)).toEqual({ start: 950_000_000n, end: 1_000_000_000n });
   });
 
   it("getStageSupplyRange rejects invalid stages", () => {

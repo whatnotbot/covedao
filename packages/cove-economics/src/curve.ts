@@ -14,9 +14,10 @@ import type { DisplayTokens, Sats } from "@crclaunch/curve";
  * rounded UP to the nearest sat so a buyer can never under-pay.
  */
 
-export const PUBLIC_SUPPLY = 840_000_000n; // display tokens
+export const PUBLIC_SUPPLY = 1_000_000_000n; // display tokens
 export const TOTAL_SUPPLY = 1_000_000_000n;
-export const RESERVED = 160_000_000n;
+/** Nothing is held back: the public curve sells the entire supply. */
+export const RESERVED = 0n;
 export const PRICE_UNIT = 1_000_000n; // tokens per price unit
 
 export interface Curve {
@@ -68,7 +69,7 @@ const STAGE_PRICES: readonly bigint[] = [
   110_912n,
   149_731n,
 ];
-const TOKENS_PER_STAGE = 42_000_000n;
+const TOKENS_PER_STAGE = 50_000_000n;
 
 function stageAt(supply: DisplayTokens): number {
   if (supply >= PUBLIC_SUPPLY) return STAGE_PRICES.length - 1;

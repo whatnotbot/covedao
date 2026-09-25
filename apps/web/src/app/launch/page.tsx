@@ -10,8 +10,7 @@ interface Prepared {
   nonceHex: string;
   policyVersion: number;
   publicCapAtoms: string;
-  totalSupplyAtoms: string;
-  protocolReserveAtoms: string;
+  publicSupplyAtoms: string;
   curve: string;
   vaultAnchorSats: string;
 }
@@ -121,9 +120,8 @@ export default function LaunchPage() {
           <Row k="tokenId" v={<span className="break-all font-mono text-xs">{prepared.tokenId}</span>} />
           <Row k="Ticker" v={`$${prepared.ticker}`} />
           <Row k="Policy" v={`V${prepared.policyVersion}`} />
-          <Row k="Public cap" v="840,000,000 tokens" />
-          <Row k="Total configured" v="1,000,000,000 tokens" />
-          <Row k="Protocol reserve" v="160,000,000 tokens" />
+          <Row k="Total supply" v="840,000,000 tokens" />
+          <Row k="Creator allocation" v="0 tokens" />
           <Row k="Backing curve" v={prepared.curve} />
           <Row k="Vault anchor" v={`${prepared.vaultAnchorSats} sats`} />
           <div className="mt-4">

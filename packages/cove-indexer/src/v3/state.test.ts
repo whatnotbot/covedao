@@ -103,7 +103,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
     const mintTxidHex = bitcoin.Transaction.fromHex(mintTxid).getId();
     state.applyBlock(block(2, [mintTxid]));
     expect(state.backing.get(tokenIdHex)!.state.issuedPublicSupplyAtoms).toBe(MINT_AMOUNT);
-    expect(state.backing.get(tokenIdHex)!.state.backingSats).toBe(49_350n);
+    expect(state.backing.get(tokenIdHex)!.state.backingSats).toBe(47_950n);
     expect(state.tokenUtxos.get(`${mintTxidHex}:2`)!.amountAtoms).toBe(MINT_AMOUNT);
 
     // ── TRANSFER full 84M to Bob ──
@@ -121,7 +121,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
     expect(state.tokenUtxos.has(`${mintTxidHex}:2`)).toBe(false);
     expect(state.tokenUtxos.get(`${transferTxidHex}:1`)!.amountAtoms).toBe(MINT_AMOUNT);
     // backing/supply unchanged
-    expect(state.backing.get(tokenIdHex)!.state.backingSats).toBe(49_350n);
+    expect(state.backing.get(tokenIdHex)!.state.backingSats).toBe(47_950n);
 
     // ── REDEEM full 84M (backing returns to S0) ──
     const redeemWire = encodeRedeemV2({ tokenId, redeemAmount: MINT_AMOUNT, changeAllocations: [] });
@@ -134,8 +134,8 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
       [
         { script: opReturn(redeemWire), value: 0n },
         { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS },
-        { script: payoutScript, value: 48_856n },
-        { script: feeScript, value: 494n },
+        { script: payoutScript, value: 47_470n },
+        { script: feeScript, value: 480n },
       ],
     );
     state.applyBlock(block(4, [redeemTxid]));
@@ -151,7 +151,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
 
     // ── roll back REDEEM, then MINT, and re-apply ──
     state.undoBlock(4n);
-    expect(state.backing.get(tokenIdHex)!.state.backingSats).toBe(49_350n);
+    expect(state.backing.get(tokenIdHex)!.state.backingSats).toBe(47_950n);
     expect(state.tokenUtxos.get(`${transferTxidHex}:1`)!.amountAtoms).toBe(MINT_AMOUNT);
     state.applyBlock(block(4, [redeemTxid]));
     expect(state.stateRoot()).toBe(root1);

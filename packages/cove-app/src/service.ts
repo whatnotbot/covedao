@@ -66,8 +66,12 @@ export interface LaunchPrepareResult {
   policyVersion: number;
   chainIdentity: string;
   publicCapAtoms: bigint;
-  totalSupplyAtoms: bigint;
-  protocolReserveAtoms: bigint;
+  /**
+   * The only supply that exists. applyMintV2 caps issuance at PUBLIC_SUPPLY_ATOMS
+   * and there is no code path that mints beyond it, so this IS the total — there
+   * is no separate protocol reserve to report.
+   */
+  publicSupplyAtoms: bigint;
   curve: string;
   vaultAnchorSats: bigint;
 }
@@ -267,8 +271,7 @@ export class V3AppService {
       policyVersion: 3,
       chainIdentity: this.config.chainIdentity,
       publicCapAtoms: PUBLIC_SUPPLY_ATOMS,
-      totalSupplyAtoms: 1_000_000_000n * ATOMS_PER_TOKEN,
-      protocolReserveAtoms: 160_000_000n * ATOMS_PER_TOKEN,
+      publicSupplyAtoms: PUBLIC_SUPPLY_ATOMS,
       curve: "geometric20",
       vaultAnchorSats: RESERVE_ANCHOR_SATS,
     };

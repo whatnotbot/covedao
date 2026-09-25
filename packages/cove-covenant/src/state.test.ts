@@ -44,8 +44,8 @@ describe("CoveState domain-separated hash", () => {
   it("S0 != S1 ⇒ different hash", () => {
     const S1 = {
       ...S0,
-      publicSupplyAtoms: 42_000_000n * 100_000_000n,
-      reserveSats: 21_000n,
+      publicSupplyAtoms: 50_000_000n * 100_000_000n,
+      reserveSats: 25_000n,
       curveStage: 2,
     };
     expect(stateHash(S1)).not.toBe(stateHash(S0));
@@ -58,16 +58,16 @@ describe("CoveState domain-separated hash", () => {
     expect(stateHash(S0)).toBe("e27d7047a2a2f05a3f7ac319e12207c11487b59dcb212402785c129b85c518e2");
   });
 
-  it("golden: S1 (after minting 42M) serialization and hash", () => {
+  it("golden: S1 (after minting 50M) serialization and hash", () => {
     const S1 = {
       ...S0,
-      publicSupplyAtoms: 42_000_000n * 100_000_000n,
-      reserveSats: 21_000n,
+      publicSupplyAtoms: 50_000_000n * 100_000_000n,
+      reserveSats: 25_000n,
       curveStage: 2,
     };
     expect(Buffer.from(serializeState(S1)).toString("hex")).toBe(
-      "01" + "ab".repeat(32) + "00" + "000eebe0b40e8000" + "0000000000005208" + "02",
+      "01" + "ab".repeat(32) + "00" + "0011c37937e08000" + "00000000000061a8" + "02",
     );
-    expect(stateHash(S1)).toBe("27fb483afe745a89ea8d5f55ecc9401e0a96b15abd2ecb7ea4afb6633482828a");
+    expect(stateHash(S1)).toBe("241813cd83d8fc44a8abed841f0bd09fc87ba0c2c0e5a698b7470b6515c845e3");
   });
 });

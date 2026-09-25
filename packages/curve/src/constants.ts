@@ -17,15 +17,15 @@ export const ATOMS_PER_TOKEN: Atoms = 10n ** BigInt(DECIMALS);
 
 // ── Display-token-denominated supply (the human/economic unit) ──────────────
 export const TOTAL_SUPPLY_TOKENS: DisplayTokens = 1_000_000_000n;
-export const PUBLIC_SUPPLY_TOKENS: DisplayTokens = 840_000_000n;
-export const GRADUATION_RESERVE_TOKENS: DisplayTokens = 160_000_000n;
+export const PUBLIC_SUPPLY_TOKENS: DisplayTokens = 1_000_000_000n;
+export const GRADUATION_RESERVE_TOKENS: DisplayTokens = 0n;
 /** Alias matching the DB column name `reserve_supply_atoms`. */
 export const RESERVE_SUPPLY_TOKENS: DisplayTokens = GRADUATION_RESERVE_TOKENS;
 export const CREATOR_PREMINE_TOKENS: DisplayTokens = 0n;
 export const TEAM_ALLOCATION_TOKENS: DisplayTokens = 0n;
 
 export const STAGE_COUNT = 20;
-export const TOKENS_PER_STAGE: DisplayTokens = 42_000_000n;
+export const TOKENS_PER_STAGE: DisplayTokens = 50_000_000n;
 
 /** Satoshis per 1,000,000 display tokens. */
 export const PRICE_UNIT_TOKENS: DisplayTokens = 1_000_000n;

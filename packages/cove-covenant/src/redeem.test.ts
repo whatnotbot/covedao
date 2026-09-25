@@ -13,30 +13,30 @@ const S0: CoveState = {
   curveStage: 1,
 };
 
-const MINT_42M = 42_000_000n * ATOMS_PER_TOKEN;
+const MINT_50M = 50_000_000n * ATOMS_PER_TOKEN;
 
 describe("canonical curve unification (§1.2) + applyRedeem", () => {
   it("applyMint contribution == R-delta == grossBuy", () => {
-    const r = applyMint(S0, MINT_42M);
-    expect(r.curveContributionSats).toBe(21_000n);
+    const r = applyMint(S0, MINT_50M);
+    expect(r.curveContributionSats).toBe(25_000n);
     // backing invariant: state.reserveSats == R(issuedSupply in tokens)
     const supplyTokens = r.nextState.publicSupplyAtoms / ATOMS_PER_TOKEN;
     expect(r.nextState.reserveSats).toBe(requiredBackingSats(supplyTokens));
   });
 
   it("applyRedeem: mint then redeem returns to S0 (reserve 0)", () => {
-    const mint = applyMint(S0, MINT_42M);
-    const redeem = applyRedeem(mint.nextState, MINT_42M);
-    expect(redeem.grossRedeemSats).toBe(21_000n);
+    const mint = applyMint(S0, MINT_50M);
+    const redeem = applyRedeem(mint.nextState, MINT_50M);
+    expect(redeem.grossRedeemSats).toBe(25_000n);
     expect(redeem.nextState.publicSupplyAtoms).toBe(0n);
     expect(redeem.nextState.reserveSats).toBe(0n);
     expect(redeem.nextState.curveStage).toBe(1);
   });
 
   it("applyRedeem releases capacity for re-buy", () => {
-    const mint = applyMint(S0, MINT_42M);
-    const redeem = applyRedeem(mint.nextState, MINT_42M);
-    const rebuy = applyMint(redeem.nextState, MINT_42M);
+    const mint = applyMint(S0, MINT_50M);
+    const redeem = applyRedeem(mint.nextState, MINT_50M);
+    const rebuy = applyMint(redeem.nextState, MINT_50M);
     expect(rebuy.nextState.publicSupplyAtoms).toBe(mint.nextState.publicSupplyAtoms);
     expect(rebuy.curveContributionSats).toBe(mint.curveContributionSats);
   });
@@ -44,7 +44,7 @@ describe("canonical curve unification (§1.2) + applyRedeem", () => {
   it("applyRedeem rejects zero / sub-token / over-balance", () => {
     expect(() => applyRedeem(S0, 0n)).toThrow(CovenantError);
     expect(() => applyRedeem(S0, 1n)).toThrow(CovenantError); // sub-token
-    expect(() => applyRedeem(S0, MINT_42M)).toThrow(/issued/i);
+    expect(() => applyRedeem(S0, MINT_50M)).toThrow(/issued/i);
   });
 
   it("state.backing == R(issuedSupply) after every generated BUY/REDEEM sequence", () => {
@@ -59,7 +59,7 @@ describe("canonical curve unification (§1.2) + applyRedeem", () => {
       const qTokens = 1n + rand(42n * 1_000_000n);
       if (rand(2n) === 0n) {
         // BUY
-        if (supplyTokens + qTokens > 840_000_000n) continue;
+        if (supplyTokens + qTokens > 1_000_000_000n) continue;
         try {
           const r = applyMint(state, qTokens * ATOMS_PER_TOKEN);
           state = r.nextState;
@@ -80,7 +80,7 @@ describe("canonical curve unification (§1.2) + applyRedeem", () => {
       }
       // invariant holds after every transition
       const st = state.publicSupplyAtoms / ATOMS_PER_TOKEN;
-      expect(st >= 0n && st <= 840_000_000n).toBe(true);
+      expect(st >= 0n && st <= 1_000_000_000n).toBe(true);
       expect(state.reserveSats).toBe(requiredBackingSats(st));
     }
   });

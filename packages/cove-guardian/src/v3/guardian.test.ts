@@ -157,7 +157,7 @@ describe("Production Guardian V3 — validateAndSignMintTransition", async () =>
 
   it("successor backing +1 sat → refused, zero signatures", async () => {
     const { view, mint } = mintSetup();
-    setOutputValue(mint.psbt, 1, Number(RESERVE_ANCHOR_SATS + 49_350n + 1n));
+    setOutputValue(mint.psbt, 1, Number(RESERVE_ANCHOR_SATS + 47_950n + 1n));
     const r = await signMint(mint.psbt, view);
     expect(r.ok).toBe(false);
     expect(input0HasSignature(mint.psbt)).toBe(false);
@@ -322,7 +322,7 @@ describe("Production Guardian V3 — validateAndSignRedeemTransition", async () 
 
   it("seller payout +1 sat → refused, zero signatures", async () => {
     const { view, redeem } = redeemSetup();
-    setOutputValue(redeem.psbt, 2, Number(48_856n + 1n));
+    setOutputValue(redeem.psbt, 2, Number(47_470n + 1n));
     const r = await validateAndSignRedeemTransition({
       signer,
       psbt: redeem.psbt,

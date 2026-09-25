@@ -29,7 +29,7 @@ describe("validateStateV2 (§2)", () => {
       () =>
         validateStateV2({
           ...s,
-          issuedPublicSupplyAtoms: 42n * M * ATOMS_PER_TOKEN,
+          issuedPublicSupplyAtoms: 50n * M * ATOMS_PER_TOKEN,
           curveStage: 2,
           backingSats: 999n,
         }),
@@ -40,8 +40,8 @@ describe("validateStateV2 (§2)", () => {
   it("corrupted stage rejected", () => {
     const s = {
       ...s0StateV2({ tokenId: TOKEN }),
-      issuedPublicSupplyAtoms: 42n * M * ATOMS_PER_TOKEN,
-      backingSats: 21_000n,
+      issuedPublicSupplyAtoms: 50n * M * ATOMS_PER_TOKEN,
+      backingSats: 25_000n,
       curveStage: 1,
     };
     expectError(() => validateStateV2(s), "CURVE_STAGE_MISMATCH");
@@ -69,10 +69,10 @@ describe("validateStateV2 (§2)", () => {
 
 describe("applyMintV2 / applyRedeemV2 exact successors", () => {
   it("MINT V2 exact successor: backing recomputed as R(nextSupply)", () => {
-    const r = applyMintV2(s0StateV2({ tokenId: TOKEN }), 42n * M * ATOMS_PER_TOKEN);
-    expect(r.grossSats).toBe(21_000n);
-    expect(r.nextState.issuedPublicSupplyAtoms).toBe(42n * M * ATOMS_PER_TOKEN);
-    expect(r.nextState.backingSats).toBe(requiredBackingSats(42n * M));
+    const r = applyMintV2(s0StateV2({ tokenId: TOKEN }), 50n * M * ATOMS_PER_TOKEN);
+    expect(r.grossSats).toBe(25_000n);
+    expect(r.nextState.issuedPublicSupplyAtoms).toBe(50n * M * ATOMS_PER_TOKEN);
+    expect(r.nextState.backingSats).toBe(requiredBackingSats(50n * M));
     expect(r.nextState.curveStage).toBe(2);
     expect(() => validateStateV2(r.nextState)).not.toThrow();
   });

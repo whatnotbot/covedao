@@ -97,8 +97,8 @@ describe("V3 builders (offline)", () => {
     });
     const expected = applyMintV2(d.s0, 84_000_000n * 100_000_000n);
     expect(mint.nextState.backingSats).toBe(expected.nextState.backingSats);
-    expect(mint.grossSats).toBe(49_350n);
-    expect(mint.buyFeeSats).toBe(494n);
+    expect(mint.grossSats).toBe(47_950n);
+    expect(mint.buyFeeSats).toBe(480n);
     // State input spends the PREV vault (MINT leaf).
     expect(mint.psbt.data.inputs[0]!.tapMerkleRoot!.equals(mint.prevVault.merkleRoot)).toBe(true);
     // Successor output is the NEXT vault.
@@ -208,9 +208,9 @@ describe("V3 builders (offline)", () => {
     const expected = applyRedeemV2(minted.nextState, mintAmountAtoms);
     expect(r.nextState.backingSats).toBe(expected.nextState.backingSats);
     expect(r.nextState.issuedPublicSupplyAtoms).toBe(0n);
-    expect(r.grossSats).toBe(49_350n);
-    expect(r.redeemFeeSats).toBe(494n);
-    expect(r.netSats).toBe(48_856n);
+    expect(r.grossSats).toBe(47_950n);
+    expect(r.redeemFeeSats).toBe(480n);
+    expect(r.netSats).toBe(47_470n);
     expect(r.changeAtoms).toBe(0n);
     // State input spends the PREV vault via the REDEEM leaf.
     expect(r.psbt.data.inputs[0]!.tapMerkleRoot!.equals(r.prevVault.merkleRoot)).toBe(true);
@@ -219,7 +219,7 @@ describe("V3 builders (offline)", () => {
     ).toBe(true);
     // [0] OP_RETURN, [1] successor vault, [2] payout, [3] fee (no change carrier, no BTC change).
     expect(r.psbt.txOutputs[1]!.script.equals(r.nextVault.scriptPubKey)).toBe(true);
-    expect(r.psbt.txOutputs[2]!.value).toBe(48_856);
+    expect(r.psbt.txOutputs[2]!.value).toBe(47_470);
     const env = decodeV2(r.psbt.txOutputs[0]!.script.subarray(2));
     expect(env.op).toBe(4); // REDEEM
     expect((env as { redeemAmount: bigint }).redeemAmount).toBe(mintAmountAtoms);
@@ -245,7 +245,7 @@ describe("V3 builders (offline)", () => {
       buyFeeBps: 50n,
     });
     expect(mint.buyFeeSats).toBe(deterministicFee(gross, 50n));
-    expect(mint.buyFeeSats).not.toBe(494n); // the dev default (100 bps)
+    expect(mint.buyFeeSats).not.toBe(480n); // the dev default (100 bps)
   });
 
   it("REDEEM: protocol fee schedule is parameterized (profile-driven), not the dev default", () => {
@@ -269,7 +269,7 @@ describe("V3 builders (offline)", () => {
       redeemFeeBps: 50n,
     });
     expect(r.redeemFeeSats).toBe(deterministicFee(gross, 50n));
-    expect(r.redeemFeeSats).not.toBe(494n); // the dev default (100 bps)
+    expect(r.redeemFeeSats).not.toBe(480n); // the dev default (100 bps)
   });
 });
 
@@ -399,8 +399,8 @@ describe("REDEEM miner-fee funding", () => {
     });
   }
 
-  const HALF = 42_000_000n * 100_000_000n;
   const ALL = 84_000_000n * 100_000_000n;
+  const HALF = ALL / 2n;
 
   it("still refuses a partial redeem from one carrier when nothing funds the fee", () => {
     // 1,000 carrier − 1,000 change carrier − 1,000 fee = −1,000.
@@ -434,7 +434,7 @@ describe("REDEEM miner-fee funding", () => {
       minerFeeSats: 12_000n,
       funderSats: 50_000n,
     });
-    expect(r.netSats).toBe(48_856n);
+    expect(r.netSats).toBe(47_470n);
   });
 
   it("refuses that fee without a funder, as before", () => {

@@ -15,7 +15,7 @@ import type { V3TokenCardData } from "@/components/TokenCard";
  */
 
 const ATOMS = 100_000_000n;
-const CAP = 840_000_000n * ATOMS;
+const CAP = 1_000_000_000n * ATOMS;
 
 function token(
   i: number,

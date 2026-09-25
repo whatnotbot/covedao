@@ -220,7 +220,7 @@ async function main(): Promise<void> {
   const mint1Val = orThrow(await validateFinalizedMintTransaction({ rawTxHex: mint1Hex, view, network: "regtest", guardianXOnly, recoveryKeyXOnly, recoveryProfile, feeScript }), "MINT");
   const mint1Txid = await broadcast(mint1Val);
   await rpc.generateToAddress(1, mineAddr);
-  assert(mint1.grossSats === 49_350n, `mint gross ${mint1.grossSats}`);
+  assert(mint1.grossSats === 47_950n, `mint gross ${mint1.grossSats}`);
   view.mint({ tokenId, nextState: mint1.nextState, prevBackingOutpoint: { txid: deployTxid, vout: 1 }, nextBackingOutpoint: { txid: mint1Txid, vout: 1 }, recipientOutpoint: { txid: mint1Txid, vout: 2 }, recipientScript: p2wpkhScript(alice), amountAtoms: MINT_AMOUNT });
   console.log(`✓ MINT ${mint1Txid} (remote Guardian signed)`);
 
@@ -262,7 +262,7 @@ async function main(): Promise<void> {
   const redeemVal = orThrow(await validateFinalizedRedeemTransaction({ rawTxHex: redeemHex, view, network: "regtest", guardianXOnly, recoveryKeyXOnly, recoveryProfile, feeScript }), "REDEEM");
   const redeemTxid = await broadcast(redeemVal);
   await rpc.generateToAddress(1, mineAddr);
-  assert(redeem.grossSats === 49_350n, `redeem gross ${redeem.grossSats}`);
+  assert(redeem.grossSats === 47_950n, `redeem gross ${redeem.grossSats}`);
   view.redeem({ tokenId, nextState: redeem.nextState, prevBackingOutpoint: { txid: mint1Txid, vout: 1 }, nextBackingOutpoint: { txid: redeemTxid, vout: 1 }, spentTokenOutpoints: [{ txid: transferTxid, vout: 1 }], change: [] });
   console.log(`✓ REDEEM ${redeemTxid} (remote Guardian signed)`);
 

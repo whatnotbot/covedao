@@ -14,7 +14,7 @@ bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 
 const WIF = "cPoVxi18CnxHUQjYNpjRM3RYUVFA61wuTNQez7BtRKkfp9Fw6RTW";
 const internalKey = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x42), true)!.subarray(1));
-const MINT_42M = 42_000_000n * 100_000_000n;
+const MINT_42M = 50_000_000n * 100_000_000n;
 
 const S0: CoveState = {
   version: 1,
@@ -82,14 +82,14 @@ function expectReject(psbt: bitcoin.Psbt, signer: TaprootGuardianSigner, reason:
 describe("buildMintPsbt + validateMintTx (canonical MINT layout)", () => {
   it("builds a canonical tx that passes end-to-end validation", () => {
     const { analysis } = buildValid();
-    // MINT 42M → 21,000 sats curve contribution (golden), 1% platform fee = 210.
-    expect(analysis.curveContributionSats).toBe(21_000n);
-    expect(analysis.platformFeeSats).toBe(210n);
+    // MINT 50M -> 25,000 sats curve contribution (golden), 1% platform fee = 250.
+    expect(analysis.curveContributionSats).toBe(25_000n);
+    expect(analysis.platformFeeSats).toBe(250n);
     expect(analysis.minerFeeSats).toBe(MINER_FEE);
     expect(analysis.buyerChangeSats).toBe(
-      BUYER_FUND - 21_000n - TOKEN_COMMITMENT_SATS - 210n - MINER_FEE,
+      BUYER_FUND - 25_000n - TOKEN_COMMITMENT_SATS - 250n - MINER_FEE,
     );
-    expect(analysis.nextState.reserveSats).toBe(21_000n);
+    expect(analysis.nextState.reserveSats).toBe(25_000n);
     expect(analysis.nextState.publicSupplyAtoms).toBe(MINT_42M);
   });
 

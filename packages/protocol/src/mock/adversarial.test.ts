@@ -157,7 +157,7 @@ describe("adversarial mint validation (tampered envelopes, no builder)", () => {
 
   it("overmint beyond remaining supply rejected", async () => {
     const before = snapshot();
-    const r = await submit(mintEnvelope({ deploymentId: frogId, amount: 839_999_999n, supplyBefore: before.minted!, curveAmt: 99_999_999n, platformAmt: 0n }), BUYER);
+    const r = await submit(mintEnvelope({ deploymentId: frogId, amount: 999_999_999n, supplyBefore: before.minted!, curveAmt: 99_999_999n, platformAmt: 0n }), BUYER);
     expect(r.status).toBe("REJECTED");
     expect(r.reason).toBe("EXCEEDS_REMAINING_SUPPLY");
     expect(snapshot()).toEqual(before);
@@ -256,7 +256,7 @@ describe("adversarial marketplace + deploy validation (tampered envelopes)", () 
   beforeAll(async () => {
     // Mint the FROG token's REMAINING supply in one shot, then graduate it.
     const current = node.snapshot.tokens[frogId]!.confirmedMintedAtoms;
-    const remaining = 840_000_000n - current;
+    const remaining = 1_000_000_000n - current;
     const quote = quoteExactTokens({ desiredTokens: remaining, currentSupply: current });
     const fullCurve = quote.curveContributionSats;
     const fullPlatform = computePlatformFee(fullCurve, 100n);
@@ -424,9 +424,9 @@ describe("locked-token transfer (adversarial)", () => {
     tokId = (await a2.getTokenByTicker("LOCK"))!.deploymentId;
 
     // Mint full supply to SELLER (=BUYER) so the token can graduate.
-    const q = quoteExactTokens({ desiredTokens: 840_000_000n, currentSupply: 0n });
+    const q = quoteExactTokens({ desiredTokens: 1_000_000_000n, currentSupply: 0n });
     const plat = computePlatformFee(q.curveContributionSats, 100n);
-    const m = mintEnvelope({ deploymentId: tokId, ticker: "LOCK", amount: 840_000_000n, supplyBefore: 0n, curveAmt: q.curveContributionSats, platformAmt: plat });
+    const m = mintEnvelope({ deploymentId: tokId, ticker: "LOCK", amount: 1_000_000_000n, supplyBefore: 0n, curveAmt: q.curveContributionSats, platformAmt: plat });
     await a2.broadcast(sign(m, BUYER));
     await n2.mineBlock();
     await a2.graduate(tokId);

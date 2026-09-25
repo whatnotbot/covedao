@@ -11,7 +11,7 @@ const S0: CoveState = {
   curveStage: 1,
 };
 
-const MINT_42M = 42_000_000n * 100_000_000n;
+const MINT_42M = 50_000_000n * 100_000_000n;
 const RECIPIENT = Buffer.from("5120" + "cc".repeat(32), "hex"); // valid P2TR
 
 function validContext(): Parameters<typeof validateMint>[0] {
@@ -64,10 +64,10 @@ describe("Guardian policy (validateMint)", () => {
 
   it("rejects an over-supply mint", () => {
     const c = validContext();
-    c.amountAtoms = 840_000_001n * 100_000_000n;
+    c.amountAtoms = 1_000_000_001n * 100_000_000n;
     c.nextState = {
       ...S0,
-      publicSupplyAtoms: 840_000_001n * 100_000_000n,
+      publicSupplyAtoms: 1_000_000_001n * 100_000_000n,
       reserveSats: 0n,
       curveStage: 20,
     };
@@ -101,7 +101,7 @@ describe("validateStateInvariants", () => {
 
   it("rejects an over-cap supply", () => {
     expect(
-      validateStateInvariants({ ...S0, publicSupplyAtoms: 840_000_001n * 100_000_000n }),
+      validateStateInvariants({ ...S0, publicSupplyAtoms: 1_000_000_001n * 100_000_000n }),
     ).toMatchObject({ ok: false, reason: "SUPPLY_OUT_OF_RANGE" });
   });
 

@@ -23,9 +23,11 @@ const RPC_URL = process.env.COVE_REGTEST_RPC_URL ?? "http://127.0.0.1:18443";
 const RPC_USER = process.env.COVE_REGTEST_RPC_USER ?? "user";
 const RPC_PASSWORD = process.env.COVE_REGTEST_RPC_PASSWORD ?? "pass";
 
+const WALLET = "cove-recovery";
+
 let id = 0;
-async function rpc<T>(method: string, params: unknown[] = []): Promise<T> {
-  const res = await fetch(RPC_URL, {
+async function call<T>(method: string, params: unknown[], path: string): Promise<T> {
+  const res = await fetch(`${RPC_URL}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Basic ${Buffer.from(`${RPC_USER}:${RPC_PASSWORD}`).toString("base64")}` },
     body: JSON.stringify({ jsonrpc: "1.0", id: `${++id}`, method, params }),
@@ -34,6 +36,24 @@ async function rpc<T>(method: string, params: unknown[] = []): Promise<T> {
   const j = (await res.json()) as { result?: T; error?: { message?: string } };
   if (!res.ok || j.error) throw new Error(`RPC ${method}: ${j.error?.message ?? "err"}`);
   return j.result as T;
+}
+
+/** Node-level RPC (no wallet context): createwallet, sendrawtransaction, … */
+async function rpc<T>(method: string, params: unknown[] = []): Promise<T> {
+  return call<T>(method, params, "");
+}
+
+/**
+ * Wallet RPC, addressed to this script's own wallet.
+ *
+ * Core refuses an unqualified wallet call whenever more than one wallet is
+ * loaded, and this script loads its own — so on any node that already has a
+ * wallet open (a running dev stack, for instance) the unqualified form fails.
+ * Routing through /wallet/<name> is what Core asks for and removes the
+ * dependency on what else happens to be loaded.
+ */
+async function wrpc<T>(method: string, params: unknown[] = []): Promise<T> {
+  return call<T>(method, params, `/wallet/${WALLET}`);
 }
 
 function priv(byte: number): string {
@@ -55,9 +75,9 @@ function assert(cond: unknown, msg: string): asserts cond {
 
 async function main() {
   const provider = new CoreRpcProvider({ url: RPC_URL, user: RPC_USER, password: RPC_PASSWORD });
-  try { await rpc("createwallet", ["cove-recovery", false, false, "", false, true, false]); } catch (e) { if (!/already exists/i.test((e as Error).message)) throw e; }
-  try { await rpc("loadwallet", ["cove-recovery"]); } catch (e) { if (!/already loaded/i.test((e as Error).message)) throw e; }
-  await rpc("generatetoaddress", [101, await rpc<string>("getnewaddress")]);
+  try { await rpc("createwallet", [WALLET, false, false, "", false, true, false]); } catch (e) { if (!/already exists/i.test((e as Error).message)) throw e; }
+  try { await rpc("loadwallet", [WALLET]); } catch (e) { if (!/already loaded/i.test((e as Error).message)) throw e; }
+  await rpc("generatetoaddress", [101, await wrpc<string>("getnewaddress")]);
 
   const state = s0StateV2({ tokenId: "ab".repeat(32) });
   const destinationScript = bitcoin.payments.p2wpkh({ pubkey: ECPair.fromPrivateKey(Buffer.alloc(32, 0x77)).publicKey, network: bitcoin.networks.regtest }).output!;
@@ -77,8 +97,8 @@ async function main() {
   const vaultScript = vault.scriptPubKey;
 
   // Fund the vault.
-  const fundTxid = await rpc<string>("sendtoaddress", [vaultAddress, 1.0]);
-  await rpc("generatetoaddress", [1, await rpc<string>("getnewaddress")]);
+  const fundTxid = await wrpc<string>("sendtoaddress", [vaultAddress, 1.0]);
+  await rpc("generatetoaddress", [1, await wrpc<string>("getnewaddress")]);
   const raw = await provider.getRawTransaction(fundTxid);
   const fundTx = bitcoin.Transaction.fromHex(raw);
   const vout = fundTx.outs.findIndex((o) => o.script.equals(vaultScript));
@@ -112,7 +132,7 @@ async function main() {
   assert(early.allowed === false, "recovery must be rejected before CSV maturity");
 
   // Mine to maturity.
-  await rpc("generatetoaddress", [CSV, await rpc<string>("getnewaddress")]);
+  await rpc("generatetoaddress", [CSV, await wrpc<string>("getnewaddress")]);
 
   // Now 2-of-3 accepts.
   const accept = await provider.testMempoolAccept(hex);
@@ -128,7 +148,7 @@ async function main() {
 
   // Broadcast the valid recovery + mine.
   const txid = await provider.broadcastTransaction(hex);
-  await rpc("generatetoaddress", [1, await rpc<string>("getnewaddress")]);
+  await rpc("generatetoaddress", [1, await wrpc<string>("getnewaddress")]);
   assert(txid === bitcoin.Transaction.fromHex(hex).getId(), "txid mismatch");
 
   console.log(`✓ recovery consensus matrix PASSED (2-of-3, CSV ${CSV}) — txid ${txid.slice(0, 16)}…`);

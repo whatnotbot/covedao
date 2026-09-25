@@ -75,10 +75,19 @@ class RegtestRpc {
     private readonly password: string,
   ) {}
 
-  async call<T>(method: string, params: unknown[] = []): Promise<T> {
+  /**
+   * Wallet this proof owns. Wallet RPCs are addressed through
+   * /wallet/<name> because Core refuses an unqualified wallet call whenever
+   * more than one wallet is loaded — which is the normal case on a node that
+   * is also running a dev stack.
+   */
+  private wallet = "";
+
+  async call<T>(method: string, params: unknown[] = [], wallet = false): Promise<T> {
     const headers: Record<string, string> = { "content-type": "application/json" };
     headers.authorization = `Basic ${Buffer.from(`${this.user}:${this.password}`).toString("base64")}`;
-    const res = await fetch(this.url, {
+    const target = wallet && this.wallet ? `${this.url}/wallet/${this.wallet}` : this.url;
+    const res = await fetch(target, {
       method: "POST",
       headers,
       body: JSON.stringify({ jsonrpc: "1.0", id: `${++this.id}`, method, params }),
@@ -100,6 +109,7 @@ class RegtestRpc {
   }
 
   async createWallet(name: string): Promise<void> {
+    this.wallet = name;
     try {
       await this.call("createwallet", [name, false, false, "", false, true, false]);
     } catch (e) {
@@ -109,11 +119,11 @@ class RegtestRpc {
   }
 
   async getNewAddress(): Promise<string> {
-    return this.call<string>("getnewaddress");
+    return this.call<string>("getnewaddress", [], true);
   }
 
   async sendToAddress(address: string, amountBtc: number): Promise<string> {
-    return this.call<string>("sendtoaddress", [address, amountBtc]);
+    return this.call<string>("sendtoaddress", [address, amountBtc], true);
   }
 
   async generateToAddress(n: number, address: string): Promise<string[]> {

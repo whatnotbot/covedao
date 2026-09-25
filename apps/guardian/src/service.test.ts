@@ -27,6 +27,8 @@ const profile: MainnetProfile = {
     maxSingleBuySats: 200_000n,
     maxSingleRedeemPayoutSats: 200_000n,
     maxP2pSettlementSats: 200_000n,
+    maxMintAtoms: 2_100_000n * 100_000_000n,
+    minMintGrossSats: 5_000n,
   },
 };
 
@@ -45,5 +47,14 @@ describe("riskPolicyFromProfile (P0-2/P0-4)", () => {
     const p = riskPolicyFromProfile({ ...profile, canary: { ...profile.canary, allowedTokenIds: [] } });
     expect(p.enforceTokenAllowlist).toBe(true);
     expect(p.allowedTokenIds).toEqual([]);
+  });
+});
+
+describe("per-mint risk limits come from the profile", () => {
+  it("uses the committed numbers rather than a constant in the code", () => {
+    const raised = { ...profile, canary: { ...profile.canary, maxMintAtoms: 4_200_000n * 100_000_000n, minMintGrossSats: 9_000n } };
+    const policy = riskPolicyFromProfile(raised);
+    expect(policy.maxMintAtoms).toBe(4_200_000n * 100_000_000n);
+    expect(policy.minMintGrossSats).toBe(9_000n);
   });
 });

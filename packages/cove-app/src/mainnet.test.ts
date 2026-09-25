@@ -34,6 +34,8 @@ const completeProfile: MainnetProfile = {
     maxSingleBuySats: 50_000_000n,
     maxSingleRedeemPayoutSats: 50_000_000n,
     maxP2pSettlementSats: 10_000_000n,
+    maxMintAtoms: 2_100_000n * 100_000_000n,
+    minMintGrossSats: 5_000n,
   },
 };
 

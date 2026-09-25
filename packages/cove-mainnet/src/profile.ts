@@ -38,6 +38,20 @@ export interface MainnetCanary {
   maxSingleBuySats: bigint | null;
   maxSingleRedeemPayoutSats: bigint | null;
   maxP2pSettlementSats: bigint | null;
+  /**
+   * Largest single mint, in atoms. The Guardian enforces this inside the
+   * signer, where a compromised API cannot route around it. Development is
+   * deliberately permissive (the regtest harnesses mint the whole curve in one
+   * step); mainnet has to state a real number, and the operator has to choose
+   * it rather than inherit it.
+   */
+  maxMintAtoms: bigint | null;
+  /**
+   * Smallest mint, in satoshis of curve price. A mint below the protocol fee's
+   * dust threshold cannot produce a standard fee output, so this is the floor
+   * that keeps the Guardian from being asked to sign one.
+   */
+  minMintGrossSats: bigint | null;
 }
 
 export interface MainnetProfile {
@@ -171,9 +185,15 @@ export function validateMainnetProfile(p: MainnetProfile): MainnetProfileValidat
     ["maxSingleBuySats", p.canary.maxSingleBuySats],
     ["maxSingleRedeemPayoutSats", p.canary.maxSingleRedeemPayoutSats],
     ["maxP2pSettlementSats", p.canary.maxP2pSettlementSats],
+    ["maxMintAtoms", p.canary.maxMintAtoms],
+    ["minMintGrossSats", p.canary.minMintGrossSats],
   ] as const) {
     if (cap === null) fail(`OWNER_DECISION_REQUIRED: canary.${name}`);
     else if (cap <= 0n) fail(`INVALID_CANARY_CAP: ${name} ${cap}`);
+  }
+  // A per-mint cap above the whole protocol supply is not a cap.
+  if (p.canary.maxMintAtoms !== null && p.canary.maxMintAtoms > p.maxProtocolSupplyAtoms) {
+    fail(`INVALID_CANARY_CAP: maxMintAtoms ${p.canary.maxMintAtoms} exceeds the protocol supply`);
   }
 
   return { ok: errors.length === 0, errors };
@@ -223,6 +243,8 @@ export function canonicalMainnetProfileBytes(p: MainnetProfile): Buffer {
     optU64(p.canary.maxSingleBuySats),
     optU64(p.canary.maxSingleRedeemPayoutSats),
     optU64(p.canary.maxP2pSettlementSats),
+    optU64(p.canary.maxMintAtoms),
+    optU64(p.canary.minMintGrossSats),
     u16(p.canary.allowedWalletScripts.length),
     ...p.canary.allowedWalletScripts.map((s) => s.toLowerCase()).sort().map((s) => str(s)),
     u16(p.canary.allowedTokenIds.length),
@@ -251,6 +273,7 @@ const RECOVERY_KEYS = new Set(["threshold", "pubkeys", "csvBlocks"]);
 const CANARY_KEYS = new Set([
   "allowedWalletScripts", "allowedTokenIds", "maxBackingSats",
   "maxSingleBuySats", "maxSingleRedeemPayoutSats", "maxP2pSettlementSats",
+  "maxMintAtoms", "minMintGrossSats",
 ]);
 
 function assertNoUnknownKeys(obj: Record<string, unknown>, allowed: Set<string>, scope: string): void {
@@ -341,6 +364,8 @@ export function parseMainnetProfileJson(text: string): MainnetProfile {
       maxSingleBuySats: optBigint(c.maxSingleBuySats),
       maxSingleRedeemPayoutSats: optBigint(c.maxSingleRedeemPayoutSats),
       maxP2pSettlementSats: optBigint(c.maxP2pSettlementSats),
+      maxMintAtoms: optBigint(c.maxMintAtoms),
+      minMintGrossSats: optBigint(c.minMintGrossSats),
     },
   };
   return profile;

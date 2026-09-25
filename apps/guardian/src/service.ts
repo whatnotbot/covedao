@@ -54,12 +54,21 @@ export function recoveryProfileFromMainnet(profile: MainnetProfile): VaultRecove
   };
 }
 
-/** Build the risk policy from the COMMITTED profile (never env). Non-null caps are guaranteed by validateMainnetProfile. */
+/**
+ * Build the risk policy from the COMMITTED profile (never env). Non-null caps
+ * are guaranteed by validateMainnetProfile.
+ *
+ * The per-mint bounds used to be hardcoded here while every other cap came
+ * from the profile. That made them invisible to the profile hash the operator
+ * signs off and to the operator themselves: changing the profile changed
+ * nothing, and the committed hash said nothing about the limit that decides
+ * how much a compromised API could mint in one transaction.
+ */
 export function riskPolicyFromProfile(profile: MainnetProfile): GuardianRiskPolicy {
   return {
     maxGrossSats: profile.canary.maxSingleBuySats!,
-    maxMintAtoms: 2_100_000n * 100_000_000n,
-    minMintGrossSats: 5_000n,
+    maxMintAtoms: profile.canary.maxMintAtoms!,
+    minMintGrossSats: profile.canary.minMintGrossSats!,
     maxRedeemPayoutSats: profile.canary.maxSingleRedeemPayoutSats!,
     maxBackingSats: profile.canary.maxBackingSats!,
     maxMinerFeeSats: MAX_MINER_FEE_SATS,

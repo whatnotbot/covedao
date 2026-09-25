@@ -45,6 +45,8 @@ function completeProfile(overrides: Partial<MainnetProfile> = {}): MainnetProfil
       maxSingleBuySats: 50_000_000n,
       maxSingleRedeemPayoutSats: 50_000_000n,
       maxP2pSettlementSats: 10_000_000n,
+      maxMintAtoms: 2_100_000n * 100_000_000n,
+      minMintGrossSats: 5_000n,
     },
     ...overrides,
   };
@@ -81,7 +83,7 @@ describe("canonical mainnet profile", () => {
     const p = parseMainnetProfileJson(JSON.stringify(json));
     const r = validateMainnetProfile(p);
     expect(r.ok).toBe(false);
-    expect(r.errors.filter((e) => e.startsWith("OWNER_DECISION_REQUIRED"))).toHaveLength(14);
+    expect(r.errors.filter((e) => e.startsWith("OWNER_DECISION_REQUIRED"))).toHaveLength(16);
   });
 
   it("rejects a protocol mismatch on frozen values (PROFILE_PROTOCOL_MISMATCH)", () => {
@@ -173,6 +175,8 @@ function fullJson(): Record<string, unknown> {
       maxSingleBuySats: "50000000",
       maxSingleRedeemPayoutSats: "50000000",
       maxP2pSettlementSats: "10000000",
+      maxMintAtoms: "210000000000000",
+      minMintGrossSats: "5000",
     },
   };
 }
@@ -239,5 +243,39 @@ describe("strict profile parser (§P1-3)", () => {
     const withCanaryEvil = fullJson() as unknown as { canary: Record<string, unknown> };
     withCanaryEvil.canary.evil = 1;
     expect(() => parseMainnetProfileJson(JSON.stringify(withCanaryEvil))).toThrow(/unknown canary key/);
+  });
+});
+
+describe("per-mint risk limits (§25/§26)", () => {
+  it("requires the operator to choose both, rather than inheriting a default", () => {
+    for (const key of ["maxMintAtoms", "minMintGrossSats"] as const) {
+      const p = completeProfile();
+      p.canary[key] = null;
+      const v = validateMainnetProfile(p);
+      expect(v.ok).toBe(false);
+      expect(v.errors.join(" ")).toContain(`OWNER_DECISION_REQUIRED: canary.${key}`);
+    }
+  });
+
+  it("rejects a per-mint cap larger than the whole protocol supply", () => {
+    const p = completeProfile();
+    p.canary.maxMintAtoms = p.maxProtocolSupplyAtoms + 1n;
+    const v = validateMainnetProfile(p);
+    expect(v.ok).toBe(false);
+    expect(v.errors.join(" ")).toContain("exceeds the protocol supply");
+  });
+
+  it("makes the profile hash depend on them", () => {
+    // These are the numbers that bound how much a compromised API could mint
+    // in one transaction, so a profile that changes them must not verify
+    // against the previously committed hash.
+    const base = hashMainnetProfile(completeProfile());
+    const raised = completeProfile();
+    raised.canary.maxMintAtoms = 4_200_000n * 100_000_000n;
+    expect(hashMainnetProfile(raised)).not.toBe(base);
+
+    const floored = completeProfile();
+    floored.canary.minMintGrossSats = 6_000n;
+    expect(hashMainnetProfile(floored)).not.toBe(base);
   });
 });

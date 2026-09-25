@@ -18,7 +18,9 @@
     "maxBackingSats": null,
     "maxSingleBuySats": null,
     "maxSingleRedeemPayoutSats": null,
-    "maxP2pSettlementSats": null
+    "maxP2pSettlementSats": null,
+    "maxMintAtoms": "210000000000000",
+    "minMintGrossSats": "5000"
   },
   "policyVersion": 3,
   "vaultProfileVersion": "COVE_V3_VAULT_PROFILE_MAINNET1",

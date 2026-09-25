@@ -35,6 +35,8 @@
     "maxBackingSats": "1000000000",
     "maxSingleBuySats": "50000000",
     "maxSingleRedeemPayoutSats": "50000000",
-    "maxP2pSettlementSats": "10000000"
+    "maxP2pSettlementSats": "10000000",
+    "maxMintAtoms": "210000000000000",
+    "minMintGrossSats": "5000"
   }
 }

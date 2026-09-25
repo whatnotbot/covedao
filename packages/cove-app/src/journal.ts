@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, lte } from "drizzle-orm";
 import { schema, type Database } from "@crclaunch/db";
 import { SIGNING_JOURNAL_TTL_MS, type SigningJournalStore, type SigningReservation } from "@crclaunch/cove-guardian/v3";
 
@@ -23,28 +23,37 @@ export class PostgresSigningJournal implements SigningJournalStore {
     );
   }
 
+  /**
+   * Reserve the backing outpoint. This MUST be a single atomic statement: a
+   * read-then-delete-then-insert sequence lets concurrent callers each observe
+   * "absent", each delete the row a peer just committed, and each insert — a
+   * 20-way race produced 6 simultaneous RESERVED reservations for one outpoint,
+   * defeating the double-sign guard exactly when it matters.
+   *
+   * `ON CONFLICT DO UPDATE ... WHERE expires_at <= now()` collapses all three
+   * steps into one: the row is claimed if absent, taken over if the previous
+   * reservation has expired (the §C1 un-brick), and left untouched while a live
+   * reservation holds it. An empty RETURNING means someone else holds it, so we
+   * re-read to distinguish a retry of our own digest from a genuine conflict.
+   */
   async reserve(params: { network: string; backingTxid: string; backingVout: number; unsignedTxDigest: string }): Promise<SigningReservation> {
-    const existing = await this.db.select().from(schema.coveV3SigningJournal).where(this.rowKey(params));
     const now = new Date();
-    const live = existing[0];
-    if (live && live.expiresAt.getTime() > now.getTime()) {
-      return live.unsignedTxDigest === params.unsignedTxDigest ? "IDEMPOTENT" : "CONFLICT";
-    }
-    // Absent or expired: re-reserve. A new digest replaces the expired row (un-brick).
-    await this.db
-      .delete(schema.coveV3SigningJournal)
-      .where(this.rowKey(params));
     const expiresAt = new Date(now.getTime() + SIGNING_JOURNAL_TTL_MS);
-    const inserted = await this.db
+    const claimed = await this.db
       .insert(schema.coveV3SigningJournal)
       .values({ network: params.network, backingTxid: params.backingTxid, backingVout: params.backingVout, unsignedTxDigest: params.unsignedTxDigest, expiresAt })
-      .onConflictDoNothing()
-      .returning({ id: schema.coveV3SigningJournal.id });
-    if (inserted.length === 0) {
-      const again = await this.db.select().from(schema.coveV3SigningJournal).where(this.rowKey(params));
-      return again[0]!.unsignedTxDigest === params.unsignedTxDigest ? "IDEMPOTENT" : "CONFLICT";
-    }
-    return "RESERVED";
+      .onConflictDoUpdate({
+        target: [schema.coveV3SigningJournal.network, schema.coveV3SigningJournal.backingTxid, schema.coveV3SigningJournal.backingVout],
+        set: { unsignedTxDigest: params.unsignedTxDigest, expiresAt },
+        setWhere: lte(schema.coveV3SigningJournal.expiresAt, now),
+      })
+      .returning({ digest: schema.coveV3SigningJournal.unsignedTxDigest });
+    if (claimed.length > 0) return "RESERVED";
+    // A live reservation holds the outpoint: same digest is an idempotent retry.
+    const held = await this.db.select().from(schema.coveV3SigningJournal).where(this.rowKey(params));
+    const row = held[0];
+    if (!row) return "CONFLICT";
+    return row.unsignedTxDigest === params.unsignedTxDigest ? "IDEMPOTENT" : "CONFLICT";
   }
 
   async committedDigest(network: string, backingTxid: string, backingVout: number): Promise<string | null> {

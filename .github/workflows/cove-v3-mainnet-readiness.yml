@@ -176,6 +176,10 @@ jobs:
             pnpm --silent cove:v3-mainnet-readiness --static | awk '/profile hash:/ {print $3}')
           EXPECTED=${EXPECTED:-2a7e82114016a628c9e58958fc4014d2b09c2c41107dd212c44b03436db468e6}
           echo "expected profile hash: $EXPECTED"
+          # Capture regardless of exit code — the CLI exits non-zero on
+          # NOT_READY, and under `set -e` that would kill the step before the
+          # per-signal PASS/FAIL lines are printed, hiding the cause.
+          set +e
           OUT=$(COVE_V3_MAINNET_PROFILE_PATH=test/fixtures/mainnet-profile.json \
             COVE_V3_MAINNET_PROFILE_HASH="$EXPECTED" \
             COVE_BITCOIN_RPC_URL=http://127.0.0.1:18443 \
@@ -183,8 +187,11 @@ jobs:
             COVE_GUARDIAN_ENDPOINT=http://127.0.0.1:4391 \
             COVE_GUARDIAN_AUTH_TOKEN=ci-readiness-token \
             COVE_V3_CANARY_ACTIVE=1 \
-            pnpm cove:v3-mainnet-readiness --runtime)
+            pnpm cove:v3-mainnet-readiness --runtime 2>&1)
+          CODE=$?
+          set -e
           echo "$OUT"
+          echo "readiness exit code: $CODE"
           echo "$OUT" | grep -q "READY_FOR_CONTROLLED_MAINNET_CANARY"
 
       # A wrong committed hash must fail closed — proves the check is real.

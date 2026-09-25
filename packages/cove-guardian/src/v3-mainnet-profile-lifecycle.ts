@@ -81,7 +81,7 @@ class RegtestRpc {
     return json.result as T;
   }
   async createWallet(name: string): Promise<void> {
-    try { await this.call("createwallet", [name, false, false, "", false, false, false]); }
+    try { await this.call("createwallet", [name, false, false, "", false, true, false]); }
     catch (e) { if (!/already exists/i.test((e as Error).message)) throw e; }
   }
   getNewAddress(): Promise<string> { return this.call("getnewaddress"); }

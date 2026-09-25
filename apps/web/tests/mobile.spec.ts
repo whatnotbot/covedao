@@ -6,7 +6,7 @@ test.describe("mobile smoke", () => {
 
   test("home renders", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText(/Bitcoin-native tokens/i).first()).toBeVisible();
+    await expect(page.getByText(/State-committed/i).first()).toBeVisible();
   });
 
   test("explore renders", async ({ page }) => {
@@ -21,7 +21,7 @@ test.describe("mobile smoke", () => {
 
   test("market renders (empty/asks)", async ({ page }) => {
     await page.goto("/market");
-    await expect(page.getByText("P2P Market").first()).toBeVisible();
+    await expect(page.getByText("P2P asks").first()).toBeVisible();
   });
 
   test("wallet renders disconnected state", async ({ page }) => {

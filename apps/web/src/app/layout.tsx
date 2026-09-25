@@ -3,6 +3,7 @@ import "./globals.css";
 import { Header } from "@/components/Header";
 import { StatusBar } from "@/components/StatusBar";
 import { WalletProvider } from "@/components/WalletProvider";
+import { DevWallet } from "@/components/DevWallet";
 
 export const metadata: Metadata = {
   title: "Cove",
@@ -15,6 +16,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className="min-h-screen bg-bg text-bone antialiased">
         <WalletProvider>
+          {/* Installs nothing unless the regtest-only dev wallet is enabled. */}
+          <DevWallet />
           <Header />
           <main className="mx-auto w-full max-w-6xl px-4 pb-24 pt-px sm:px-6">{children}</main>
           <StatusBar />

@@ -99,7 +99,7 @@ class RegtestRpc {
   }
   async createWallet(name: string): Promise<void> {
     try {
-      await this.call("createwallet", [name, false, false, "", false, false, false]);
+      await this.call("createwallet", [name, false, false, "", false, true, false]);
     } catch (e) {
       if (!/already exists/i.test((e as Error).message)) throw e;
     }

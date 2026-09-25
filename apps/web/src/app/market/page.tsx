@@ -236,13 +236,13 @@ function MarketContent() {
           </div>
         )}
 
-        {!connected && loaded && rows.length > 0 ? (
-          <p className="mt-6 text-xs text-bone-dim">
-            Connect a wallet to fill an ask.{" "}
-            <button onClick={() => void connect()} className="text-signal hover:underline">
-              Connect
+        {!connected ? (
+          <div className="mt-6 flex flex-wrap items-center gap-4 border-t border-rule pt-6">
+            <button onClick={() => void connect()} className="btn">
+              Connect wallet
             </button>
-          </p>
+            <p className="text-xs text-bone-dim">Required to fill an ask.</p>
+          </div>
         ) : null}
 
         {msg ? <p className="mt-5 text-sm text-verified">{msg}</p> : null}

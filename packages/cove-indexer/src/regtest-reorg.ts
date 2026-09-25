@@ -86,7 +86,7 @@ class RegtestRpc {
     // therefore from re-broadcasting the orphaned TRANSFER — after the reorg
     // restart. CI is always a fresh datadir, so "already exists" is not a
     // concern here.
-    await this.call("createwallet", [name, false, false, "", false, false, false]);
+    await this.call("createwallet", [name, false, false, "", false, true, false]);
   }
 
   async importAddress(address: string, label: string): Promise<void> {

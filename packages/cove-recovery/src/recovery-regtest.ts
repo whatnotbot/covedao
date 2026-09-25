@@ -55,7 +55,7 @@ function assert(cond: unknown, msg: string): asserts cond {
 
 async function main() {
   const provider = new CoreRpcProvider({ url: RPC_URL, user: RPC_USER, password: RPC_PASSWORD });
-  try { await rpc("createwallet", ["cove-recovery", false, false, "", false, false, false]); } catch (e) { if (!/already exists/i.test((e as Error).message)) throw e; }
+  try { await rpc("createwallet", ["cove-recovery", false, false, "", false, true, false]); } catch (e) { if (!/already exists/i.test((e as Error).message)) throw e; }
   try { await rpc("loadwallet", ["cove-recovery"]); } catch (e) { if (!/already loaded/i.test((e as Error).message)) throw e; }
   await rpc("generatetoaddress", [101, await rpc<string>("getnewaddress")]);
 

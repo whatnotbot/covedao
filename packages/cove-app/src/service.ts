@@ -411,6 +411,11 @@ export class V3AppService {
       if (f.script.toString("hex") !== params.walletScript) throw new AppError("FUNDING_INPUT_INVALID", "funding input script does not match wallet");
     }
     const buyerInputs: ResolvedInput[] = resolved.map((f) => ({ txid: f.txid, vout: f.vout, script: f.script, valueSats: f.valueSats }));
+    // The advisory crc-20 envelope is ticker-keyed; the canonical view resolves
+    // tokens by tokenId, so look the ticker up only when the envelope is on.
+    const discoveryTicker = this.config.discoveryEnvelope
+      ? (await getV3TokenDetail(this.db, this.config.network, params.tokenId))?.ticker
+      : undefined;
     const result = buildMintPsbtV3({
       network: btcNetwork(this.config.network),
       tokenId: Buffer.from(params.tokenId, "hex"),
@@ -426,10 +431,12 @@ export class V3AppService {
       feeScript: this.config.feeScript,
       minerFeeSats: params.minerFeeSats,
       buyFeeBps: this.config.buyFeeBps,
+      discoveryEnvelope: discoveryTicker ? { ticker: discoveryTicker } : undefined,
     });
     const view = await this.loadView(params.tokenId);
     const req: TransitionSignRequest = { psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
-      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, buyFeeBps: this.config.buyFeeBps };
+      recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, buyFeeBps: this.config.buyFeeBps,
+      discoveryTicker };
     const signed = await this.transitionSigner.signMint(req);
     if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
     const psbtBase64 = result.psbt.toBase64();

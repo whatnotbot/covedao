@@ -38,6 +38,12 @@ export interface V3AppConfig {
   p2pFeeBps?: number;
   /** Protocol backing-buy fee, basis points (§P1-4; mainnet: from the profile). */
   buyFeeBps: bigint;
+  /**
+   * Emit the advisory crc-20 discovery envelope (§D1). OFF by default: it needs
+   * two OP_RETURNs per transaction, which Bitcoin Core rejects as
+   * `multi-op-return` before v30 relaxed the datacarrier policy.
+   */
+  discoveryEnvelope: boolean;
   /** Protocol backing-redeem fee, basis points (§P1-4; mainnet: from the profile). */
   redeemFeeBps: bigint;
   /** Canary P2P settlement cap (mainnet: from the profile). */
@@ -165,6 +171,7 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
       canaryAllowedWalletScripts: profile.canary.allowedWalletScripts,
       p2pFeeBps: profile.p2pFeeBps ?? undefined,
       buyFeeBps: BigInt(profile.buyFeeBps!),
+      discoveryEnvelope: ["true", "1", "yes", "on"].includes((env.COVE_V3_DISCOVERY_ENVELOPE ?? "").toLowerCase()),
       redeemFeeBps: BigInt(profile.redeemFeeBps!),
       maxP2pSettlementSats: profile.canary.maxP2pSettlementSats ?? undefined,
       maxMinerFeeSats: 20_000n,
@@ -198,6 +205,7 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
     guardianPrivateKey: guardianPriv,
     activationHeight: 0n,
     buyFeeBps: COVE_FEE_CONFIG.buyFeeBps,
+    discoveryEnvelope: ["true", "1", "yes", "on"].includes((env.COVE_V3_DISCOVERY_ENVELOPE ?? "").toLowerCase()),
     redeemFeeBps: COVE_FEE_CONFIG.redeemFeeBps,
     maxMinerFeeSats: 20_000n,
     maxListingBlocks: 21_000n,

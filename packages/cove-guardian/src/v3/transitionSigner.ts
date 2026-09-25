@@ -43,6 +43,8 @@ export interface TransitionSignRequest {
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
   redeemFeeBps?: bigint;
+  /** Ticker the advisory crc-20 discovery envelope must carry, if present (§D1). */
+  discoveryTicker?: string;
 }
 
 export type TransitionSignOutcome =

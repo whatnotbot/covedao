@@ -249,6 +249,10 @@ export class V3AppService {
   // ── backing state loader ──────────────────────────────────────────────────
 
   private async loadBacking(tokenId: string): Promise<BackingRow> {
+    return this.followPendingBacking(tokenId, await this.loadConfirmedBacking(tokenId));
+  }
+
+  private async loadConfirmedBacking(tokenId: string): Promise<BackingRow> {
     const rows = await this.db
       .select()
       .from(schema.coveV3BackingStates)
@@ -268,7 +272,22 @@ export class V3AppService {
       stateHash: b.stateHash,
       input: { txid: b.txid, vout: b.vout, script: Buffer.from(b.scriptPubKey, "hex"), valueSats: b.btcValue },
     };
-    return this.followPendingBacking(tokenId, confirmed);
+    return confirmed;
+  }
+
+  /**
+   * The backing state at a specific outpoint, following the unconfirmed chain
+   * if that outpoint has not been mined yet. Used when revalidating a
+   * transaction against the exact state it was built on.
+   */
+  private async loadBackingAt(
+    tokenId: string,
+    txid: string | null,
+    vout: number | null,
+  ): Promise<BackingRow> {
+    const confirmed = await this.loadConfirmedBacking(tokenId);
+    if (!txid || vout === null) return this.followPendingBacking(tokenId, confirmed);
+    return this.followPendingBacking(tokenId, confirmed, { txid, vout });
   }
 
   /**
@@ -290,10 +309,18 @@ export class V3AppService {
    * last verified state is returned, so a dropped or replaced transaction
    * degrades to today's behaviour rather than producing a bad quote.
    */
-  private async followPendingBacking(tokenId: string, confirmed: BackingRow): Promise<BackingRow> {
+  private async followPendingBacking(
+    tokenId: string,
+    confirmed: BackingRow,
+    stopAt?: { txid: string; vout: number },
+  ): Promise<BackingRow> {
     let tip = confirmed;
 
     for (let depth = 0; depth < MAX_PENDING_BACKING_CHAIN; depth++) {
+      // Submitting a transaction revalidates it against the outpoint it was
+      // BUILT on, which may be behind the current tip if others have queued
+      // since. Stopping there keeps the check exact.
+      if (stopAt && tip.input.txid === stopAt.txid && tip.input.vout === stopAt.vout) return tip;
       const next = await findBroadcastSpendOfBacking(
         this.db,
         this.config.network,
@@ -346,6 +373,38 @@ export class V3AppService {
       };
     }
     return tip;
+  }
+
+  /**
+   * Present an unconfirmed vault tip to the Guardian as the current backing.
+   *
+   * The canonical view is built from the indexer, which only sees confirmed
+   * blocks. When a transition is already broadcast the builder correctly spends
+   * its successor, but the Guardian would then compare that input against the
+   * older confirmed outpoint and reject with BACKING_VOUT_MISMATCH. Overlaying
+   * the tip keeps the two in agreement.
+   *
+   * Only the backing is overlaid. Token UTXOs and every other lookup still come
+   * from confirmed data, so nothing else is treated as settled before it is.
+   */
+  private overlayPendingBacking(
+    view: CoveCanonicalView,
+    tokenIdHex: string,
+    tip: BackingRow,
+  ): CoveCanonicalView {
+    const tipOutpoint = { txid: tip.input.txid, vout: tip.input.vout };
+    const matches = (tokenId: Buffer) => tokenId.toString("hex") === tokenIdHex;
+    return {
+      getBackingOutpoint: (tokenId) =>
+        matches(tokenId) ? tipOutpoint : view.getBackingOutpoint(tokenId),
+      getCurrentBackingState: (tokenId) =>
+        matches(tokenId) ? tip.state : view.getCurrentBackingState(tokenId),
+      getBackingStateByOutpoint: (outpoint) =>
+        outpoint.txid === tipOutpoint.txid && outpoint.vout === tipOutpoint.vout
+          ? tip.state
+          : view.getBackingStateByOutpoint(outpoint),
+      getTokenUtxo: (outpoint) => view.getTokenUtxo(outpoint),
+    };
   }
 
   private async loadView(tokenId: string, relevantOutpoints: { txid: string; vout: number }[] = []): Promise<CoveCanonicalView> {
@@ -543,7 +602,11 @@ export class V3AppService {
       buyFeeBps: this.config.buyFeeBps,
       discoveryEnvelope: discoveryTicker ? { ticker: discoveryTicker } : undefined,
     });
-    const view = await this.loadView(params.tokenId);
+    const view = this.overlayPendingBacking(
+      await this.loadView(params.tokenId),
+      params.tokenId,
+      backing,
+    );
     const req: TransitionSignRequest = { psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
       recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, buyFeeBps: this.config.buyFeeBps,
       discoveryTicker };
@@ -596,7 +659,11 @@ export class V3AppService {
     // Guardian already finalized (its finalScriptWitness is set at build time).
     for (let i = 1; i < psbt.data.inputs.length; i++) psbt.finalizeInput(i);
     const rawTxHex = psbt.extractTransaction().toHex();
-    const view = await this.loadView(session.tokenId!);
+    const view = this.overlayPendingBacking(
+      await this.loadView(session.tokenId!),
+      session.tokenId!,
+      await this.loadBackingAt(session.tokenId!, session.backingTxid, session.backingVout),
+    );
     const validated = await validateFinalizedMintTransaction({
       rawTxHex,
       view,
@@ -714,7 +781,11 @@ export class V3AppService {
       funderChangeScript: Buffer.from(params.walletScript, "hex"),
       redeemFeeBps: this.config.redeemFeeBps,
     });
-    const view = await this.loadView(params.tokenId, selected.map((u) => ({ txid: u.txid, vout: u.vout })));
+    const view = this.overlayPendingBacking(
+      await this.loadView(params.tokenId, selected.map((u) => ({ txid: u.txid, vout: u.vout }))),
+      params.tokenId,
+      backing,
+    );
     const req: TransitionSignRequest = { psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
       recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, redeemFeeBps: this.config.redeemFeeBps };
     const signed = await this.transitionSigner.signRedeem(req);
@@ -765,7 +836,11 @@ export class V3AppService {
     // Finalize only the seller token inputs; input 0 is the backing vault (Guardian-finalized).
     for (let i = 1; i < psbt.data.inputs.length; i++) psbt.finalizeInput(i);
     const rawTxHex = psbt.extractTransaction().toHex();
-    const view = await this.loadView(session.tokenId!);
+    const view = this.overlayPendingBacking(
+      await this.loadView(session.tokenId!),
+      session.tokenId!,
+      await this.loadBackingAt(session.tokenId!, session.backingTxid, session.backingVout),
+    );
     const validated = await validateFinalizedRedeemTransaction({
       rawTxHex,
       view,
@@ -866,7 +941,11 @@ export class V3AppService {
     for (let i = 0; i < psbt.data.inputs.length; i++) validateInputSignature(psbt, i);
     psbt.finalizeAllInputs();
     const rawTxHex = psbt.extractTransaction().toHex();
-    const view = await this.loadView(session.tokenId!);
+    const view = this.overlayPendingBacking(
+      await this.loadView(session.tokenId!),
+      session.tokenId!,
+      await this.loadBackingAt(session.tokenId!, session.backingTxid, session.backingVout),
+    );
     const validated = validateFinalizedTransferTransaction({ rawTxHex, view, maxMinerFeeSats: this.config.maxMinerFeeSats });
     if (!("rawTxHex" in validated)) throw new AppError("GUARDIAN_REJECTED", validated.reason);
     const txid = await this.broadcast(validated);

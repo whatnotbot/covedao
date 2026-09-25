@@ -237,7 +237,7 @@ async function main() {
   const backingRoute = routes.find((r) => r.kind === "backing");
   const p2pRoute = routes.find((r) => r.kind === "p2p");
   assert(backingRoute && p2pRoute, "both backing and p2p routes must exist");
-  assert(p2pRoute.totalCostSats === PRICE + (PRICE * 50n + 9999n) / 10000n, "p2p route cost = price + p2p fee");
+  assert(p2pRoute.totalCostSats === PRICE + market.marketFeeFor(PRICE), "p2p route cost = price + p2p fee");
   assert(routes[0]!.totalCostSats <= routes[1]!.totalCostSats, "routes must be sorted ascending");
   const sellOpts = await getSellOptions(db, "regtest", tokenIdHex, carolScript);
   assert(sellOpts.listableUtxos.length === 1, "Carol has 1 listable UTXO");

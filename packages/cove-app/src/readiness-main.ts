@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { loadMainnetProfile } from "@crclaunch/cove-mainnet";
+import { loadMainnetProfile, hashMainnetProfile } from "@crclaunch/cove-mainnet";
 import { runRuntimeReadiness } from "./readiness-cli.js";
 
 /**
@@ -23,11 +23,13 @@ function line(name: string, ok: boolean, detail = ""): void {
 function staticSection(): boolean {
   console.log("── STATIC ──");
   try {
-    const { validation } = loadMainnetProfile(PROFILE_PATH);
+    const { profile, validation } = loadMainnetProfile(PROFILE_PATH);
     line("profile completeness", validation.ok, validation.errors.slice(0, 3).join("; "));
     line("protocol profile match", !validation.errors.some((e) => e.includes("PROFILE_PROTOCOL_MISMATCH")));
     const owner = validation.errors.filter((e) => e.startsWith("OWNER_DECISION_REQUIRED"));
     console.log(`owner decisions remaining: ${owner.length}`);
+    // The hash operators commit out-of-band and the Guardian must report.
+    if (validation.ok) console.log(`profile hash: ${hashMainnetProfile(profile)}`);
     return validation.ok;
   } catch (e) {
     console.log(`cannot load profile: ${(e as Error).message}`);

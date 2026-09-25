@@ -181,7 +181,9 @@ jobs:
         run: |
           EXPECTED=$(COVE_V3_MAINNET_PROFILE_PATH=test/fixtures/mainnet-profile.json \
             pnpm --silent cove:v3-mainnet-readiness --static | awk '/profile hash:/ {print $3}')
-          EXPECTED=${EXPECTED:-2a7e82114016a628c9e58958fc4014d2b09c2c41107dd212c44b03436db468e6}
+          # No fallback: a hard-coded hash silently went stale when the
+          # protocol profile changed.
+          test -n "$EXPECTED"
           echo "expected profile hash: $EXPECTED"
           # Capture regardless of exit code — the CLI exits non-zero on
           # NOT_READY, and under `set -e` that would kill the step before the

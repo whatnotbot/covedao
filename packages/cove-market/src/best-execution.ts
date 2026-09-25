@@ -1,7 +1,7 @@
 import { eq, and, isNull } from "drizzle-orm";
 import { schema, type Database } from "@crclaunch/db";
 import { ATOMS_PER_TOKEN, PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
-import { COVE_FEE_CONFIG, deterministicFee, grossBuy, quoteRedeem } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, deterministicFee, grossBuy, quoteRedeem, stageScaledFlatSats } from "@crclaunch/cove-economics";
 
 /**
  * Best execution (§30): READ-ONLY comparison of the P2P fixed-price protocol
@@ -30,6 +30,10 @@ export type BuyRoute =
 export interface BuyRouteFees {
   buyFeeBps: bigint;
   p2pFeeBps: bigint;
+  /** Flat buy fee at the top stage, scaled down by stage; defaults to the live schedule. */
+  buyFeeFlatSatsAtTopStage?: bigint;
+  /** Market fee floor; defaults to the live schedule. */
+  p2pFeeMinSats?: bigint;
 }
 
 export interface SellOption {
@@ -73,7 +77,14 @@ export async function getBuyRoutes(
     const supplyAtoms = backing[0]?.supplyAtoms ?? 0n;
     if (supplyAtoms + amountAtoms <= PUBLIC_SUPPLY_ATOMS) {
       const grossSats = grossBuy(supplyAtoms / ATOMS_PER_TOKEN, amountAtoms / ATOMS_PER_TOKEN);
-      const buyFeeSats = deterministicFee(grossSats, fees.buyFeeBps);
+      // The same fee the buy transaction will charge: percentage plus the
+      // stage-scaled flat part. Quoting the percentage alone ranked the vault
+      // as cheaper than it is.
+      const buyFeeSats = deterministicFee(
+        grossSats,
+        fees.buyFeeBps,
+        stageScaledFlatSats(supplyAtoms / ATOMS_PER_TOKEN, fees.buyFeeFlatSatsAtTopStage ?? COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage),
+      );
       routes.push({
         kind: "backing",
         amountAtoms,
@@ -96,7 +107,7 @@ export async function getBuyRoutes(
       ),
     );
   for (const l of listings) {
-    const marketFeeSats = deterministicFee(l.totalPriceSats, fees.p2pFeeBps);
+    const marketFeeSats = deterministicFee(l.totalPriceSats, fees.p2pFeeBps, 0n, fees.p2pFeeMinSats ?? COVE_FEE_CONFIG.p2pFeeMinSats);
     routes.push({
       kind: "p2p",
       amountAtoms,

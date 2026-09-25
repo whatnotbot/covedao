@@ -1508,6 +1508,8 @@ export class V3AppService {
     return getBuyRoutes(this.db, this.config.network, tokenId, amountAtoms, {
       buyFeeBps: this.config.buyFeeBps,
       p2pFeeBps: this.market.config.p2pFeeBps,
+      buyFeeFlatSatsAtTopStage: this.config.buyFeeFlatSatsAtTopStage,
+      p2pFeeMinSats: this.market.config.p2pFeeMinSats,
     });
   }
   getSellOptions(tokenId: string, walletScript: string) {

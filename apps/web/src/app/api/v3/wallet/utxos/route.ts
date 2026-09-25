@@ -1,3 +1,4 @@
+import { addressToScript } from "@/lib/address";
 import { EsploraUtxoProvider } from "@crclaunch/bitcoin";
 import { ok, fail, handleError } from "@/lib/api";
 import { getV3Services } from "@/lib/v3-server";
@@ -27,6 +28,9 @@ export async function GET(req: Request) {
 
     const address = new URL(req.url).searchParams.get("address")?.trim();
     if (!address) return fail("BAD_REQUEST", "address is required", 400);
+    // Checksum and network first, so a typo or a wrong-network address reads
+    // as exactly that instead of an internal error from the index.
+    addressToScript(address, getV3Services().config.network);
 
     const { provider, config } = getV3Services();
 

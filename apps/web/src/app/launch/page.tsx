@@ -186,7 +186,7 @@ function Field({ label, value, onChange, placeholder }: { label: string; value: 
   return (
     <label className="block">
       <span className="text-xs text-bone-dim">{label}</span>
-      <input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full border border-rule bg-ink-2 px-4 py-2 text-sm text-bone outline-none focus:border-brand" />
+      <input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full border border-rule bg-ink-2 px-4 py-2 text-sm text-bone outline-none placeholder:text-bone-dim/50 focus:border-brand" />
     </label>
   );
 }

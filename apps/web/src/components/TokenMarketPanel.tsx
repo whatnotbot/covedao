@@ -2,8 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { TokenChart } from "./TokenChart";
+import { MarketStats, type MarketSummary } from "./MarketStats";
+import { SalesFeed, type Sale } from "./SalesFeed";
 import { summarize, type Interval, type OhlcCandle } from "@/lib/ohlc";
 import { demoCandles } from "@/lib/demo-candles";
+import { demoMarket } from "@/lib/demo-market";
 import { fmtInt } from "@/lib/format";
 
 /**
@@ -20,7 +23,8 @@ import { fmtInt } from "@/lib/format";
  */
 
 interface Ask {
-  priceSatsPer1M: number;
+  /** sats per 1,000,000 tokens */
+  unitPriceSats: number;
   amountTokens: number;
   status: string;
 }
@@ -31,16 +35,45 @@ export function TokenMarketPanel({
   curveStage,
   demo = false,
   asks = [],
+  explorerBase,
 }: {
   tokenId: string;
   ticker: string;
   curveStage: number;
   demo?: boolean;
   asks?: Ask[];
+  /** Block-explorer root, so every sale links to the real transaction. */
+  explorerBase?: string;
 }) {
   const [interval, setInterval] = useState<Interval>("1h");
   const [candles, setCandles] = useState<OhlcCandle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [market, setMarket] = useState<
+    (MarketSummary & { asks: Ask[]; recentSales: Sale[] }) | null
+  >(null);
+
+  // Market header, ask ladder and sales feed all come from one request, so the
+  // header can never disagree with the chart beneath it.
+  useEffect(() => {
+    if (demo) {
+      const m = demoMarket(ticker, curveStage, asks);
+      setMarket({ ...m, asks });
+      return;
+    }
+    let cancelled = false;
+    void fetch(`/api/v3/tokens/${tokenId}/market`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (!cancelled && j.ok) setMarket(j.data);
+      })
+      .catch(() => {
+        /* leave the header empty rather than showing invented numbers */
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokenId, demo, ticker, curveStage]);
 
   // Generated at the interval actually being shown, so a day candle covers a
   // real day instead of being rolled up from a four-day base.
@@ -75,6 +108,7 @@ export function TokenMarketPanel({
     };
   }, [tokenId, interval, demo, demoSeries]);
 
+  const ladder = market?.asks ?? asks;
   const stats = summarize(candles);
   const up = (stats?.changePct ?? 0) >= 0;
 
@@ -91,8 +125,14 @@ export function TokenMarketPanel({
         )}
       </div>
 
-      {/* Summary strip. Numbers first — the chart is the detail behind them. */}
-      <div className="mt-5 grid grid-cols-2 gap-px bg-rule sm:grid-cols-5">
+      {market ? (
+        <div className="mt-5 border border-rule">
+          <MarketStats s={market} />
+        </div>
+      ) : null}
+
+      {/* Fallback strip for demo mode, where there is no market payload. */}
+      <div className={`mt-5 grid grid-cols-2 gap-px bg-rule sm:grid-cols-5${market ? " hidden" : ""}`}>
         <Stat
           value={stats ? fmtInt(Math.round(stats.last)) : "—"}
           label="Last · sats/1M"
@@ -130,8 +170,14 @@ export function TokenMarketPanel({
           />
         )}
 
-        <AskLadder asks={asks} />
+        <AskLadder asks={ladder} />
       </div>
+
+      {market ? (
+        <div className="mt-8">
+          <SalesFeed sales={market.recentSales} explorerBase={explorerBase} />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -151,7 +197,7 @@ function Stat({ value, label, tone }: { value: string; label: string; tone?: "up
  * so the depth bar is sized by the tokens actually on offer, not by notional.
  */
 function AskLadder({ asks }: { asks: Ask[] }) {
-  const sorted = [...asks].sort((a, b) => a.priceSatsPer1M - b.priceSatsPer1M);
+  const sorted = [...asks].sort((a, b) => a.unitPriceSats - b.unitPriceSats);
   const max = Math.max(1, ...sorted.map((a) => a.amountTokens));
 
   return (
@@ -173,7 +219,7 @@ function AskLadder({ asks }: { asks: Ask[] }) {
                 style={{ width: `${(a.amountTokens / max) * 100}%` }}
                 aria-hidden
               />
-              <span className="relative text-rejected">{fmtInt(Math.round(a.priceSatsPer1M))}</span>
+              <span className="relative text-rejected">{fmtInt(Math.round(a.unitPriceSats))}</span>
               <span className="relative text-bone-dim">
                 {fmtInt(a.amountTokens)}
                 {a.status !== "ACTIVE" ? (

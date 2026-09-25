@@ -264,7 +264,7 @@ function TokenContent() {
 
   // Open asks for this token, quoted in the same unit as the chart.
   const asks = (demo ? DEMO_LISTINGS.filter((l) => l.tokenId === detail.tokenId) : []).map((l) => ({
-    priceSatsPer1M: unitPriceSats(l.amountAtoms, l.totalPriceSats),
+    unitPriceSats: unitPriceSats(l.amountAtoms, l.totalPriceSats),
     amountTokens: Number(BigInt(l.amountAtoms) / 100_000_000n),
     status: l.status,
   }));
@@ -337,6 +337,7 @@ function TokenContent() {
         curveStage={detail.curveStage}
         demo={demo}
         asks={asks}
+        explorerBase={process.env.NEXT_PUBLIC_EXPLORER_URL}
       />
 
       {/* ── Actions ──────────────────────────────────────────────────── */}

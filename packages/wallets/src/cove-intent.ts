@@ -41,7 +41,14 @@ export interface ClientIntent {
   protocolFeeSats: string | null;
   minerFeeSats: string;
   netSats: string | null;
+  /** The payments scriptPubKey: where BTC comes from and change returns. */
   walletScript: string;
+  /**
+   * The ordinals scriptPubKey: where token carriers live. Most wallets have a
+   * different address for each, and a check that knew only about the payment
+   * one would read a token carrier as money leaving the wallet.
+   */
+  ordinalsScript?: string | null;
   stateHash: string | null;
   unsignedTxDigest: string;
   /**
@@ -155,17 +162,18 @@ export function verifyClientIntent(
   }));
 
   // ── what this transaction does to the wallet's balance ───────────────────
+  // Both addresses count as "mine": the carrier sats sitting on an ordinals
+  // output have not left the wallet.
+  const mine = new Set(
+    [intent.walletScript, intent.ordinalsScript].filter(Boolean).map((s) => s!.toLowerCase()),
+  );
+  const isMine = (scriptHex: string | undefined) => scriptHex !== undefined && mine.has(scriptHex);
   const walletIn = psbt.data.inputs.reduce(
     (s, i) =>
-      i.witnessUtxo?.script.toString("hex") === intent.walletScript
-        ? s + BigInt(i.witnessUtxo.value)
-        : s,
+      isMine(i.witnessUtxo?.script.toString("hex")) ? s + BigInt(i.witnessUtxo!.value) : s,
     0n,
   );
-  const walletOut = outputs.reduce(
-    (s, o) => (o.scriptHex === intent.walletScript ? s + o.value : s),
-    0n,
-  );
+  const walletOut = outputs.reduce((s, o) => (isMine(o.scriptHex) ? s + o.value : s), 0n);
   const walletDeltaSats = walletOut - walletIn;
 
   const statedDelta = bigintOr(intent.walletDeltaSats);
@@ -209,15 +217,16 @@ export function verifyClientIntent(
   // value, whatever the operation. This is what a peer-to-peer seller relies
   // on: the price they agreed to, paid to them and not to anyone else.
   if (net !== null) {
+    // A payout is plain Bitcoin, so it belongs on the payments address.
     if (!outputs.some((o) => o.scriptHex === intent.walletScript && o.value === net)) {
       mismatch(`no ${net}-sat payout to your wallet`);
     }
-  } else if (!outputs.some((o) => o.scriptHex === intent.walletScript)) {
+  } else if (!outputs.some((o) => isMine(o.scriptHex))) {
     mismatch("no output to the wallet");
   }
 
   // ── the token side ────────────────────────────────────────────────────────
-  verifyTokenEnvelope(psbt, intent, outputs);
+  verifyTokenEnvelope(psbt, intent, outputs, isMine);
 
   return {
     ok: true,
@@ -238,6 +247,7 @@ function verifyTokenEnvelope(
   psbt: bitcoin.Psbt,
   intent: ClientIntent,
   outputs: { index: number; scriptHex: string; value: bigint }[],
+  isMine: (scriptHex: string | undefined) => boolean,
 ): void {
   const envelope = coveEnvelope(psbt);
   const amount = bigintOr(intent.tokenAmountAtoms);
@@ -263,9 +273,9 @@ function verifyTokenEnvelope(
       if (envelope.amount !== amount) {
         mismatch(`this transaction mints ${envelope.amount} atoms, not the ${amount} you asked for`);
       }
-      // The freshly minted tokens must land on the buyer's own script.
+      // The freshly minted tokens must land on the buyer's ordinals address.
       const recipient = outputs[envelope.recipientVout];
-      if (!recipient || recipient.scriptHex !== intent.walletScript) {
+      if (!recipient || !isMine(recipient.scriptHex)) {
         mismatch(`the minted tokens go to output ${envelope.recipientVout}, which is not your wallet`);
       }
       break;
@@ -280,7 +290,7 @@ function verifyTokenEnvelope(
       // Any token change must come back to the seller, not to a stranger.
       for (const alloc of envelope.changeAllocations) {
         const out = outputs[alloc.vout];
-        if (!out || out.scriptHex !== intent.walletScript) {
+        if (!out || !isMine(out.scriptHex)) {
           mismatch(`token change at output ${alloc.vout} does not return to your wallet`);
         }
       }
@@ -298,7 +308,7 @@ function verifyTokenEnvelope(
       let arriving = 0n;
       let leaving = 0n;
       for (const alloc of envelope.allocations) {
-        if (outputs[alloc.vout]?.scriptHex === intent.walletScript) arriving += alloc.amount;
+        if (isMine(outputs[alloc.vout]?.scriptHex)) arriving += alloc.amount;
         else leaving += alloc.amount;
       }
       if (direction === "in" && arriving !== amount) {

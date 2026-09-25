@@ -51,7 +51,7 @@ describe("unsigned-tx digest + PSBT mutation detection (§12)", () => {
     expect(partialSigOfInput(psbt, 1)).not.toBeNull();
     expect(() => validateP2wpkhPartialSig(psbt, 1)).not.toThrow();
     // Unsigned input must be rejected.
-    expect(() => validateP2wpkhPartialSig(psbt, 0)).toThrow(/no partial signature/);
+    expect(() => validateP2wpkhPartialSig(psbt, 0)).toThrow(/unsigned/);
   });
 
   it("rejects a structurally-valid but cryptographically-wrong signature (§M1)", () => {

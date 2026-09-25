@@ -5,6 +5,20 @@ import { checkRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * A wallet is two addresses. Payments holds BTC; ordinals holds token
+ * carriers. A wallet with only one address may send just `walletScript`, and
+ * both roles resolve to it.
+ */
+function walletFields(body: Record<string, unknown>) {
+  return {
+    walletScript: strField(body, "walletScript"),
+    walletPublicKey: strField(body, "walletPublicKey") || undefined,
+    ordinalsScript: strField(body, "ordinalsScript") || undefined,
+    ordinalsPublicKey: strField(body, "ordinalsPublicKey") || undefined,
+  };
+}
+
 export async function POST(req: Request) {
   try {
     const limited = checkRateLimit(req, "prepare-listing");
@@ -20,7 +34,7 @@ export async function POST(req: Request) {
       totalPriceSats: bigintField(body, "totalPriceSats", 0n),
       // A duration in blocks; the server resolves it against the real tip.
       expiryBlocks: bigintField(body, "expiryBlocks", 0n) || undefined,
-      walletScript: strField(body, "walletScript"),
+      ...walletFields(body),
       nonceHex,
     });
     return ok(result);

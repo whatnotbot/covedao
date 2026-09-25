@@ -43,6 +43,11 @@ import { checkCoreAgreement, verifyMainnetGenesis } from "./readiness.js";
 import { unsignedTxDigest, parsePsbt, btcNetwork, validateInputSignature, walletDeltaSats } from "./psbt.js";
 import { resolveFundingUtxos, type FundingCandidate, type ResolvedFunding } from "./funding.js";
 import {
+  resolveWalletIdentity,
+  walletIdentityFrom,
+  type ResolvedWalletIdentity,
+} from "./wallet-identity.js";
+import {
   estimateOperationVsize,
   loadFeeRates,
   resolveMinerFee,
@@ -129,13 +134,17 @@ export interface IntentV3 {
   protocolFeeSats: bigint | null;
   minerFeeSats: bigint;
   netSats: bigint | null;
+  /** The payments scriptPubKey: where BTC comes from and change returns. */
   walletScript: string;
+  /** The ordinals scriptPubKey: where token carriers live. */
+  ordinalsScript: string;
   stateHash: string | null;
   unsignedTxDigest: string;
   /**
    * Net satoshis this transaction adds to (+) or takes from (−) the wallet,
-   * measured from the PSBT itself. The browser re-derives the same figure from
-   * the price it displayed and refuses to sign if the two disagree.
+   * across BOTH of its addresses, measured from the PSBT itself. The browser
+   * re-derives the same figure from the price it displayed and refuses to sign
+   * if the two disagree.
    */
   walletDeltaSats: bigint;
 }
@@ -496,7 +505,7 @@ export class V3AppService {
    */
   private async resolveFundingAndFee(params: {
     op: CoveOperation;
-    walletScript: string;
+    wallet: ResolvedWalletIdentity;
     candidates: FundingCandidate[];
     targetSats: bigint;
     tokenInputs?: number;
@@ -507,7 +516,7 @@ export class V3AppService {
   }): Promise<{ inputs: ResolvedInput[]; minerFeeSats: bigint; vsize: number; satPerVb: bigint }> {
     const resolved = await resolveFundingUtxos(this.provider, params.candidates);
     for (const f of resolved) {
-      if (f.script.toString("hex") !== params.walletScript) {
+      if (f.script.toString("hex") !== params.wallet.payments.script) {
         throw new AppError("FUNDING_INPUT_INVALID", "funding input script does not match wallet");
       }
     }
@@ -521,7 +530,13 @@ export class V3AppService {
       (params.explicitMinerFeeSats === undefined ? standard.satPerVb : undefined);
     const shape = {
       tokenInputs: params.tokenInputs,
-      walletScriptBytes: params.walletScript.length / 2,
+      // Priced per address kind: a nested-segwit input is 91 vbytes against a
+      // native one's 68, so assuming native under-prices a Xverse wallet by a
+      // third.
+      fundingKind: params.wallet.payments.kind,
+      tokenKind: params.wallet.ordinals.kind,
+      walletScriptBytes: params.wallet.payments.script.length / 2,
+      ordinalsScriptBytes: params.wallet.ordinals.script.length / 2,
       feeScriptBytes: this.config.feeScript.length,
       recipientCarriers: params.recipientCarriers,
       discovery: params.discovery,
@@ -558,11 +573,14 @@ export class V3AppService {
       return a.vout - b.vout;
     });
 
+    // The public key rides along so the builder can attach the redeemScript or
+    // the Taproot internal key that a wallet needs in order to sign at all.
     const toInput = (f: ResolvedFunding): ResolvedInput => ({
       txid: f.txid,
       vout: f.vout,
       script: f.script,
       valueSats: f.valueSats,
+      publicKey: params.wallet.payments.publicKeyBuffer,
     });
 
     // Zero funding inputs is legitimate when other inputs already cover the
@@ -618,6 +636,10 @@ export class V3AppService {
     ticker: string;
     nonceHex: string;
     walletScript: string;
+    /** Optional second address for token carriers; defaults to walletScript. */
+    ordinalsScript?: string;
+    walletPublicKey?: string;
+    ordinalsPublicKey?: string;
     walletAddress: string | null;
     funding: FundingCandidate[];
     /** Preferred: the fee rate the user picked; the server sizes the fee. */
@@ -629,12 +651,13 @@ export class V3AppService {
   }): Promise<{ sessionId: string; psbtBase64: string; intent: IntentV3; tokenId: string }> {
     this.assertMutating();
     await this.requireHealthy();
+    const wallet = resolveWalletIdentity(walletIdentityFrom(params));
     const tokenId = computeTokenId({ chainIdentity: this.config.chainIdentity, policyVersion: 3, ticker: canonicalTicker(params.ticker), tokenNonce: Buffer.from(params.nonceHex, "hex") }).toString("hex");
     this.assertCanaryAllowed({ tokenId, walletScript: params.walletScript });
     // The deploy funds the vault anchor plus the miner fee, nothing else.
     const { inputs: deployerInputs, minerFeeSats } = await this.resolveFundingAndFee({
       op: "DEPLOY",
-      walletScript: params.walletScript,
+      wallet,
       candidates: params.funding,
       targetSats: RESERVE_ANCHOR_SATS,
       feeRateSatPerVb: params.feeRateSatPerVb,
@@ -647,7 +670,7 @@ export class V3AppService {
       recoveryKeyXOnly: this.config.recoveryKeyXOnly,
       recoveryProfile: this.config.recoveryProfile,
       deployerInputs,
-      deployerChangeScript: Buffer.from(params.walletScript, "hex"),
+      deployerChangeScript: wallet.payments.scriptBuffer,
       minerFeeSats,
     });
     const psbtBase64 = result.psbt.toBase64();
@@ -680,10 +703,11 @@ export class V3AppService {
         protocolFeeSats: null,
         minerFeeSats: result.minerFeeSats,
         netSats: null,
-        walletScript: params.walletScript,
+        walletScript: wallet.payments.script,
+        ordinalsScript: wallet.ordinals.script,
         stateHash: null,
         unsignedTxDigest: digest,
-        walletDeltaSats: walletDeltaSats(result.psbt, params.walletScript),
+        walletDeltaSats: walletDeltaSats(result.psbt, wallet.scripts),
       },
     };
   }
@@ -751,6 +775,10 @@ export class V3AppService {
     amountAtoms: bigint;
     quoteBinding: { stateHash: string; backingOutpoint: { txid: string; vout: number }; expiresAtHeight: bigint | null };
     walletScript: string;
+    /** Optional second address for token carriers; defaults to walletScript. */
+    ordinalsScript?: string;
+    walletPublicKey?: string;
+    ordinalsPublicKey?: string;
     walletAddress: string | null;
     funding: FundingCandidate[];
     /** Preferred: the fee rate the user picked; the server sizes the fee. */
@@ -762,6 +790,7 @@ export class V3AppService {
     this.assertMutating();
     await this.requireHealthy();
     this.assertCanaryAllowed({ tokenId: params.tokenId, walletScript: params.walletScript });
+    const wallet = resolveWalletIdentity(walletIdentityFrom(params));
     const backing = await this.loadBacking(params.tokenId);
     if (backing.stateHash !== params.quoteBinding.stateHash || backing.input.txid !== params.quoteBinding.backingOutpoint.txid || backing.input.vout !== params.quoteBinding.backingOutpoint.vout) {
       throw new AppError("QUOTE_STALE", "backing state changed since quote");
@@ -786,7 +815,7 @@ export class V3AppService {
     );
     const { inputs: buyerInputs, minerFeeSats } = await this.resolveFundingAndFee({
       op: "BACKING_BUY",
-      walletScript: params.walletScript,
+      wallet,
       candidates: params.funding,
       targetSats: quotedGrossSats + quotedBuyFeeSats + TOKEN_CARRIER_SATS,
       discovery: discoveryTicker !== undefined,
@@ -803,8 +832,11 @@ export class V3AppService {
       recoveryKeyXOnly: this.config.recoveryKeyXOnly,
       recoveryProfile: this.config.recoveryProfile,
       buyerInputs,
-      buyerCarrierScript: Buffer.from(params.walletScript, "hex"),
-      buyerChangeScript: Buffer.from(params.walletScript, "hex"),
+      // The tokens land on the ordinals address; the BTC change returns to
+      // the payment address. Sending a carrier to a nested-segwit payment
+      // address would be rejected by the protocol as a non-standard carrier.
+      buyerCarrierScript: wallet.ordinals.scriptBuffer,
+      buyerChangeScript: wallet.payments.scriptBuffer,
       feeScript: this.config.feeScript,
       minerFeeSats,
       buyFeeBps: this.config.buyFeeBps,
@@ -850,10 +882,11 @@ export class V3AppService {
         protocolFeeSats: result.buyFeeSats,
         minerFeeSats: result.minerFeeSats,
         netSats: null,
-        walletScript: params.walletScript,
+        walletScript: wallet.payments.script,
+        ordinalsScript: wallet.ordinals.script,
         stateHash: backing.stateHash,
         unsignedTxDigest: digest,
-        walletDeltaSats: walletDeltaSats(result.psbt, params.walletScript),
+        walletDeltaSats: walletDeltaSats(result.psbt, wallet.scripts),
       },
     };
   }
@@ -923,6 +956,10 @@ export class V3AppService {
     tokenId: string;
     amountAtoms: bigint;
     walletScript: string;
+    /** Optional second address for token carriers; defaults to walletScript. */
+    ordinalsScript?: string;
+    walletPublicKey?: string;
+    ordinalsPublicKey?: string;
     walletAddress: string | null;
     /** Preferred: the fee rate the user picked; the server sizes the fee. */
     feeRateSatPerVb?: bigint;
@@ -935,8 +972,10 @@ export class V3AppService {
     this.assertMutating();
     await this.requireHealthy();
     this.assertCanaryAllowed({ tokenId: params.tokenId, walletScript: params.walletScript });
+    const wallet = resolveWalletIdentity(walletIdentityFrom(params));
     const backing = await this.loadBacking(params.tokenId);
-    const tokenUtxos = await getTokenUtxosByScriptDb(this.db, this.config.network, params.walletScript);
+    // Token carriers live on the ORDINALS address, not the one holding BTC.
+    const tokenUtxos = await getTokenUtxosByScriptDb(this.db, this.config.network, wallet.ordinals.script);
     const mine = tokenUtxos.filter((u) => u.tokenId === params.tokenId);
     const total = mine.reduce((s, u) => s + u.amountAtoms, 0n);
     if (total < params.amountAtoms) throw new AppError("TOKEN_AMOUNT_INVALID", "insufficient token balance");
@@ -967,7 +1006,9 @@ export class V3AppService {
           `or redeem a smaller amount.`,
       );
     }
-    const tokenInputs: ResolvedInput[] = selected.map((u) => ({ txid: u.txid, vout: u.vout, script: Buffer.from(u.scriptPubKey, "hex"), valueSats: TOKEN_CARRIER_SATS }));
+    // A carrier on a Taproot ordinals address cannot be signed without its
+    // internal key, so the public key travels with every token input.
+    const tokenInputs: ResolvedInput[] = selected.map((u) => ({ txid: u.txid, vout: u.vout, script: Buffer.from(u.scriptPubKey, "hex"), valueSats: TOKEN_CARRIER_SATS, publicKey: wallet.ordinals.publicKeyBuffer }));
     const tokenInputTotalAtoms = selected.reduce((s, u) => s + u.amountAtoms, 0n);
     // The vault covers the R-delta payout; the seller funds the miner fee from
     // ordinary BTC so the backing never pays it and a single-carrier partial
@@ -993,13 +1034,13 @@ export class V3AppService {
         this.config.redeemFeeBps,
         this.config.redeemFeeFlatSats,
       ),
-      payoutScript: Buffer.from(params.walletScript, "hex"),
+      payoutScript: wallet.payments.scriptBuffer,
     });
     const changeCarrierSats = tokenInputTotalAtoms > params.amountAtoms ? TOKEN_CARRIER_SATS : 0n;
     const carrierSatsIn = BigInt(tokenInputs.length) * TOKEN_CARRIER_SATS;
     const { inputs: funderInputs, minerFeeSats } = await this.resolveFundingAndFee({
       op: "REDEEM",
-      walletScript: params.walletScript,
+      wallet,
       candidates: params.funding ?? [],
       targetSats: changeCarrierSats - carrierSatsIn,
       tokenInputs: tokenInputs.length,
@@ -1017,12 +1058,13 @@ export class V3AppService {
       guardianXOnly: this.config.guardianXOnly,
       recoveryKeyXOnly: this.config.recoveryKeyXOnly,
       recoveryProfile: this.config.recoveryProfile,
-      sellerPayoutScript: Buffer.from(params.walletScript, "hex"),
-      sellerChangeScript: Buffer.from(params.walletScript, "hex"),
+      sellerPayoutScript: wallet.payments.scriptBuffer,
+      // Token change is a carrier, so it goes back to the ordinals address.
+      sellerChangeScript: wallet.ordinals.scriptBuffer,
       feeScript: this.config.feeScript,
       minerFeeSats,
       funderInputs,
-      funderChangeScript: Buffer.from(params.walletScript, "hex"),
+      funderChangeScript: wallet.payments.scriptBuffer,
       redeemFeeBps: this.config.redeemFeeBps,
       redeemFeeFlatSats: this.config.redeemFeeFlatSats,
     });
@@ -1064,10 +1106,11 @@ export class V3AppService {
         protocolFeeSats: result.redeemFeeSats,
         minerFeeSats: result.minerFeeSats,
         netSats: result.netSats,
-        walletScript: params.walletScript,
+        walletScript: wallet.payments.script,
+        ordinalsScript: wallet.ordinals.script,
         stateHash: backing.stateHash,
         unsignedTxDigest: digest,
-        walletDeltaSats: walletDeltaSats(result.psbt, params.walletScript),
+        walletDeltaSats: walletDeltaSats(result.psbt, wallet.scripts),
       },
     };
   }
@@ -1113,6 +1156,10 @@ export class V3AppService {
     amountAtoms: bigint;
     recipientScript: string;
     walletScript: string;
+    /** Optional second address for token carriers; defaults to walletScript. */
+    ordinalsScript?: string;
+    walletPublicKey?: string;
+    ordinalsPublicKey?: string;
     walletAddress: string | null;
     funding: FundingCandidate[];
     /** Preferred: the fee rate the user picked; the server sizes the fee. */
@@ -1123,7 +1170,8 @@ export class V3AppService {
   }): Promise<{ sessionId: string; psbtBase64: string; intent: IntentV3 }> {
     this.assertMutating();
     await this.requireHealthy();
-    const tokenUtxos = await getTokenUtxosByScriptDb(this.db, this.config.network, params.walletScript);
+    const wallet = resolveWalletIdentity(walletIdentityFrom(params));
+    const tokenUtxos = await getTokenUtxosByScriptDb(this.db, this.config.network, wallet.ordinals.script);
     const mine = tokenUtxos.filter((u) => u.tokenId === params.tokenId);
     const total = mine.reduce((s, u) => s + u.amountAtoms, 0n);
     if (total < params.amountAtoms) throw new AppError("TOKEN_AMOUNT_INVALID", "insufficient token balance");
@@ -1151,18 +1199,22 @@ export class V3AppService {
           `yourself, or send a smaller amount.`,
       );
     }
-    const tokenInputs: ResolvedInput[] = selected.map((u) => ({ txid: u.txid, vout: u.vout, script: Buffer.from(u.scriptPubKey, "hex"), valueSats: TOKEN_CARRIER_SATS }));
+    // A carrier on a Taproot ordinals address cannot be signed without its
+    // internal key, so the public key travels with every token input.
+    const tokenInputs: ResolvedInput[] = selected.map((u) => ({ txid: u.txid, vout: u.vout, script: Buffer.from(u.scriptPubKey, "hex"), valueSats: TOKEN_CARRIER_SATS, publicKey: wallet.ordinals.publicKeyBuffer }));
     const tokenInputTotalAtoms = selected.reduce((s, u) => s + u.amountAtoms, 0n);
     const changeAtoms = tokenInputTotalAtoms - params.amountAtoms;
-    const tokenOutputs = [{ script: Buffer.from(params.recipientScript, "hex"), amountAtoms: params.amountAtoms }];
-    if (changeAtoms > 0n) tokenOutputs.push({ script: Buffer.from(params.walletScript, "hex"), amountAtoms: changeAtoms });
+    const tokenOutputs: { script: Buffer; amountAtoms: bigint }[] = [
+      { script: Buffer.from(params.recipientScript, "hex"), amountAtoms: params.amountAtoms },
+    ];
+    if (changeAtoms > 0n) tokenOutputs.push({ script: wallet.ordinals.scriptBuffer, amountAtoms: changeAtoms });
     // Carrier outputs cost 1,000 sats each; the carriers being spent bring the
     // same back in. The wallet's own BTC covers the difference and the fee.
     const carrierSatsOut = BigInt(tokenOutputs.length) * TOKEN_CARRIER_SATS;
     const carrierSatsIn = BigInt(tokenInputs.length) * TOKEN_CARRIER_SATS;
     const { inputs: funderInputs, minerFeeSats } = await this.resolveFundingAndFee({
       op: "TRANSFER",
-      walletScript: params.walletScript,
+      wallet,
       candidates: params.funding,
       targetSats: carrierSatsOut - carrierSatsIn,
       tokenInputs: tokenInputs.length,
@@ -1177,7 +1229,7 @@ export class V3AppService {
       tokenInputTotalAtoms,
       tokenOutputs,
       funderInputs,
-      funderChangeScript: Buffer.from(params.walletScript, "hex"),
+      funderChangeScript: wallet.payments.scriptBuffer,
       btcOutputs: [],
       minerFeeSats,
     });
@@ -1209,10 +1261,11 @@ export class V3AppService {
         protocolFeeSats: null,
         minerFeeSats: result.minerFeeSats,
         netSats: null,
-        walletScript: params.walletScript,
+        walletScript: wallet.payments.script,
+        ordinalsScript: wallet.ordinals.script,
         stateHash: null,
         unsignedTxDigest: digest,
-        walletDeltaSats: walletDeltaSats(result.psbt, params.walletScript),
+        walletDeltaSats: walletDeltaSats(result.psbt, wallet.scripts),
       },
     };
   }
@@ -1303,9 +1356,14 @@ export class V3AppService {
     /** Absolute height, for callers that compute it themselves. */
     expiryHeight?: bigint;
     walletScript: string;
+    /** Optional second address for token carriers; defaults to walletScript. */
+    ordinalsScript?: string;
+    walletPublicKey?: string;
+    ordinalsPublicKey?: string;
     nonceHex: string;
   }): Promise<{ listing: ListingV1; listingId: string; message: string; expiryHeight: bigint }> {
     this.assertEnabled();
+    const wallet = resolveWalletIdentity(walletIdentityFrom(params));
     const utxoRows = await this.db
       .select()
       .from(schema.coveV3TokenUtxos)
@@ -1315,7 +1373,7 @@ export class V3AppService {
           eq(schema.coveV3TokenUtxos.txid, params.sourceTxid),
           eq(schema.coveV3TokenUtxos.vout, params.sourceVout),
           eq(schema.coveV3TokenUtxos.tokenId, params.tokenId),
-          eq(schema.coveV3TokenUtxos.scriptPubKey, params.walletScript),
+          eq(schema.coveV3TokenUtxos.scriptPubKey, wallet.ordinals.script),
           eq(schema.coveV3TokenUtxos.canonical, true),
           isNull(schema.coveV3TokenUtxos.spentByTxid),
         ),
@@ -1348,9 +1406,11 @@ export class V3AppService {
       orderVersion: 1,
       chainIdentity: this.config.chainIdentity,
       tokenId: params.tokenId,
-      sellerTokenScript: params.walletScript,
-      sellerPayoutScript: params.walletScript,
-      sellerTokenChangeScript: params.walletScript,
+      // The carrier being sold and any token change belong to the ordinals
+      // address; the BTC the seller is paid goes to the payment address.
+      sellerTokenScript: wallet.ordinals.script,
+      sellerPayoutScript: wallet.payments.script,
+      sellerTokenChangeScript: wallet.ordinals.script,
       sourceTxid: params.sourceTxid,
       sourceVout: params.sourceVout,
       sourceAmountAtoms: u.amountAtoms,

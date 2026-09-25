@@ -44,6 +44,13 @@ export const VB_INPUT_P2WPKH = 68;
 export const VB_INPUT_P2TR_KEYPATH = 58;
 
 /**
+ * 41 base + a 23-byte scriptSig carrying the redeemScript + 108 witness bytes
+ * / 4. The scriptSig is NOT witness-discounted, which is why a nested-segwit
+ * input costs more than half again what a native one does.
+ */
+export const VB_INPUT_P2SH_P2WPKH = 91;
+
+/**
  * Backing-vault script-path spend: 41 base + 234 witness bytes / 4, rounded up.
  * The witness is [signature 64, state 32, leaf script 68, control block 65]
  * plus five compact-size length prefixes.
@@ -61,10 +68,16 @@ export const SCRIPT_BYTES_P2TR = 34;
 export interface CoveTxShape {
   /** Backing-vault script-path inputs (0 or 1). */
   vaultInputs: number;
-  /** Ordinary P2WPKH inputs: funding UTXOs and token carriers alike. */
+  /** Native-segwit inputs: funding UTXOs and token carriers alike. */
   p2wpkhInputs: number;
-  /** Taproot key-path inputs. */
+  /** Taproot key-path inputs — every ordinals address is one of these. */
   p2trInputs?: number;
+  /**
+   * Nested-segwit inputs. Xverse and Magic Eden hand these out as payment
+   * addresses, and they are the most expensive kind: the redeemScript rides in
+   * the scriptSig, which is not witness-discounted.
+   */
+  p2shP2wpkhInputs?: number;
   /** Every output's scriptPubKey length, OP_RETURNs included. */
   outputScriptBytes: readonly number[];
 }
@@ -74,7 +87,8 @@ export function estimateVsize(shape: CoveTxShape): number {
   const inputs =
     shape.vaultInputs * VB_INPUT_VAULT +
     shape.p2wpkhInputs * VB_INPUT_P2WPKH +
-    (shape.p2trInputs ?? 0) * VB_INPUT_P2TR_KEYPATH;
+    (shape.p2trInputs ?? 0) * VB_INPUT_P2TR_KEYPATH +
+    (shape.p2shP2wpkhInputs ?? 0) * VB_INPUT_P2SH_P2WPKH;
   const outputs = shape.outputScriptBytes.reduce((sum, len) => sum + outputVbytes(len), 0);
   return VB_TX_OVERHEAD + inputs + outputs;
 }

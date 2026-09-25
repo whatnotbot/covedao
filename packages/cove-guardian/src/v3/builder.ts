@@ -1,5 +1,6 @@
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
+import { psbtInputFor } from "@crclaunch/bitcoin";
 import {
   TOKEN_CARRIER_SATS,
   applyMintV2,
@@ -61,6 +62,15 @@ export interface ResolvedInput {
   vout: number;
   script: Buffer;
   valueSats: Sats;
+  /**
+   * The owner's public key.
+   *
+   * Optional only because a native-segwit input does not need it. A nested
+   * segwit input needs its redeemScript and a Taproot input needs its internal
+   * key, and neither can be recovered from the scriptPubKey — omit it for
+   * those and the wallet is handed an input it will silently decline to sign.
+   */
+  publicKey?: Buffer;
 }
 
 export interface DeployResult {
@@ -106,11 +116,7 @@ export function buildDeployPsbtV3(params: {
 
   const psbt = new bitcoin.Psbt({ network: params.network });
   for (const input of params.deployerInputs) {
-    psbt.addInput({
-      hash: input.txid,
-      index: input.vout,
-      witnessUtxo: { script: input.script, value: Number(input.valueSats) },
-    });
+    psbt.addInput(psbtInputFor(input, params.network));
   }
   psbt.addOutput({ script: Buffer.concat([Buffer.from([0x6a, wire.length]), wire]), value: 0 });
   psbt.addOutput({ script: vault.scriptPubKey, value: Number(RESERVE_ANCHOR_SATS) });
@@ -209,11 +215,7 @@ export function buildMintPsbtV3(params: {
     ],
   });
   for (const input of params.buyerInputs) {
-    psbt.addInput({
-      hash: input.txid,
-      index: input.vout,
-      witnessUtxo: { script: input.script, value: Number(input.valueSats) },
-    });
+    psbt.addInput(psbtInputFor(input, params.network));
   }
 
   psbt.addOutput({ script: Buffer.concat([Buffer.from([0x6a, wire.length]), wire]), value: 0 });
@@ -308,11 +310,7 @@ export function buildTransferPsbtV2(params: {
 
   const psbt = new bitcoin.Psbt({ network: params.network });
   for (const input of [...params.tokenInputs, ...params.funderInputs]) {
-    psbt.addInput({
-      hash: input.txid,
-      index: input.vout,
-      witnessUtxo: { script: input.script, value: Number(input.valueSats) },
-    });
+    psbt.addInput(psbtInputFor(input, params.network));
   }
 
   psbt.addOutput({ script: Buffer.concat([Buffer.from([0x6a, wire.length]), wire]), value: 0 });
@@ -435,20 +433,12 @@ export function buildRedeemPsbtV3(params: {
     ],
   });
   for (const input of params.tokenInputs) {
-    psbt.addInput({
-      hash: input.txid,
-      index: input.vout,
-      witnessUtxo: { script: input.script, value: Number(input.valueSats) },
-    });
+    psbt.addInput(psbtInputFor(input, params.network));
   }
   // Funder inputs go last so every token-carrier index stays where the wire
   // envelope and the validator expect it.
   for (const input of params.funderInputs ?? []) {
-    psbt.addInput({
-      hash: input.txid,
-      index: input.vout,
-      witnessUtxo: { script: input.script, value: Number(input.valueSats) },
-    });
+    psbt.addInput(psbtInputFor(input, params.network));
   }
 
   psbt.addOutput({ script: Buffer.concat([Buffer.from([0x6a, wire.length]), wire]), value: 0 });

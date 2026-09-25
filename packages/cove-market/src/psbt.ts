@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
-import * as ecc from "tiny-secp256k1";
+import { checkSpendSignature } from "@crclaunch/bitcoin";
 import { MarketError } from "./errors.js";
 
 /**
@@ -49,17 +49,21 @@ export function inputMatchesPubkey(psbt: bitcoin.Psbt, inputIndex: number, pubke
  * and cryptographically valid against the witnessUtxo. Rejects ANYONECANPAY /
  * SINGLE / NONE outright (§13).
  */
+/**
+ * Validate one party's signature on a peer-to-peer fill.
+ *
+ * Accepts native segwit, nested segwit and Taproot key-path alike — a seller's
+ * token carrier is almost always a Taproot ordinals address, so restricting
+ * this to ECDSA meant no real wallet could ever sell.
+ *
+ * The SIGHASH_ALL requirement is unchanged and is the point: a signature over
+ * fewer outputs is what makes an order sweepable by anyone who finds it.
+ */
 export function validateP2wpkhPartialSig(psbt: bitcoin.Psbt, inputIndex: number): void {
-  const sig = partialSigOfInput(psbt, inputIndex);
-  if (!sig) throw new MarketError("BUYER_SIGNATURE_INVALID", `input ${inputIndex} has no partial signature`);
-  if (!isSighashAll(sig)) throw new MarketError("UNSAFE_SIGHASH", `input ${inputIndex} is not SIGHASH_ALL`);
-  let ok = false;
-  try {
-    ok = psbt.validateSignaturesOfInput(inputIndex, (pubkey, msghash, sig) => ecc.verify(msghash, pubkey, sig));
-  } catch {
-    ok = false;
-  }
-  if (!ok) throw new MarketError("BUYER_SIGNATURE_INVALID", `input ${inputIndex} signature invalid`);
+  const result = checkSpendSignature(psbt, inputIndex);
+  if (result.ok) return;
+  if (result.reason === "NOT_SIGHASH_ALL") throw new MarketError("UNSAFE_SIGHASH", result.detail);
+  throw new MarketError("BUYER_SIGNATURE_INVALID", result.detail);
 }
 
 export function parsePsbt(b64: string, network: bitcoin.networks.Network): bitcoin.Psbt {

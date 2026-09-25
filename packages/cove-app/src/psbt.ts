@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
-import * as ecc from "tiny-secp256k1";
+import { checkSpendSignature } from "@crclaunch/bitcoin";
 import { AppError } from "./errors.js";
 
 /** sha256 of the canonical UNSIGNED transaction bytes. */
@@ -30,41 +30,45 @@ export function btcNetwork(network: string): bitcoin.networks.Network {
   return bitcoin.networks.testnet;
 }
 
-/** Validate a P2WPKH input's partial sig is SIGHASH_ALL and cryptographically valid. */
+/**
+ * Validate a wallet's signature on one input.
+ *
+ * Handles every address kind a supported wallet hands out: native segwit,
+ * nested segwit and Taproot key-path. This previously accepted only an ECDSA
+ * `partialSig`, which meant a Xverse or Magic Eden payment address (nested
+ * segwit) and every ordinals address (Taproot) were unsignable — most wallets
+ * could not complete a single trade.
+ */
 export function validateInputSignature(psbt: bitcoin.Psbt, inputIndex: number): void {
-  const input = psbt.data.inputs[inputIndex];
-  if (!input || !input.partialSig || input.partialSig.length === 0) {
-    throw new AppError("WALLET_SIGNATURE_INVALID", `input ${inputIndex} unsigned`);
-  }
-  const sig = Buffer.from(input.partialSig[0]!.signature);
-  if (sig.length === 0 || sig[sig.length - 1] !== bitcoin.Transaction.SIGHASH_ALL) {
-    throw new AppError("WALLET_SIGNATURE_INVALID", `input ${inputIndex} not SIGHASH_ALL`);
-  }
-  let ok = false;
-  try {
-    ok = psbt.validateSignaturesOfInput(inputIndex, (pubkey, msghash, sig) => ecc.verify(msghash, pubkey, sig));
-  } catch {
-    ok = false;
-  }
-  if (!ok) throw new AppError("WALLET_SIGNATURE_INVALID", `input ${inputIndex} signature invalid`);
+  const result = checkSpendSignature(psbt, inputIndex);
+  if (!result.ok) throw new AppError("WALLET_SIGNATURE_INVALID", result.detail);
 }
 
 /**
- * Net satoshis a wallet gains (+) or loses (−) across a PSBT.
+ * Net satoshis a wallet gains (+) or loses (−) across a PSBT, counting every
+ * script the wallet owns.
  *
  * This is the one number a user actually cares about, and it is measured from
  * the transaction rather than assembled from the parts, so it cannot drift out
  * of step with what will be broadcast. The client re-derives the same figure
  * from the price it was shown and refuses to sign if the two disagree.
  */
-export function walletDeltaSats(psbt: bitcoin.Psbt, walletScriptHex: string): bigint {
+export function walletDeltaSats(psbt: bitcoin.Psbt, walletScriptsHex: string | string[]): bigint {
+  // A wallet is TWO addresses — payments and ordinals — so both count as
+  // "mine". Counting only the payment script would read the 1,000 sats riding
+  // on a token carrier as money leaving the wallet.
+  const mine = new Set(
+    (Array.isArray(walletScriptsHex) ? walletScriptsHex : [walletScriptsHex]).map((s) =>
+      s.toLowerCase(),
+    ),
+  );
   const into = psbt.txOutputs.reduce(
-    (sum, out) => (out.script.toString("hex") === walletScriptHex ? sum + BigInt(out.value) : sum),
+    (sum, out) => (mine.has(out.script.toString("hex")) ? sum + BigInt(out.value) : sum),
     0n,
   );
   const outOf = psbt.data.inputs.reduce(
     (sum, input) =>
-      input.witnessUtxo?.script.toString("hex") === walletScriptHex
+      input.witnessUtxo && mine.has(input.witnessUtxo.script.toString("hex"))
         ? sum + BigInt(input.witnessUtxo.value)
         : sum,
     0n,

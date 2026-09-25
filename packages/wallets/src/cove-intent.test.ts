@@ -241,3 +241,58 @@ describe("verifyClientIntent — token delivery (§M3)", () => {
     );
   });
 });
+
+/**
+ * A real wallet has two addresses: nested segwit or native segwit for BTC, and
+ * Taproot for ordinals. A check that knew only about the payment address read
+ * the token carrier as money leaving the wallet and refused every buy.
+ */
+describe("verifyClientIntent — two-address wallets", () => {
+  const ordinals = Buffer.concat([Buffer.from([0x51, 0x20]), Buffer.alloc(32, 0x77)]);
+
+  function buildTwoAddressMint(): bitcoin.Psbt {
+    const wire = encodeMintV2({ tokenId: TOKEN_ID, amount: AMOUNT_ATOMS, recipientVout: 2 });
+    const psbt = new bitcoin.Psbt({ network: bitcoin.networks.regtest });
+    psbt.addInput({ hash: "44".repeat(32), index: 0, witnessUtxo: { script: vaultScript, value: 10_000 } });
+    psbt.addInput({ hash: "55".repeat(32), index: 0, witnessUtxo: { script: walletScript, value: 40_000 } });
+    psbt.addOutput({ script: opReturn(wire), value: 0 }); // 0
+    psbt.addOutput({ script: vaultScript, value: 40_000 }); // 1
+    psbt.addOutput({ script: ordinals, value: 1_000 }); // 2: carrier, Taproot
+    psbt.addOutput({ script: feeScript, value: Number(BUY.protocolFeeSats) }); // 3
+    psbt.addOutput({ script: walletScript, value: 5_700 }); // 4: BTC change
+    return psbt;
+  }
+
+  it("accepts a buy whose tokens land on the ordinals address", () => {
+    const psbt = buildTwoAddressMint();
+    const result = verifyClientIntent(psbt.toBase64(), {
+      ...buyIntent(psbt),
+      ordinalsScript: ordinals.toString("hex"),
+    });
+    // The carrier sats are still the wallet's, so the cost is unchanged.
+    expect(result.walletDeltaSats).toBe(-(BUY.grossSats + BUY.protocolFeeSats + BUY.minerFeeSats));
+  });
+
+  it("still refuses tokens delivered to an address the wallet does not own", () => {
+    const psbt = buildTwoAddressMint();
+    expect(() =>
+      verifyClientIntent(psbt.toBase64(), {
+        ...buyIntent(psbt),
+        ordinalsScript: Buffer.concat([
+          Buffer.from([0x51, 0x20]),
+          Buffer.alloc(32, 0x99),
+        ]).toString("hex"),
+      }),
+    ).toThrow(/CLIENT_INTENT_MISMATCH/);
+  });
+
+  it("requires a redeem payout on the payments address, not the ordinals one", () => {
+    const psbt = buildRedeemPsbt({ payoutScript: ordinals });
+    expect(() =>
+      verifyClientIntent(psbt.toBase64(), {
+        ...redeemIntent(psbt),
+        ordinalsScript: ordinals.toString("hex"),
+      }),
+    ).toThrow(/payout to your wallet/);
+  });
+});

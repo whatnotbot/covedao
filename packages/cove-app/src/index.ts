@@ -72,3 +72,11 @@ export {
   type FeeTier,
   type FeeTierKey,
 } from "./fees.js";
+export {
+  resolveWalletIdentity,
+  walletIdentityFrom,
+  type WalletIdentity,
+  type WalletRole,
+  type ResolvedWalletIdentity,
+  type ResolvedRole,
+} from "./wallet-identity.js";

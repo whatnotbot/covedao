@@ -173,7 +173,7 @@ describe("Production Guardian V3 — validateAndSignMintTransition", async () =>
 
   it("fee destination mutated → refused, zero signatures", async () => {
     const { view, mint } = mintSetup();
-    setOutputScript(mint.psbt, 3, Buffer.from("0014" + "e".repeat(20), "hex"));
+    setOutputScript(mint.psbt, 3, Buffer.from("0014" + "e".repeat(40), "hex"));
     const r = await signMint(mint.psbt, view);
     expect(r.ok).toBe(false);
     expect(input0HasSignature(mint.psbt)).toBe(false);

@@ -59,6 +59,7 @@ export {
   VB_TX_OVERHEAD,
   VB_INPUT_P2WPKH,
   VB_INPUT_P2TR_KEYPATH,
+  VB_INPUT_P2SH_P2WPKH,
   VB_INPUT_VAULT,
   ABSOLUTE_FLOOR_SAT_PER_VB,
   ABSOLUTE_CEILING_SAT_PER_VB,
@@ -69,3 +70,16 @@ export {
   type ResolveMinerFeeInput,
   type ResolvedMinerFee,
 } from "./fees.js";
+export {
+  spendKindOf,
+  scriptForKind,
+  psbtInputFor,
+  checkSpendSignature,
+  inputVbytes,
+  isP2SH,
+  xOnly,
+  WITNESS_VBYTES,
+  type SpendKind,
+  type SpendableInput,
+  type SignatureProblem,
+} from "./spend.js";

@@ -5,6 +5,20 @@ import { checkRateLimit } from "@/lib/rate-limit";
 export const dynamic = "force-dynamic";
 
 /**
+ * A wallet is two addresses. Payments holds BTC; ordinals holds token
+ * carriers. A wallet with only one address may send just `walletScript`, and
+ * both roles resolve to it.
+ */
+function walletFields(body: Record<string, unknown>) {
+  return {
+    walletScript: strField(body, "walletScript"),
+    walletPublicKey: strField(body, "walletPublicKey") || undefined,
+    ordinalsScript: strField(body, "ordinalsScript") || undefined,
+    ordinalsPublicKey: strField(body, "ordinalsPublicKey") || undefined,
+  };
+}
+
+/**
  * The client picks a fee RATE; the server sizes the fee to the transaction it
  * builds. An explicit `minerFeeSats` is still honoured for callers that size
  * their own transaction, but there is no longer a flat default: omitting both
@@ -29,7 +43,7 @@ export async function POST(req: Request) {
       tokenId: strField(body, "tokenId"),
       amountAtoms: bigintField(body, "amountAtoms", 0n),
       recipientScript: strField(body, "recipientScript"),
-      walletScript: strField(body, "walletScript"),
+      ...walletFields(body),
       walletAddress: strField(body, "walletAddress") || null,
       funding: (body.funding ?? []) as { txid: string; vout: number }[],
       ...feeFields(body),

@@ -39,11 +39,11 @@ function deploy() {
       {
         txid: "a".repeat(64),
         vout: 0,
-        script: Buffer.from("0014" + "c".repeat(20), "hex"),
+        script: Buffer.from("0014" + "c".repeat(40), "hex"),
         valueSats: 1_000_000n,
       },
     ],
-    deployerChangeScript: Buffer.from("0014" + "c".repeat(20), "hex"),
+    deployerChangeScript: Buffer.from("0014" + "c".repeat(40), "hex"),
     minerFeeSats: 1_000n,
   });
 }
@@ -86,13 +86,13 @@ describe("V3 builders (offline)", () => {
         {
           txid: "b".repeat(64),
           vout: 0,
-          script: Buffer.from("0014" + "d".repeat(20), "hex"),
+          script: Buffer.from("0014" + "d".repeat(40), "hex"),
           valueSats: 1_000_000n,
         },
       ],
-      buyerCarrierScript: Buffer.from("0014" + "e".repeat(20), "hex"),
-      buyerChangeScript: Buffer.from("0014" + "e".repeat(20), "hex"),
-      feeScript: Buffer.from("0014" + "f".repeat(20), "hex"),
+      buyerCarrierScript: Buffer.from("0014" + "e".repeat(40), "hex"),
+      buyerChangeScript: Buffer.from("0014" + "e".repeat(40), "hex"),
+      feeScript: Buffer.from("0014" + "f".repeat(40), "hex"),
       minerFeeSats: 1_000n,
     });
     const expected = applyMintV2(d.s0, 84_000_000n * 100_000_000n);
@@ -123,24 +123,24 @@ describe("V3 builders (offline)", () => {
         {
           txid: "c".repeat(64),
           vout: 2,
-          script: Buffer.from("0014" + "a".repeat(20), "hex"),
+          script: Buffer.from("0014" + "a".repeat(40), "hex"),
           valueSats: TOKEN_CARRIER_SATS,
         },
       ],
       tokenInputTotalAtoms: 84_000_000n * 100_000_000n,
       tokenOutputs: [
-        { script: Buffer.from("0014" + "b".repeat(20), "hex"), amountAtoms: 42_000_000n * 100_000_000n },
-        { script: Buffer.from("0014" + "c".repeat(20), "hex"), amountAtoms: 42_000_000n * 100_000_000n },
+        { script: Buffer.from("0014" + "b".repeat(40), "hex"), amountAtoms: 42_000_000n * 100_000_000n },
+        { script: Buffer.from("0014" + "c".repeat(40), "hex"), amountAtoms: 42_000_000n * 100_000_000n },
       ],
       funderInputs: [
         {
           txid: "d".repeat(64),
           vout: 0,
-          script: Buffer.from("0014" + "d".repeat(20), "hex"),
+          script: Buffer.from("0014" + "d".repeat(40), "hex"),
           valueSats: 1_000_000n,
         },
       ],
-      funderChangeScript: Buffer.from("0014" + "d".repeat(20), "hex"),
+      funderChangeScript: Buffer.from("0014" + "d".repeat(40), "hex"),
       btcOutputs: [],
       minerFeeSats: 1_000n,
     });
@@ -161,9 +161,9 @@ describe("V3 builders (offline)", () => {
         tokenId: d.tokenId,
         tokenInputs: [],
         tokenInputTotalAtoms: 1n,
-        tokenOutputs: [{ script: Buffer.from("0014" + "b".repeat(20), "hex"), amountAtoms: 2n }],
+        tokenOutputs: [{ script: Buffer.from("0014" + "b".repeat(40), "hex"), amountAtoms: 2n }],
         funderInputs: [],
-        funderChangeScript: Buffer.from("0014" + "d".repeat(20), "hex"),
+        funderChangeScript: Buffer.from("0014" + "d".repeat(40), "hex"),
         btcOutputs: [],
         minerFeeSats: 1_000n,
       }),
@@ -193,16 +193,16 @@ describe("V3 builders (offline)", () => {
         {
           txid: "f".repeat(64),
           vout: 1,
-          script: Buffer.from("0014" + "e".repeat(20), "hex"),
+          script: Buffer.from("0014" + "e".repeat(40), "hex"),
           valueSats: TOKEN_CARRIER_SATS,
         },
       ],
       tokenInputTotalAtoms: mintAmountAtoms,
       guardianXOnly,
       recoveryKeyXOnly: recoveryXOnly,
-      sellerPayoutScript: Buffer.from("0014" + "e".repeat(20), "hex"),
-      sellerChangeScript: Buffer.from("0014" + "e".repeat(20), "hex"),
-      feeScript: Buffer.from("0014" + "f".repeat(20), "hex"),
+      sellerPayoutScript: Buffer.from("0014" + "e".repeat(40), "hex"),
+      sellerChangeScript: Buffer.from("0014" + "e".repeat(40), "hex"),
+      feeScript: Buffer.from("0014" + "f".repeat(40), "hex"),
       minerFeeSats: 1_000n,
     });
     const expected = applyRedeemV2(minted.nextState, mintAmountAtoms);
@@ -237,10 +237,10 @@ describe("V3 builders (offline)", () => {
       mintAmountAtoms,
       guardianXOnly,
       recoveryKeyXOnly: recoveryXOnly,
-      buyerInputs: [{ txid: "b".repeat(64), vout: 0, script: Buffer.from("0014" + "d".repeat(20), "hex"), valueSats: 1_000_000n }],
-      buyerCarrierScript: Buffer.from("0014" + "e".repeat(20), "hex"),
-      buyerChangeScript: Buffer.from("0014" + "e".repeat(20), "hex"),
-      feeScript: Buffer.from("0014" + "f".repeat(20), "hex"),
+      buyerInputs: [{ txid: "b".repeat(64), vout: 0, script: Buffer.from("0014" + "d".repeat(40), "hex"), valueSats: 1_000_000n }],
+      buyerCarrierScript: Buffer.from("0014" + "e".repeat(40), "hex"),
+      buyerChangeScript: Buffer.from("0014" + "e".repeat(40), "hex"),
+      feeScript: Buffer.from("0014" + "f".repeat(40), "hex"),
       minerFeeSats: 1_000n,
       buyFeeBps: 50n,
       buyFeeFlatSatsAtTopStage: 7n,
@@ -259,13 +259,13 @@ describe("V3 builders (offline)", () => {
       prevState: minted.nextState,
       prevBacking: { txid: "e".repeat(64), vout: 1, script: buildBackingVaultV3({ state: minted.nextState, guardianXOnly, recoveryKeyXOnly: recoveryXOnly }).scriptPubKey, valueSats: RESERVE_ANCHOR_SATS + minted.nextState.backingSats },
       redeemAmountAtoms: 84_000_000n * 100_000_000n,
-      tokenInputs: [{ txid: "f".repeat(64), vout: 1, script: Buffer.from("0014" + "e".repeat(20), "hex"), valueSats: TOKEN_CARRIER_SATS }],
+      tokenInputs: [{ txid: "f".repeat(64), vout: 1, script: Buffer.from("0014" + "e".repeat(40), "hex"), valueSats: TOKEN_CARRIER_SATS }],
       tokenInputTotalAtoms: 84_000_000n * 100_000_000n,
       guardianXOnly,
       recoveryKeyXOnly: recoveryXOnly,
-      sellerPayoutScript: Buffer.from("0014" + "e".repeat(20), "hex"),
-      sellerChangeScript: Buffer.from("0014" + "e".repeat(20), "hex"),
-      feeScript: Buffer.from("0014" + "f".repeat(20), "hex"),
+      sellerPayoutScript: Buffer.from("0014" + "e".repeat(40), "hex"),
+      sellerChangeScript: Buffer.from("0014" + "e".repeat(40), "hex"),
+      feeScript: Buffer.from("0014" + "f".repeat(40), "hex"),
       minerFeeSats: 1_000n,
       redeemFeeBps: 50n,
       redeemFeeFlatSats: 7n,
@@ -295,13 +295,13 @@ describe("crc-20 discovery envelope in the built PSBT (§D1)", () => {
         {
           txid: "b".repeat(64),
           vout: 0,
-          script: Buffer.from("0014" + "d".repeat(20), "hex"),
+          script: Buffer.from("0014" + "d".repeat(40), "hex"),
           valueSats: 1_000_000n,
         },
       ],
-      buyerCarrierScript: Buffer.from("0014" + "e".repeat(20), "hex"),
-      buyerChangeScript: Buffer.from("0014" + "e".repeat(20), "hex"),
-      feeScript: Buffer.from("0014" + "f".repeat(20), "hex"),
+      buyerCarrierScript: Buffer.from("0014" + "e".repeat(40), "hex"),
+      buyerChangeScript: Buffer.from("0014" + "e".repeat(40), "hex"),
+      feeScript: Buffer.from("0014" + "f".repeat(40), "hex"),
       minerFeeSats: 1_000n,
       discoveryEnvelope,
     });
@@ -353,8 +353,8 @@ describe("crc-20 discovery envelope in the built PSBT (§D1)", () => {
  * `carriers × 1000` — so redemption stopped working above a few sat/vB.
  */
 describe("REDEEM miner-fee funding", () => {
-  const SELLER = Buffer.from("0014" + "e".repeat(20), "hex");
-  const FEE = Buffer.from("0014" + "f".repeat(20), "hex");
+  const SELLER = Buffer.from("0014" + "e".repeat(40), "hex");
+  const FEE = Buffer.from("0014" + "f".repeat(40), "hex");
 
   function redeem(opts: {
     redeemAmountAtoms: bigint;
@@ -455,7 +455,7 @@ describe("REDEEM miner-fee funding", () => {
  * turned a routine trade into an error the user could do nothing about.
  */
 describe("dust change is absorbed into the miner fee, and reported", () => {
-  const WALLET = Buffer.from("0014" + "c".repeat(20), "hex");
+  const WALLET = Buffer.from("0014" + "c".repeat(40), "hex");
   const DUST_P2WPKH = 294n;
 
   function deployWithChange(inputSats: bigint, minerFeeSats: bigint) {
@@ -546,7 +546,7 @@ describe("dust change is absorbed into the miner fee, and reported", () => {
       buyerInputs: [{ txid: "b".repeat(64), vout: 0, script: WALLET, valueSats: funding }],
       buyerCarrierScript: WALLET,
       buyerChangeScript: WALLET,
-      feeScript: Buffer.from("0014" + "f".repeat(20), "hex"),
+      feeScript: Buffer.from("0014" + "f".repeat(40), "hex"),
       minerFeeSats: 1_000n,
     });
     expect(m.minerFeeSats).toBe(1_100n);

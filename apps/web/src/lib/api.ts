@@ -67,6 +67,8 @@ function humanCopy(code: string): string {
       return "The seller's token output is no longer available.";
     case "PROTOCOL_FEE_DUST":
       return "This trade is too small to create a standard Bitcoin fee output.";
+    case "ECONOMIC_DUST":
+      return "This trade is too small to be worth making.";
     case "INDEXER_REBUILDING":
       return "Cove is rebuilding chain state. Trading is temporarily paused.";
     case "INDEXER_UNHEALTHY":

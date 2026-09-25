@@ -445,3 +445,111 @@ describe("REDEEM miner-fee funding", () => {
     );
   });
 });
+
+/**
+ * Change too small to be a standard output cannot be paid back to the user —
+ * Bitcoin will not relay it. It therefore becomes miner fee whether anyone
+ * says so or not. What matters is that the builder REPORTS the fee it really
+ * pays: the browser re-derives the fee from inputs minus outputs and refuses
+ * to sign when it disagrees with the stated one, so an unreported absorption
+ * turned a routine trade into an error the user could do nothing about.
+ */
+describe("dust change is absorbed into the miner fee, and reported", () => {
+  const WALLET = Buffer.from("0014" + "c".repeat(20), "hex");
+  const DUST_P2WPKH = 294n;
+
+  function deployWithChange(inputSats: bigint, minerFeeSats: bigint) {
+    return buildDeployPsbtV3({
+      network: bitcoin.networks.regtest,
+      identity: {
+        chainIdentity: CHAIN_BITCOIN_REGTEST,
+        policyVersion: 3,
+        ticker: "FROG",
+        tokenNonce: NONCE,
+      },
+      guardianXOnly,
+      recoveryKeyXOnly: recoveryXOnly,
+      deployerInputs: [{ txid: "a".repeat(64), vout: 0, script: WALLET, valueSats: inputSats }],
+      deployerChangeScript: WALLET,
+      minerFeeSats,
+    });
+  }
+
+  function actualFee(psbt: bitcoin.Psbt): bigint {
+    const inputs = psbt.data.inputs.reduce((sum, i) => sum + BigInt(i.witnessUtxo!.value), 0n);
+    const outputs = psbt.txOutputs.reduce((sum, o) => sum + BigInt(o.value), 0n);
+    return inputs - outputs;
+  }
+
+  it("pays out change that clears the dust threshold", () => {
+    // 10,000 anchor + 1,000 fee + 5,000 change
+    const d = deployWithChange(16_000n, 1_000n);
+    expect(d.minerFeeSats).toBe(1_000n);
+    expect(actualFee(d.psbt)).toBe(1_000n);
+    expect(d.psbt.txOutputs.some((o) => o.value === 5_000)).toBe(true);
+  });
+
+  it("creates no change output at all when it lands exactly on zero", () => {
+    const d = deployWithChange(11_000n, 1_000n);
+    expect(d.minerFeeSats).toBe(1_000n);
+    expect(actualFee(d.psbt)).toBe(1_000n);
+    expect(d.psbt.txOutputs.some((o) => o.script.equals(WALLET))).toBe(false);
+  });
+
+  it("absorbs sub-dust change and reports the larger fee", () => {
+    // 10,000 anchor + 1,000 fee + 200 change, and 200 is below the 294 dust
+    // threshold for a P2WPKH output.
+    const d = deployWithChange(11_200n, 1_000n);
+    expect(d.minerFeeSats).toBe(1_200n);
+    expect(actualFee(d.psbt)).toBe(d.minerFeeSats);
+    expect(d.psbt.txOutputs.some((o) => o.script.equals(WALLET))).toBe(false);
+  });
+
+  it("never absorbs more than one dust threshold", () => {
+    for (let extra = 1n; extra < DUST_P2WPKH; extra += 37n) {
+      const d = deployWithChange(11_000n + extra, 1_000n);
+      expect(d.minerFeeSats - 1_000n).toBe(extra);
+      expect(d.minerFeeSats - 1_000n).toBeLessThan(DUST_P2WPKH);
+      expect(actualFee(d.psbt)).toBe(d.minerFeeSats);
+    }
+  });
+
+  it("reports the real fee for a mint too", () => {
+    const d = deploy();
+    const anchorAndFee = RESERVE_ANCHOR_SATS;
+    const minted = applyMintV2(d.s0, 84_000_000n * 100_000_000n);
+    const gross = minted.grossSats;
+    const buyFee = deterministicFee(
+      gross,
+      750n,
+      stageScaledFlatSats(0n, 10_000n),
+    );
+    // Fund exactly enough to leave 100 sats of change: below dust.
+    const funding = gross + buyFee + TOKEN_CARRIER_SATS + 1_000n + 100n;
+    const m = buildMintPsbtV3({
+      network: bitcoin.networks.regtest,
+      tokenId: d.tokenId,
+      prevState: d.s0,
+      prevBacking: {
+        txid: "e".repeat(64),
+        vout: 1,
+        script: buildBackingVaultV3({
+          state: d.s0,
+          guardianXOnly,
+          recoveryKeyXOnly: recoveryXOnly,
+        }).scriptPubKey,
+        valueSats: anchorAndFee,
+      },
+      mintAmountAtoms: 84_000_000n * 100_000_000n,
+      guardianXOnly,
+      recoveryKeyXOnly: recoveryXOnly,
+      buyerInputs: [{ txid: "b".repeat(64), vout: 0, script: WALLET, valueSats: funding }],
+      buyerCarrierScript: WALLET,
+      buyerChangeScript: WALLET,
+      feeScript: Buffer.from("0014" + "f".repeat(20), "hex"),
+      minerFeeSats: 1_000n,
+    });
+    expect(m.minerFeeSats).toBe(1_100n);
+    expect(actualFee(m.psbt)).toBe(m.minerFeeSats);
+  });
+});

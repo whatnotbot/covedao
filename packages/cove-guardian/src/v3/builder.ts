@@ -20,13 +20,41 @@ import {
   type TokenIdentityInput,
 } from "@crclaunch/cove-wire";
 import { grossBuy } from "@crclaunch/cove-economics";
-import { deterministicFee, stageScaledFlatSats, COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
+import { deterministicFee, stageScaledFlatSats, dustThreshold, COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
 import type { Sats } from "@crclaunch/curve";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 
 /** Fixed non-reserve satoshi anchor carried by every backing state UTXO. */
 export const RESERVE_ANCHOR_SATS = 10_000n;
+
+/**
+ * Add a change output, or fold change too small to stand alone into the miner
+ * fee — and report the fee that results.
+ *
+ * Bitcoin will not relay an output below the dust threshold, so change in
+ * (0, dust) cannot be paid out; it necessarily becomes miner fee. The caller
+ * MUST use the returned figure as the transaction's miner fee: the browser
+ * re-derives the fee from inputs minus outputs and refuses to sign when it
+ * disagrees with the stated one, so quietly absorbing sats here used to make
+ * the trade fail with an error nobody could act on.
+ *
+ * The amount absorbed is bounded by the dust threshold (at most 329 sats for
+ * any standard script), and it is disclosed rather than hidden.
+ */
+function addChangeOrAbsorb(
+  psbt: bitcoin.Psbt,
+  changeScript: Buffer,
+  changeSats: Sats,
+  minerFeeSats: Sats,
+): { minerFeeSats: Sats; changeSats: Sats; absorbedSats: Sats } {
+  if (changeSats <= 0n) return { minerFeeSats, changeSats: 0n, absorbedSats: 0n };
+  if (changeSats >= dustThreshold(changeScript)) {
+    psbt.addOutput({ script: changeScript, value: Number(changeSats) });
+    return { minerFeeSats, changeSats, absorbedSats: 0n };
+  }
+  return { minerFeeSats: minerFeeSats + changeSats, changeSats: 0n, absorbedSats: changeSats };
+}
 
 export interface ResolvedInput {
   txid: string;
@@ -41,6 +69,8 @@ export interface DeployResult {
   s0: CoveStateV2;
   vault: CoveVaultV3;
   wire: Buffer;
+  /** The fee actually paid, including any change too small to be an output. */
+  minerFeeSats: Sats;
 }
 
 /**
@@ -88,11 +118,9 @@ export function buildDeployPsbtV3(params: {
   const totalIn = params.deployerInputs.reduce((s, i) => s + i.valueSats, 0n);
   const change = totalIn - RESERVE_ANCHOR_SATS - params.minerFeeSats;
   if (change < 0n) throw new Error("insufficient deployer funds");
-  if (change >= 546n) {
-    psbt.addOutput({ script: params.deployerChangeScript, value: Number(change) });
-  }
+  const settled = addChangeOrAbsorb(psbt, params.deployerChangeScript, change, params.minerFeeSats);
 
-  return { psbt, tokenId, s0, vault, wire };
+  return { psbt, tokenId, s0, vault, wire, minerFeeSats: settled.minerFeeSats };
 }
 
 export interface MintResult {
@@ -104,6 +132,8 @@ export interface MintResult {
   buyFeeSats: Sats;
   wire: Buffer;
   stateInputIndex: number;
+  /** The fee actually paid, including any change too small to be an output. */
+  minerFeeSats: Sats;
 }
 
 /**
@@ -203,9 +233,7 @@ export function buildMintPsbtV3(params: {
     buyFeeSats -
     params.minerFeeSats;
   if (change < 0n) throw new Error("insufficient buyer funds");
-  if (change >= 294n) {
-    psbt.addOutput({ script: params.buyerChangeScript, value: Number(change) });
-  }
+  const settled = addChangeOrAbsorb(psbt, params.buyerChangeScript, change, params.minerFeeSats);
 
   // Advisory crc-20 discovery envelope, ALWAYS last so every fixed-index output
   // check above is unaffected. Derived from the same binary envelope the
@@ -227,6 +255,7 @@ export function buildMintPsbtV3(params: {
     buyFeeSats,
     wire,
     stateInputIndex: 0,
+    minerFeeSats: settled.minerFeeSats,
   };
 }
 
@@ -237,6 +266,8 @@ export interface TransferResult {
   allocations: { vout: number; amount: bigint }[];
   /** Token carrier outputs actually created (vout, script, amount). */
   tokenOutputs: { vout: number; script: Buffer; amountAtoms: bigint }[];
+  /** The fee actually paid, including any change too small to be an output. */
+  minerFeeSats: Sats;
 }
 
 /**
@@ -302,12 +333,10 @@ export function buildTransferPsbtV2(params: {
   const btcOut = params.btcOutputs.reduce((s, o) => s + o.valueSats, 0n);
   const change = totalIn - carriersOut - btcOut - params.minerFeeSats;
   if (change < 0n) throw new Error("insufficient transfer funds");
-  if (change >= 294n) {
-    psbt.addOutput({ script: params.funderChangeScript, value: Number(change) });
-  }
+  const settled = addChangeOrAbsorb(psbt, params.funderChangeScript, change, params.minerFeeSats);
 
   const allocations = params.tokenOutputs.map((o, i) => ({ vout: i + 1, amount: o.amountAtoms }));
-  return { psbt, wire, allocations, tokenOutputs };
+  return { psbt, wire, allocations, tokenOutputs, minerFeeSats: settled.minerFeeSats };
 }
 
 export interface RedeemResult {
@@ -320,6 +349,8 @@ export interface RedeemResult {
   netSats: Sats;
   changeAtoms: bigint;
   wire: Buffer;
+  /** The fee actually paid, including any change too small to be an output. */
+  minerFeeSats: Sats;
 }
 
 /**
@@ -445,12 +476,12 @@ export function buildRedeemPsbtV3(params: {
         `add a BTC funding input (carriers alone cover only ${params.tokenInputs.length * 1000} sats)`,
     );
   }
-  if (change >= 294n) {
-    psbt.addOutput({
-      script: params.funderChangeScript ?? params.sellerChangeScript,
-      value: Number(change),
-    });
-  }
+  const settled = addChangeOrAbsorb(
+    psbt,
+    params.funderChangeScript ?? params.sellerChangeScript,
+    change,
+    params.minerFeeSats,
+  );
 
   return {
     psbt,
@@ -462,6 +493,7 @@ export function buildRedeemPsbtV3(params: {
     netSats,
     changeAtoms,
     wire,
+    minerFeeSats: settled.minerFeeSats,
   };
 }
 

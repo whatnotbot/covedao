@@ -167,6 +167,20 @@ export class MarketService {
     await assertMarketReady({ db: this.db, config: this.config, provider: this.provider });
     validateListingShape(input);
 
+    // A listing must actually expire. `maxListingBlocks` was configured but
+    // never enforced, so a seller could sign an ask that stayed fillable
+    // forever — and an ask priced months ago is a gift to whoever notices it
+    // after the market moves. The window is checked here, at the point the
+    // signed order is accepted.
+    const listingWindow = input.expiryHeight - input.creationHeight;
+    if (listingWindow > this.config.maxListingBlocks) {
+      throw new MarketError(
+        "LISTING_EXPIRY_TOO_FAR",
+        `listing would stay open for ${listingWindow} blocks; the limit is ` +
+          `${this.config.maxListingBlocks} (about ${this.config.maxListingBlocks / 144n} days)`,
+      );
+    }
+
     if (!verifyListingAuthorization(input, input.signatureB64)) {
       throw new MarketError("LISTING_BAD_SIGNATURE", "listing BIP-322 signature invalid");
     }
@@ -412,19 +426,23 @@ export class MarketService {
       minerFeeSats,
     });
 
-    // Exact fee: buyer change must be 0 or >= relay dust; (0, 294) would leak
-    // into the miner fee and break the exact-fee check at finalize.
     const requiredFunding = listing.totalPriceSats + marketFee + extraCarrierSats + minerFeeSats;
     const totalFund = funderInputs.reduce((s, f) => s + f.valueSats, 0n);
     const change = totalFund - requiredFunding;
     if (change < 0n) throw new MarketError("BUYER_FUNDS_INSUFFICIENT", `short ${-change} sats`);
-    if (change > 0n && change < 294n) throw new MarketError("BUYER_FUNDS_INSUFFICIENT", `buyer change ${change} sats is below relay dust`);
+
+    // Buyer change in (0, dust) cannot be an output, so the builder folds it
+    // into the miner fee. Record the fee that the transaction ACTUALLY pays:
+    // finalize re-derives it from inputs minus outputs and rejects a mismatch,
+    // and the buyer's browser does the same before signing. This used to refuse
+    // the fill outright over a few hundred satoshis of unspendable change.
+    const settledMinerFeeSats = result.minerFeeSats;
 
     const psbtB64 = result.psbt.toBase64();
     const digest = unsignedTxDigest(result.psbt);
     await this.db
       .update(schema.coveV3MarketFills)
-      .set({ psbtBase64: psbtB64, unsignedTxDigest: digest, minerFeeSats, extraCarrierSats, marketFeeSats: marketFee, status: "PSBT_BUILT", updatedAt: new Date() })
+      .set({ psbtBase64: psbtB64, unsignedTxDigest: digest, minerFeeSats: settledMinerFeeSats, extraCarrierSats, marketFeeSats: marketFee, status: "PSBT_BUILT", updatedAt: new Date() })
       .where(eq(schema.coveV3MarketFills.id, fillId));
     return psbtB64;
   }

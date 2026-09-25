@@ -18,7 +18,8 @@ export async function POST(req: Request) {
       sourceVout: Number(bigintField(body, "sourceVout", 0n)),
       amountAtoms: bigintField(body, "amountAtoms", 0n),
       totalPriceSats: bigintField(body, "totalPriceSats", 0n),
-      expiryHeight: bigintField(body, "expiryHeight", 0n),
+      // A duration in blocks; the server resolves it against the real tip.
+      expiryBlocks: bigintField(body, "expiryBlocks", 0n) || undefined,
       walletScript: strField(body, "walletScript"),
       nonceHex,
     });

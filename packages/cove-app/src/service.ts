@@ -22,7 +22,7 @@ import {
   type TransitionSignRequest,
 } from "@crclaunch/cove-guardian/v3";
 import { loadCanonicalViewSnapshotFromDb, computeHealth, getTokenUtxosByScriptDb } from "@crclaunch/cove-indexer/v3";
-import { grossBuy, grossRedeem, deterministicFee, stageScaledFlatSats } from "@crclaunch/cove-economics";
+import { grossBuy, grossRedeem, deterministicFee, stageScaledFlatSats, checkRedeemPayout } from "@crclaunch/cove-economics";
 import { ATOMS_PER_TOKEN, PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
 import { canonicalTicker, computeTokenId, OP_MINT, OP_REDEEM, type ParsedEnvelopeV2 } from "@crclaunch/cove-wire";
 import {
@@ -46,6 +46,7 @@ import {
   estimateOperationVsize,
   loadFeeRates,
   resolveMinerFee,
+  FeeError,
   type CoveOperation,
   type FeeRates,
 } from "./fees.js";
@@ -154,6 +155,9 @@ const MAX_REDEEM_TOKEN_INPUTS = 4;
 /** Wire-v2 TRANSFER allows at most four allocations, so at most four carriers. */
 const MAX_TRANSFER_TOKEN_INPUTS = 4;
 
+/** Default life of a P2P ask: roughly one week at ten-minute blocks. */
+const DEFAULT_LISTING_BLOCKS = 1_008n;
+
 /**
  * How far to chain unconfirmed vault transitions.
  *
@@ -172,6 +176,28 @@ const BACKING_SUCCESSOR_VOUT = 1;
  * climbing mid-block is picked up before it can strand a transaction.
  */
 const FEE_RATE_CACHE_MS = 15_000;
+
+/**
+ * Refuse a redemption that cannot pay out.
+ *
+ * The exit fee is FLAT, so a small enough sale is worth less than the fee and
+ * the payout goes negative. That used to reach the PSBT builder and fail deep
+ * down with nothing the user could act on.
+ */
+function assertRedeemPayoutIsPayable(params: {
+  grossSats: bigint;
+  feeSats: bigint;
+  payoutScript: Buffer;
+}): void {
+  const check = checkRedeemPayout(params.grossSats, params.feeSats, params.payoutScript);
+  if (check.isPayable) return;
+  throw new AppError(
+    "ECONOMIC_DUST",
+    `this sale is worth ${check.grossSats} sats and the exit fee is ${check.feeSats} sats, ` +
+      `so it would pay out ${check.netSats} sats. A sale has to be worth at least ` +
+      `${check.minimumGrossSats} sats to be worth making. Sell a larger amount.`,
+  );
+}
 
 export class V3AppService {
   readonly market: MarketService;
@@ -502,14 +528,24 @@ export class V3AppService {
     };
     const priceAt = (fundingInputs: number) => {
       const vsize = estimateOperationVsize(params.op, { ...shape, fundingInputs });
-      const fee = resolveMinerFee({
-        rateSatPerVb: feeRateSatPerVb,
-        explicitSats: params.explicitMinerFeeSats,
-        vsize,
-        floorSatPerVb: rates.floorSatPerVb,
-        ceilingSatPerVb: rates.ceilingSatPerVb,
-        maxMinerFeeSats: this.config.maxMinerFeeSats,
-      });
+      let fee;
+      try {
+        fee = resolveMinerFee({
+          rateSatPerVb: feeRateSatPerVb,
+          explicitSats: params.explicitMinerFeeSats,
+          vsize,
+          floorSatPerVb: rates.floorSatPerVb,
+          ceilingSatPerVb: rates.ceilingSatPerVb,
+          maxMinerFeeSats: this.config.maxMinerFeeSats,
+        });
+      } catch (e) {
+        // The fee module is shared with the market and speaks its own error
+        // type. Translate rather than let it fall through as INTERNAL_ERROR:
+        // "an unexpected error occurred" is useless advice when the fix is
+        // "raise your fee".
+        if (e instanceof FeeError) throw new AppError(e.code, e.message.replace(/^\[[A-Z_]+\]\s*/, ""));
+        throw e;
+      }
       return { vsize: fee.vsize, minerFeeSats: fee.minerFeeSats, satPerVb: fee.effectiveSatPerVb };
     };
 
@@ -642,7 +678,7 @@ export class V3AppService {
         tokenAmountAtoms: 0n,
         grossSats: null,
         protocolFeeSats: null,
-        minerFeeSats,
+        minerFeeSats: result.minerFeeSats,
         netSats: null,
         walletScript: params.walletScript,
         stateHash: null,
@@ -812,7 +848,7 @@ export class V3AppService {
         tokenAmountAtoms: params.amountAtoms,
         grossSats: result.grossSats,
         protocolFeeSats: result.buyFeeSats,
-        minerFeeSats,
+        minerFeeSats: result.minerFeeSats,
         netSats: null,
         walletScript: params.walletScript,
         stateHash: backing.stateHash,
@@ -864,6 +900,9 @@ export class V3AppService {
     const backing = await this.loadBacking(tokenId);
     const gross = grossRedeem(backing.state.issuedPublicSupplyAtoms / ATOMS_PER_TOKEN, amountAtoms / ATOMS_PER_TOKEN);
     const fee = deterministicFee(gross, this.config.redeemFeeBps, this.config.redeemFeeFlatSats);
+    // Quote the refusal here rather than letting it surface from the builder:
+    // the user asked what this is worth, and "less than nothing" is the answer.
+    assertRedeemPayoutIsPayable({ grossSats: gross, feeSats: fee, payoutScript: this.config.feeScript });
     const next = applyRedeemV2(backing.state, amountAtoms).nextState;
     return {
       tokenId,
@@ -938,6 +977,24 @@ export class V3AppService {
     // only has to cover the miner fee and the token-change carrier, less the
     // sats the spent carriers already bring in. That figure is usually
     // negative, which is why zero funding inputs is a legitimate answer.
+    // Same check the quote makes, against the seller's own payout script. The
+    // build path is reachable without a quote, so it re-checks rather than
+    // trusting that one happened.
+    assertRedeemPayoutIsPayable({
+      grossSats: grossRedeem(
+        backing.state.issuedPublicSupplyAtoms / ATOMS_PER_TOKEN,
+        params.amountAtoms / ATOMS_PER_TOKEN,
+      ),
+      feeSats: deterministicFee(
+        grossRedeem(
+          backing.state.issuedPublicSupplyAtoms / ATOMS_PER_TOKEN,
+          params.amountAtoms / ATOMS_PER_TOKEN,
+        ),
+        this.config.redeemFeeBps,
+        this.config.redeemFeeFlatSats,
+      ),
+      payoutScript: Buffer.from(params.walletScript, "hex"),
+    });
     const changeCarrierSats = tokenInputTotalAtoms > params.amountAtoms ? TOKEN_CARRIER_SATS : 0n;
     const carrierSatsIn = BigInt(tokenInputs.length) * TOKEN_CARRIER_SATS;
     const { inputs: funderInputs, minerFeeSats } = await this.resolveFundingAndFee({
@@ -1005,7 +1062,7 @@ export class V3AppService {
         tokenAmountAtoms: params.amountAtoms,
         grossSats: result.grossSats,
         protocolFeeSats: result.redeemFeeSats,
-        minerFeeSats,
+        minerFeeSats: result.minerFeeSats,
         netSats: result.netSats,
         walletScript: params.walletScript,
         stateHash: backing.stateHash,
@@ -1150,7 +1207,7 @@ export class V3AppService {
         tokenAmountAtoms: params.amountAtoms,
         grossSats: null,
         protocolFeeSats: null,
-        minerFeeSats,
+        minerFeeSats: result.minerFeeSats,
         netSats: null,
         walletScript: params.walletScript,
         stateHash: null,
@@ -1237,10 +1294,17 @@ export class V3AppService {
     sourceVout: number;
     amountAtoms: bigint;
     totalPriceSats: bigint;
-    expiryHeight: bigint;
+    /**
+     * How long the ask stays fillable, in blocks. Preferred over an absolute
+     * height: the browser does not know the chain tip, and an ask that outlives
+     * the price it was written at is a gift to whoever notices it later.
+     */
+    expiryBlocks?: bigint;
+    /** Absolute height, for callers that compute it themselves. */
+    expiryHeight?: bigint;
     walletScript: string;
     nonceHex: string;
-  }): Promise<{ listing: ListingV1; listingId: string; message: string }> {
+  }): Promise<{ listing: ListingV1; listingId: string; message: string; expiryHeight: bigint }> {
     this.assertEnabled();
     const utxoRows = await this.db
       .select()
@@ -1263,6 +1327,23 @@ export class V3AppService {
     const tip = cursor[0]?.height ?? 0n;
     const nonce = Buffer.from(params.nonceHex, "hex");
     if (nonce.length !== 32) throw new AppError("TOKEN_AMOUNT_INVALID", "nonce must be 32 bytes");
+    // Resolve the expiry against the tip the server just read, and refuse a
+    // window longer than the market allows rather than letting the signature
+    // be wasted on an order that createListing will reject.
+    const expiryHeight =
+      params.expiryBlocks !== undefined && params.expiryBlocks > 0n
+        ? tip + params.expiryBlocks
+        : (params.expiryHeight ?? tip + DEFAULT_LISTING_BLOCKS);
+    if (expiryHeight <= tip) {
+      throw new AppError("TOKEN_AMOUNT_INVALID", "listing would already be expired");
+    }
+    if (expiryHeight - tip > this.config.maxListingBlocks) {
+      throw new AppError(
+        "TOKEN_AMOUNT_INVALID",
+        `a listing may stay open for at most ${this.config.maxListingBlocks} blocks ` +
+          `(about ${this.config.maxListingBlocks / 144n} days)`,
+      );
+    }
     const listing: ListingV1 = {
       orderVersion: 1,
       chainIdentity: this.config.chainIdentity,
@@ -1276,11 +1357,11 @@ export class V3AppService {
       amountAtoms: params.amountAtoms,
       totalPriceSats: params.totalPriceSats,
       creationHeight: tip,
-      expiryHeight: params.expiryHeight,
+      expiryHeight,
       nonce: nonce.toString("hex"),
     };
     const listingId = listingIdOf(listing);
-    return { listing, listingId, message: listingMessageToSign(listing) };
+    return { listing, listingId, message: listingMessageToSign(listing), expiryHeight };
   }
 
   createListing(listing: ListingV1, signatureB64: string) {

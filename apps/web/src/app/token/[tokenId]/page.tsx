@@ -9,6 +9,7 @@ import { fmtBtc, fmtTokens, fmtInt, displayTokensToAtoms } from "@/lib/format";
 import { DEMO_TOKEN_DETAIL, DEMO_LISTINGS } from "@/lib/demo-tokens";
 import { TokenMarketPanel } from "@/components/TokenMarketPanel";
 import { FeePicker, useFeeRates, type FeeRatesResponse, type FeeTier } from "@/components/FeePicker";
+import { TxStatus } from "@/components/TxStatus";
 import { unitPriceSats } from "@/lib/ohlc";
 
 interface Detail {
@@ -44,6 +45,9 @@ function TokenContent() {
   const [amount, setAmount] = useState("");
   const [recipient, setRecipient] = useState("");
   const [price, setPrice] = useState("");
+  // How long the ask stays fillable. An ask that outlives its price is a gift
+  // to whoever notices it after the market has moved.
+  const [listingBlocks, setListingBlocks] = useState("1008");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -213,7 +217,7 @@ function TokenContent() {
           sourceVout: String(utxo.vout),
           amountAtoms: amount,
           totalPriceSats: price,
-          expiryHeight: "1000000",
+          expiryBlocks: listingBlocks,
           walletScript: script,
         }),
       });
@@ -403,6 +407,23 @@ function TokenContent() {
                       <span className="eyebrow">Asking price · sats</span>
                       <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="41500" className="field mt-2" />
                     </label>
+                    <label className="block">
+                      <span className="eyebrow">Expires after</span>
+                      <select
+                        value={listingBlocks}
+                        onChange={(e) => setListingBlocks(e.target.value)}
+                        className="field mt-2"
+                      >
+                        <option value="144">1 day</option>
+                        <option value="1008">1 week</option>
+                        <option value="4320">1 month</option>
+                        <option value="21000">5 months (maximum)</option>
+                      </select>
+                      <span className="mt-2 block text-xs leading-relaxed text-bone-dim">
+                        After this the ask stops being fillable. Your tokens never move until
+                        someone fills it, and you can cancel at any time.
+                      </span>
+                    </label>
                   </>
                 )}
                 {tab === "transfer" && (
@@ -451,7 +472,7 @@ function TokenContent() {
             {err ? (
               <p className="mt-4 border border-rejected/40 bg-rejected/10 px-3 py-2 text-xs text-rejected">{err}</p>
             ) : null}
-            {txid ? <p className="hex mt-2">{txid}</p> : null}
+            {txid ? <TxStatus txid={txid} explorerBase={process.env.NEXT_PUBLIC_EXPLORER_URL} /> : null}
           </div>
 
           {/* ── The verifiable facts. This is what separates Cove from a

@@ -359,7 +359,7 @@ async function main(): Promise<void> {
   rawTxs.push(mint1Hex);
   await confirm(mint1Txid, "MINT");
   assert(mint1.grossSats === 47_950n, `mint gross ${mint1.grossSats}`);
-  assert(mint1.buyFeeSats === 6_097n, `mint fee ${mint1.buyFeeSats}`);
+  assert(mint1.buyFeeSats === 3_631n, `mint fee ${mint1.buyFeeSats}`);
   const aliceCarrier: OutPoint = { txid: mint1Txid, vout: 2 };
   view.mint({
     tokenId,
@@ -561,7 +561,7 @@ async function main(): Promise<void> {
   console.log("STEP 6/6 — P2P atomic fill (Alice → Carol, 42M for 100,000 sats)");
   const p2pPrice = 100_000n;
   const p2pFee = deterministicFee(p2pPrice, COVE_FEE_CONFIG.p2pFeeBps, COVE_FEE_CONFIG.p2pFeeFlatSats);
-  assert(p2pFee === 10_000n, `p2p fee ${p2pFee}`); // 2,500 flat + 7.5% of 100,000
+  assert(p2pFee === 7_500n, `p2p fee ${p2pFee}`); // 7.5% of 100,000, floored at 1,000
   const carolFund = await fundKey(rpc, provider, carol, 0.2, mineAddr);
   const halfAtoms = 42_000_000n * 100_000_000n;
   const p2p = buildTransferPsbtV2({

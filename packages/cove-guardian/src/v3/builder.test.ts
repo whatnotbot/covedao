@@ -5,7 +5,7 @@ import { ECPairFactory } from "ecpair";
 import { s0StateV2, applyMintV2, applyRedeemV2, TOKEN_CARRIER_SATS } from "@crclaunch/cove-covenant";
 import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
 import { CHAIN_BITCOIN_REGTEST, decodeV2, discoveryAgreesWithBinary } from "@crclaunch/cove-wire";
-import { deterministicFee } from "@crclaunch/cove-economics";
+import { deterministicFee, stageScaledFlatSats } from "@crclaunch/cove-economics";
 import {
   buildDeployPsbtV3,
   buildMintPsbtV3,
@@ -98,7 +98,7 @@ describe("V3 builders (offline)", () => {
     const expected = applyMintV2(d.s0, 84_000_000n * 100_000_000n);
     expect(mint.nextState.backingSats).toBe(expected.nextState.backingSats);
     expect(mint.grossSats).toBe(47_950n);
-    expect(mint.buyFeeSats).toBe(6_097n);
+    expect(mint.buyFeeSats).toBe(3_631n);
     // State input spends the PREV vault (MINT leaf).
     expect(mint.psbt.data.inputs[0]!.tapMerkleRoot!.equals(mint.prevVault.merkleRoot)).toBe(true);
     // Successor output is the NEXT vault.
@@ -243,10 +243,10 @@ describe("V3 builders (offline)", () => {
       feeScript: Buffer.from("0014" + "f".repeat(20), "hex"),
       minerFeeSats: 1_000n,
       buyFeeBps: 50n,
-      buyFeeFlatSats: 7n,
+      buyFeeFlatSatsAtTopStage: 7n,
     });
-    expect(mint.buyFeeSats).toBe(deterministicFee(gross, 50n, 7n));
-    expect(mint.buyFeeSats).not.toBe(6_097n); // the dev default (2,500 + 750 bps)
+    expect(mint.buyFeeSats).toBe(deterministicFee(gross, 50n, stageScaledFlatSats(0n, 7n)));
+    expect(mint.buyFeeSats).not.toBe(3_631n); // the dev default (stage-scaled flat + 750 bps)
   });
 
   it("REDEEM: protocol fee schedule is parameterized (profile-driven), not the dev default", () => {

@@ -20,7 +20,7 @@ import {
   type TokenIdentityInput,
 } from "@crclaunch/cove-wire";
 import { grossBuy } from "@crclaunch/cove-economics";
-import { deterministicFee, COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
+import { deterministicFee, stageScaledFlatSats, COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
 import type { Sats } from "@crclaunch/curve";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
@@ -129,7 +129,7 @@ export function buildMintPsbtV3(params: {
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
   /** Flat sats added on top of the percentage. */
-  buyFeeFlatSats?: bigint;
+  buyFeeFlatSatsAtTopStage?: bigint;
   /**
    * Emit the advisory `crc-20` discovery envelope as a trailing OP_RETURN
    * (§D1). OPT-IN: it needs two OP_RETURNs in one transaction, which Bitcoin
@@ -153,7 +153,10 @@ export function buildMintPsbtV3(params: {
       recoveryProfile: params.recoveryProfile,
     network: params.network,
   });
-  const buyFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, params.buyFeeFlatSats ?? COVE_FEE_CONFIG.buyFeeFlatSats);
+  const buyFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(
+      params.prevState.issuedPublicSupplyAtoms / 100_000_000n,
+      params.buyFeeFlatSatsAtTopStage ?? COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage,
+    ));
   const wire = encodeMintV2({
     tokenId: params.tokenId,
     amount: params.mintAmountAtoms,

@@ -1,6 +1,11 @@
 import type { DisplayTokens, Sats } from "@crclaunch/curve";
 import { geometric20, PUBLIC_SUPPLY } from "./curve.js";
-import { deterministicFee, COVE_FEE_CONFIG, type CoveFeeConfig } from "./fee.js";
+import {
+  deterministicFee,
+  stageScaledFlatSats,
+  COVE_FEE_CONFIG,
+  type CoveFeeConfig,
+} from "./fee.js";
 
 /**
  * Cove Backing reserve function (Layer A of the market model).
@@ -105,7 +110,12 @@ export function quoteBuy(
   feeConfig: CoveFeeConfig = COVE_FEE_CONFIG,
 ): Quote {
   const gross = grossBuy(supply, amount);
-  const fee = deterministicFee(gross, feeConfig.buyFeeBps, feeConfig.buyFeeFlatSats);
+  // The flat component scales with the stage the buy starts from.
+  const fee = deterministicFee(
+    gross,
+    feeConfig.buyFeeBps,
+    stageScaledFlatSats(supply, feeConfig.buyFeeFlatSatsAtTopStage),
+  );
   return { gross, fee, net: gross + fee };
 }
 

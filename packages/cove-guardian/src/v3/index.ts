@@ -125,3 +125,11 @@ export {
   type GuardianSignServiceOutcome,
   type InProcessGuardianTransportOptions,
 } from "./guardianApi.js";
+
+export {
+  // Reading the Cove envelope back off a built or broadcast transaction. The
+  // app needs this to follow an unconfirmed vault chain without re-implementing
+  // the decode.
+  decodeCoveOpReturn,
+  decodeCoveOpReturnTx,
+} from "./resolve.js";

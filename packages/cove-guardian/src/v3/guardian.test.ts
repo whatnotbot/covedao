@@ -228,7 +228,7 @@ describe("Production Guardian V3 — validateAndSignMintTransition", async () =>
       xOnlyPubkey: async () => guardianXOnly,
       signVaultExecutionLeaf: async () => { throw new Error("no witnessUtxo"); },
     };
-    const policy: GuardianRiskPolicy = { maxGrossSats: 1_000_000n, maxRedeemPayoutSats: 1_000_000n, maxBackingSats: 100_000_000n, maxMinerFeeSats: 20_000n, allowedTokenIds: [], enforceTokenAllowlist: false };
+    const policy: GuardianRiskPolicy = { maxGrossSats: 1_000_000n, maxMintAtoms: 1_000_000_000n * 100_000_000n, minMintGrossSats: 0n, maxRedeemPayoutSats: 1_000_000n, maxBackingSats: 100_000_000n, maxMinerFeeSats: 20_000n, allowedTokenIds: [], enforceTokenAllowlist: false };
     const audit = {
       async writeBeforeSign(_r: AuditRecord) { return { auditHash: "0".repeat(64) }; },
       async writeAfterSign() {},

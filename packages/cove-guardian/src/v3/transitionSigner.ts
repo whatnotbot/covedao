@@ -58,6 +58,21 @@ export type TransitionSignOutcome =
  */
 export interface GuardianRiskPolicy {
   maxGrossSats: bigint;
+  /**
+   * Largest single mint, in ATOMS. A per-mint ceiling keeps one buyer from
+   * taking the whole curve in one transaction.
+   */
+  maxMintAtoms: bigint;
+  /**
+   * Smallest single mint, in sats of curve value.
+   *
+   * The protocol fee has a flat component, so a mint far below this would pay
+   * far more in fees than it buys — a thousand tiny mints cost a thousand flat
+   * fees while raising almost nothing. A floor keeps the fee proportionate and
+   * stops the transaction count running away, which matters because the vault
+   * can only be spent a bounded number of times per block.
+   */
+  minMintGrossSats: bigint;
   maxRedeemPayoutSats: bigint;
   maxBackingSats: bigint;
   maxMinerFeeSats: bigint;
@@ -74,6 +89,15 @@ export function checkRiskPolicy(policy: GuardianRiskPolicy, analysis: MintAnalys
     return `token ${tokenId} is not in the canary allowlist`;
   }
   if (analysis.grossSats > policy.maxGrossSats) return `gross ${analysis.grossSats} exceeds cap ${policy.maxGrossSats}`;
+  if (operation === "MINT") {
+    const amount = (analysis as MintAnalysis).amountAtoms;
+    if (amount > policy.maxMintAtoms) {
+      return `mint of ${amount / 100_000_000n} tokens exceeds the per-mint limit of ${policy.maxMintAtoms / 100_000_000n}`;
+    }
+    if (analysis.grossSats < policy.minMintGrossSats) {
+      return `mint of ${analysis.grossSats} sats is below the minimum of ${policy.minMintGrossSats}`;
+    }
+  }
   if (analysis.nextState.backingSats > policy.maxBackingSats) return `next backing ${analysis.nextState.backingSats} exceeds cap ${policy.maxBackingSats}`;
   if (analysis.minerFeeSats > policy.maxMinerFeeSats) return `miner fee ${analysis.minerFeeSats} exceeds cap ${policy.maxMinerFeeSats}`;
   if (operation === "REDEEM" && (analysis as RedeemAnalysis).netPayoutSats > policy.maxRedeemPayoutSats) {

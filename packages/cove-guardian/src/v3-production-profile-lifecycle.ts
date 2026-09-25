@@ -146,6 +146,8 @@ async function main(): Promise<void> {
   const custody = new TestGuardianCustodyBackend(Buffer.alloc(32, 0x42));
   const riskPolicy: GuardianRiskPolicy = {
     maxGrossSats: 1_000_000n,
+    maxMintAtoms: 1_000_000_000n * 100_000_000n,
+    minMintGrossSats: 0n,
     maxRedeemPayoutSats: 1_000_000n,
     maxBackingSats: 100_000_000_000_000n,
     maxMinerFeeSats: 20_000n,

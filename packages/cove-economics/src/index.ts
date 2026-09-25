@@ -19,7 +19,12 @@ export {
   BackingError,
   type Quote,
 } from "./backing.js";
-export { COVE_FEE_CONFIG, deterministicFee, type CoveFeeConfig } from "./fee.js";
+export {
+  COVE_FEE_CONFIG,
+  deterministicFee,
+  stageScaledFlatSats,
+  type CoveFeeConfig,
+} from "./fee.js";
 export { checkFeeSettlement, type FeeSettlementCheck } from "./feeSettlement.js";
 export {
   DUST_RELAY_FEE_SAT_PER_KVB,

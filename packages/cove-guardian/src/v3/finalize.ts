@@ -9,7 +9,7 @@ import {
 import { buildBackingVaultV3, type VaultRecoveryProfile } from "@crclaunch/cove-vault";
 import { executeMintV3, executeRedeemV3 } from "@crclaunch/cove-simplicity";
 import { OP_DEPLOY, OP_MINT, OP_REDEEM, OP_TRANSFER, computeTokenId } from "@crclaunch/cove-wire";
-import { COVE_FEE_CONFIG, checkFeeSettlement, deterministicFee, isP2TR, isP2WPKH } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, checkFeeSettlement, deterministicFee, stageScaledFlatSats, isP2TR, isP2WPKH } from "@crclaunch/cove-economics";
 import { s0StateV2 } from "@crclaunch/cove-covenant";
 import { RESERVE_ANCHOR_SATS } from "./builder.js";
 import { decodeCoveOpReturnTx } from "./resolve.js";
@@ -62,7 +62,7 @@ export interface FinalizeParams {
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
   /** Flat sats added on top of the percentage. */
-  buyFeeFlatSats?: bigint;
+  buyFeeFlatSatsAtTopStage?: bigint;
   redeemFeeBps?: bigint;
   /** Flat sats deducted on top of the percentage. */
   redeemFeeFlatSats?: bigint;
@@ -236,7 +236,10 @@ export async function validateFinalizedMintTransaction(params: FinalizeParams): 
   } catch (e) {
     return reject(`REFERENCE_POLICY_REJECTED: ${(e as Error).message}`);
   }
-  const protocolFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, params.buyFeeFlatSats ?? COVE_FEE_CONFIG.buyFeeFlatSats);
+  const protocolFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(
+      currentState.issuedPublicSupplyAtoms / 100_000_000n,
+      params.buyFeeFlatSatsAtTopStage ?? COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage,
+    ));
 
   const nextVault = buildBackingVaultV3({
     state: nextState,

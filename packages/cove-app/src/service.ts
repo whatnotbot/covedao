@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { eq, and, isNull } from "drizzle-orm";
 import { schema, type Database } from "@crclaunch/db";
 import type { CoreRpcProvider } from "@crclaunch/bitcoin";
-import { TOKEN_CARRIER_SATS, applyMintV2, applyRedeemV2, type CoveStateV2, type CoveCanonicalView } from "@crclaunch/cove-covenant";
+import { TOKEN_CARRIER_SATS, applyMintV2, applyRedeemV2, stateHashV2, type CoveStateV2, type CoveCanonicalView } from "@crclaunch/cove-covenant";
 import {
   buildDeployPsbtV3,
   buildMintPsbtV3,
@@ -15,15 +15,16 @@ import {
   validateFinalizedRedeemTransaction,
   validateFinalizedTransferTransaction,
   RESERVE_ANCHOR_SATS,
+  decodeCoveOpReturnTx,
   type ValidatedCoveTransaction,
   type ResolvedInput,
   type GuardianTransitionSigner,
   type TransitionSignRequest,
 } from "@crclaunch/cove-guardian/v3";
 import { loadCanonicalViewSnapshotFromDb, computeHealth, getTokenUtxosByScriptDb } from "@crclaunch/cove-indexer/v3";
-import { grossBuy, grossRedeem, deterministicFee } from "@crclaunch/cove-economics";
+import { grossBuy, grossRedeem, deterministicFee, stageScaledFlatSats } from "@crclaunch/cove-economics";
 import { ATOMS_PER_TOKEN, PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
-import { canonicalTicker, computeTokenId } from "@crclaunch/cove-wire";
+import { canonicalTicker, computeTokenId, OP_MINT, OP_REDEEM, type ParsedEnvelopeV2 } from "@crclaunch/cove-wire";
 import {
   MarketService,
   defaultMarketConfig,
@@ -41,7 +42,12 @@ import type { V3AppConfig, V3Network } from "./config.js";
 import { checkCoreAgreement, verifyMainnetGenesis } from "./readiness.js";
 import { unsignedTxDigest, parsePsbt, btcNetwork, validateInputSignature } from "./psbt.js";
 import { resolveFundingUtxos, type FundingCandidate } from "./funding.js";
-import { createTxSession, requireTxSession, updateTxSession } from "./tx-session.js";
+import {
+  createTxSession,
+  requireTxSession,
+  updateTxSession,
+  findBroadcastSpendOfBacking,
+} from "./tx-session.js";
 import { upsertTokenMetadata, validateMetadata, type TokenMetadataInput } from "./metadata.js";
 import { listV3Tokens, getV3TokenDetail, getTokenHolders, getTokenActivity } from "./token-read.js";
 import { getWalletPortfolio } from "./wallet-read.js";
@@ -131,6 +137,19 @@ interface BackingRow {
  * whose balance is spread wider consolidates first with a self-transfer.
  */
 const MAX_REDEEM_TOKEN_INPUTS = 4;
+
+/**
+ * How far to chain unconfirmed vault transitions.
+ *
+ * Bitcoin Core's default mempool policy allows a package of 25 transactions, so
+ * a 26th would be rejected as `too-long-mempool-chain`. Stopping one short of
+ * the limit leaves room for the buyer's own funding transaction if it is itself
+ * unconfirmed.
+ */
+const MAX_PENDING_BACKING_CHAIN = 24;
+
+/** The successor vault is always output 1 of a MINT or REDEEM. */
+const BACKING_SUCCESSOR_VOUT = 1;
 
 export class V3AppService {
   readonly market: MarketService;
@@ -244,11 +263,89 @@ export class V3AppService {
       backingSats: b.backingSats,
       curveStage: b.curveStage,
     };
-    return {
+    const confirmed: BackingRow = {
       state,
       stateHash: b.stateHash,
       input: { txid: b.txid, vout: b.vout, script: Buffer.from(b.scriptPubKey, "hex"), valueSats: b.btcValue },
     };
+    return this.followPendingBacking(tokenId, confirmed);
+  }
+
+  /**
+   * Walk forward from the confirmed backing through transitions that are
+   * broadcast but not yet mined, and return the tip.
+   *
+   * The vault is a single chained UTXO, so only one transition can spend it per
+   * block. Building every quote on the CONFIRMED state therefore served exactly
+   * one buyer per block — everyone else collided and got QUOTE_STALE. Bitcoin
+   * happily lets a transaction spend an unconfirmed output (default policy
+   * allows a chain of 25), and the Guardian never checks confirmation — it only
+   * checks that the new state follows from the old one. Building on the pending
+   * tip is what turns one buyer per block into a queue that drains.
+   *
+   * Each step is re-derived, never trusted: the broadcast transaction is
+   * fetched from the node, its envelope decoded, the successor state computed
+   * by the same transition functions the validator uses, and the vault output
+   * checked against it. Anything that does not line up stops the walk and the
+   * last verified state is returned, so a dropped or replaced transaction
+   * degrades to today's behaviour rather than producing a bad quote.
+   */
+  private async followPendingBacking(tokenId: string, confirmed: BackingRow): Promise<BackingRow> {
+    let tip = confirmed;
+
+    for (let depth = 0; depth < MAX_PENDING_BACKING_CHAIN; depth++) {
+      const next = await findBroadcastSpendOfBacking(
+        this.db,
+        this.config.network,
+        tokenId,
+        tip.input.txid,
+        tip.input.vout,
+      );
+      if (!next?.txid) return tip;
+
+      let raw: string;
+      try {
+        raw = await this.provider.getRawTransaction(next.txid);
+      } catch {
+        // Gone from mempool and never mined. Stop here; the session reconciler
+        // owns marking it failed.
+        return tip;
+      }
+
+      const tx = bitcoin.Transaction.fromHex(raw);
+      let envelope: ParsedEnvelopeV2;
+      try {
+        envelope = decodeCoveOpReturnTx(tx);
+      } catch {
+        return tip;
+      }
+
+      let nextState: CoveStateV2;
+      if (envelope.op === OP_MINT) {
+        nextState = applyMintV2(tip.state, envelope.amount).nextState;
+      } else if (envelope.op === OP_REDEEM) {
+        nextState = applyRedeemV2(tip.state, envelope.redeemAmount).nextState;
+      } else {
+        // TRANSFER and DEPLOY never move the vault.
+        return tip;
+      }
+
+      const vaultOut = tx.outs[BACKING_SUCCESSOR_VOUT];
+      const expectedValue = RESERVE_ANCHOR_SATS + nextState.backingSats;
+      if (!vaultOut || BigInt(vaultOut.value) !== expectedValue) return tip;
+
+      tip = {
+        state: nextState,
+        stateHash: stateHashV2(nextState),
+        input: {
+          txid: tx.getId(),
+          vout: BACKING_SUCCESSOR_VOUT,
+          script: Buffer.from(vaultOut.script),
+          valueSats: expectedValue,
+        },
+      };
+    }
+    return tip;
   }
 
   private async loadView(tokenId: string, relevantOutpoints: { txid: string; vout: number }[] = []): Promise<CoveCanonicalView> {
@@ -375,7 +472,11 @@ export class V3AppService {
     const supply = backing.state.issuedPublicSupplyAtoms;
     if (supply + amountAtoms > PUBLIC_SUPPLY_ATOMS) throw new AppError("TOKEN_AMOUNT_INVALID", "exceeds public cap");
     const gross = grossBuy(supply / ATOMS_PER_TOKEN, amountAtoms / ATOMS_PER_TOKEN);
-    const fee = deterministicFee(gross, this.config.buyFeeBps);
+    const fee = deterministicFee(
+      gross,
+      this.config.buyFeeBps,
+      stageScaledFlatSats(supply / ATOMS_PER_TOKEN, this.config.buyFeeFlatSatsAtTopStage),
+    );
     const next = applyMintV2(backing.state, amountAtoms).nextState;
     const cursor = await this.db.select().from(schema.coveV3Cursor).where(eq(schema.coveV3Cursor.network, this.config.network));
     const c = cursor[0];
@@ -519,7 +620,7 @@ export class V3AppService {
     if (amountAtoms <= 0n || amountAtoms % ATOMS_PER_TOKEN !== 0n) throw new AppError("TOKEN_AMOUNT_INVALID", "redeem requires whole display tokens");
     const backing = await this.loadBacking(tokenId);
     const gross = grossRedeem(backing.state.issuedPublicSupplyAtoms / ATOMS_PER_TOKEN, amountAtoms / ATOMS_PER_TOKEN);
-    const fee = deterministicFee(gross, this.config.redeemFeeBps);
+    const fee = deterministicFee(gross, this.config.redeemFeeBps, this.config.redeemFeeFlatSats);
     const next = applyRedeemV2(backing.state, amountAtoms).nextState;
     return {
       tokenId,

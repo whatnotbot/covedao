@@ -31,7 +31,7 @@ const MAINNET1: VaultRecoveryProfile = {
   recoveryThreshold: 2,
   recoveryPubkeys: [xonly(0x51), xonly(0x52), xonly(0x53)],
 };
-const riskPolicy: GuardianRiskPolicy = { maxGrossSats: 1_000_000n, maxRedeemPayoutSats: 1_000_000n, maxBackingSats: 100_000_000_000_000n, maxMinerFeeSats: 20_000n, allowedTokenIds: [], enforceTokenAllowlist: false };
+const riskPolicy: GuardianRiskPolicy = { maxGrossSats: 1_000_000n, maxMintAtoms: 1_000_000_000n * 100_000_000n, minMintGrossSats: 0n, maxRedeemPayoutSats: 1_000_000n, maxBackingSats: 100_000_000_000_000n, maxMinerFeeSats: 20_000n, allowedTokenIds: [], enforceTokenAllowlist: false };
 const PROFILE_HASH = "ab".repeat(32);
 
 const memoryAudit: DurableAuditSink = {

@@ -38,6 +38,8 @@ export interface V3AppConfig {
   p2pFeeBps?: number;
   /** Protocol backing-buy fee, basis points (§P1-4; mainnet: from the profile). */
   buyFeeBps: bigint;
+  /** Flat buy-fee component at the TOP stage; scaled down for earlier stages. */
+  buyFeeFlatSatsAtTopStage: bigint;
   /**
    * Emit the advisory crc-20 discovery envelope (§D1). OFF by default: it needs
    * two OP_RETURNs per transaction, which Bitcoin Core rejects as
@@ -46,6 +48,8 @@ export interface V3AppConfig {
   discoveryEnvelope: boolean;
   /** Protocol backing-redeem fee, basis points (§P1-4; mainnet: from the profile). */
   redeemFeeBps: bigint;
+  /** Flat redemption fee, not stage-scaled — the exit price should be predictable. */
+  redeemFeeFlatSats: bigint;
   /** Canary P2P settlement cap (mainnet: from the profile). */
   maxP2pSettlementSats?: bigint;
   maxMinerFeeSats: bigint;
@@ -171,8 +175,10 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
       canaryAllowedWalletScripts: profile.canary.allowedWalletScripts,
       p2pFeeBps: profile.p2pFeeBps ?? undefined,
       buyFeeBps: BigInt(profile.buyFeeBps!),
+      buyFeeFlatSatsAtTopStage: COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage,
       discoveryEnvelope: ["true", "1", "yes", "on"].includes((env.COVE_V3_DISCOVERY_ENVELOPE ?? "").toLowerCase()),
       redeemFeeBps: BigInt(profile.redeemFeeBps!),
+      redeemFeeFlatSats: COVE_FEE_CONFIG.redeemFeeFlatSats,
       maxP2pSettlementSats: profile.canary.maxP2pSettlementSats ?? undefined,
       maxMinerFeeSats: 20_000n,
       maxListingBlocks: 21_000n,
@@ -205,8 +211,10 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
     guardianPrivateKey: guardianPriv,
     activationHeight: 0n,
     buyFeeBps: COVE_FEE_CONFIG.buyFeeBps,
+    buyFeeFlatSatsAtTopStage: COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage,
     discoveryEnvelope: ["true", "1", "yes", "on"].includes((env.COVE_V3_DISCOVERY_ENVELOPE ?? "").toLowerCase()),
     redeemFeeBps: COVE_FEE_CONFIG.redeemFeeBps,
+    redeemFeeFlatSats: COVE_FEE_CONFIG.redeemFeeFlatSats,
     maxMinerFeeSats: 20_000n,
     maxListingBlocks: 21_000n,
     reservationTtlSeconds: 90,

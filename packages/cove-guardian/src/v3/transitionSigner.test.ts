@@ -19,7 +19,7 @@ function failingAudit(): { writeBeforeSign(record: AuditRecord): Promise<{ audit
   };
 }
 
-const riskPolicy: GuardianRiskPolicy = { maxGrossSats: 1_000_000n, maxRedeemPayoutSats: 1_000_000n, maxBackingSats: 100_000_000n, maxMinerFeeSats: 20_000n, allowedTokenIds: [], enforceTokenAllowlist: false };
+const riskPolicy: GuardianRiskPolicy = { maxGrossSats: 1_000_000n, maxMintAtoms: 1_000_000_000n * 100_000_000n, minMintGrossSats: 0n, maxRedeemPayoutSats: 1_000_000n, maxBackingSats: 100_000_000n, maxMinerFeeSats: 20_000n, allowedTokenIds: [], enforceTokenAllowlist: false };
 
 describe("Guardian transition signer boundary (§12-§17, §80, §81)", () => {
   it("remote signer fails closed when the transport is unavailable", async () => {

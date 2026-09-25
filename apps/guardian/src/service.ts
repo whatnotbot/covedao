@@ -58,6 +58,8 @@ export function recoveryProfileFromMainnet(profile: MainnetProfile): VaultRecove
 export function riskPolicyFromProfile(profile: MainnetProfile): GuardianRiskPolicy {
   return {
     maxGrossSats: profile.canary.maxSingleBuySats!,
+    maxMintAtoms: 2_100_000n * 100_000_000n,
+    minMintGrossSats: 5_000n,
     maxRedeemPayoutSats: profile.canary.maxSingleRedeemPayoutSats!,
     maxBackingSats: profile.canary.maxBackingSats!,
     maxMinerFeeSats: MAX_MINER_FEE_SATS,

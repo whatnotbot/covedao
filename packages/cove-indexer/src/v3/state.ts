@@ -18,7 +18,7 @@ import {
   computeTokenId,
   type ParsedEnvelopeV2,
 } from "@crclaunch/cove-wire";
-import { COVE_FEE_CONFIG, deterministicFee, isP2TR, isP2WPKH } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, deterministicFee, stageScaledFlatSats, isP2TR, isP2WPKH } from "@crclaunch/cove-economics";
 import { RESERVE_ANCHOR_SATS } from "./constants.js";
 import { parseCoveTx, txidOf } from "./parser.js";
 import { computeStateRoot } from "./root.js";
@@ -342,7 +342,10 @@ export class V3IndexerState {
     } catch (e) {
       return { op: "MINT", valid: false, reason: `REFERENCE_REJECTED: ${(e as Error).message}`, tokenId: tokenIdHex, undo: null };
     }
-    const feeSats = deterministicFee(grossSats, this.config.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, this.config.buyFeeFlatSats ?? COVE_FEE_CONFIG.buyFeeFlatSats);
+    const feeSats = deterministicFee(grossSats, this.config.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(
+      backing.state.issuedPublicSupplyAtoms / 100_000_000n,
+      this.config.buyFeeFlatSatsAtTopStage ?? COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage,
+    ));
     const nextVault = buildBackingVaultV3({
       state: nextState,
       guardianXOnly: this.config.guardianXOnly,

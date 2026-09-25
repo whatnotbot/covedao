@@ -5,7 +5,7 @@ import {
   type CoveStateV2,
 } from "@crclaunch/cove-covenant";
 import { OP_MINT, OP_REDEEM } from "@crclaunch/cove-wire";
-import { COVE_FEE_CONFIG, deterministicFee } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, deterministicFee, stageScaledFlatSats } from "@crclaunch/cove-economics";
 import { decodeCoveOpReturn, readPsbtInputs, readPsbtOutputs } from "./resolve.js";
 import {
   type CoveCanonicalView,
@@ -38,7 +38,7 @@ export interface AnalyzeParams {
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
   /** Flat sats added on top of the percentage. */
-  buyFeeFlatSats?: bigint;
+  buyFeeFlatSatsAtTopStage?: bigint;
   redeemFeeBps?: bigint;
   /** Flat sats deducted on top of the percentage. */
   redeemFeeFlatSats?: bigint;
@@ -89,7 +89,10 @@ export function analyzeMintTransitionV3(params: AnalyzeParams): MintAnalysis {
     throw new CoveAnalyzeError("REFERENCE_POLICY_REJECTED", (e as Error).message);
   }
 
-  const protocolFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, params.buyFeeFlatSats ?? COVE_FEE_CONFIG.buyFeeFlatSats);
+  const protocolFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(
+      currentState.issuedPublicSupplyAtoms / 100_000_000n,
+      params.buyFeeFlatSatsAtTopStage ?? COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage,
+    ));
   const outputs = readPsbtOutputs(params.psbt);
   const totalIn = inputs.reduce((s, i) => s + i.valueSats, 0n);
   const totalOut = outputs.reduce((s, o) => s + o.value, 0n);

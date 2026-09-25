@@ -80,7 +80,7 @@ export interface V3IndexerConfig {
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
   /** Flat sats added to every backing buy, on top of the percentage. */
-  buyFeeFlatSats?: bigint;
+  buyFeeFlatSatsAtTopStage?: bigint;
   redeemFeeBps?: bigint;
   /** Flat sats deducted from every redemption, on top of the percentage. */
   redeemFeeFlatSats?: bigint;

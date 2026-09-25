@@ -4,7 +4,7 @@ import * as ecc from "tiny-secp256k1";
 import { s0StateV2, applyMintV2 } from "@crclaunch/cove-covenant";
 import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
 import { CHAIN_BITCOIN_REGTEST, computeTokenId, encodeDeployV2, encodeMintV2, encodeRedeemV2, encodeTransferV2 } from "@crclaunch/cove-wire";
-import { COVE_FEE_CONFIG, deterministicFee } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, deterministicFee, stageScaledFlatSats } from "@crclaunch/cove-economics";
 import { V3IndexerState } from "./state.js";
 import { RESERVE_ANCHOR_SATS } from "./constants.js";
 
@@ -52,7 +52,7 @@ function fullLifecycleState(): V3IndexerState {
   const tokenIdHex = tokenId.toString("hex");
   const s0 = s0StateV2({ tokenId: tokenIdHex });
   const minted = applyMintV2(s0, MINT_AMOUNT);
-  const mintFee = deterministicFee(minted.grossSats, COVE_FEE_CONFIG.buyFeeBps, COVE_FEE_CONFIG.buyFeeFlatSats);
+  const mintFee = deterministicFee(minted.grossSats, COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(0n, COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage));
 
   // DEPLOY
   const deployWire = encodeDeployV2({ policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
@@ -113,7 +113,7 @@ function fullLifecycleState(): V3IndexerState {
 }
 
 /** Frozen deterministic state-root golden for the full 6-op lifecycle fixture. */
-export const V3_STATE_ROOT_GOLDEN = "0deeb9bbcc9907f4fda5f21d8f19304430f93813bd948439378aefca66c706fc";
+export const V3_STATE_ROOT_GOLDEN = "b5c782bf7398ed8c4d74f468021504eaa833bc0e1023d603c4cfbc6e60064c46";
 
 describe("deterministic V3 state-root golden (§18)", () => {
   it("matches the frozen golden root", () => {

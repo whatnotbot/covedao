@@ -1,4 +1,5 @@
-import type { BasisPoints, Sats } from "@crclaunch/curve";
+import type { BasisPoints, Sats, DisplayTokens } from "@crclaunch/curve";
+import { geometric20, PUBLIC_SUPPLY } from "./curve.js";
 
 /**
  * Cove fee configuration — the ONE canonical place for protocol fees.
@@ -20,8 +21,17 @@ import type { BasisPoints, Sats } from "@crclaunch/curve";
 export interface CoveFeeConfig {
   /** Backing buy (primary issuance) fee, in basis points. */
   buyFeeBps: BasisPoints;
-  /** Flat sats added to every backing buy. */
-  buyFeeFlatSats: Sats;
+  /**
+   * Flat component of the buy fee AT THE TOP STAGE, in sats.
+   *
+   * The flat part scales with the stage price rather than being constant. The
+   * curve moves 299x from the first stage to the last, so a constant flat fee
+   * that is reasonable at the top is many times the purchase at the bottom —
+   * at stage 1 a 10,000-sat flat fee on a 1,050-sat buy is 960%. Anchoring it
+   * to the top stage and scaling it down keeps the effective rate the same at
+   * every stage.
+   */
+  buyFeeFlatSatsAtTopStage: Sats;
   /** Backing redemption (instant sell) fee, in basis points. */
   redeemFeeBps: BasisPoints;
   /** Flat sats deducted from every redemption payout. */
@@ -30,20 +40,34 @@ export interface CoveFeeConfig {
   p2pFeeBps: BasisPoints;
   /** Flat sats added to every peer-to-peer fill. */
   p2pFeeFlatSats: Sats;
+  /**
+   * Floor under the peer-to-peer fee.
+   *
+   * The marketplace fee is a pure percentage, so a small listing would produce
+   * a fee output below the relay dust threshold and the fill would be refused
+   * outright. A floor keeps every fill standard without charging a flat amount
+   * on top of the percentage for ordinary trades.
+   */
+  p2pFeeMinSats: Sats;
 }
 
 export const COVE_FEE_CONFIG: CoveFeeConfig = {
-  // 2,500 sats is ~$2.50 at $100k/BTC and comfortably clears the 294-sat
-  // P2WPKH dust threshold, so no trade is ever refused for a dust fee.
+  // Mint: a flat launch-style fee plus a share of the curve price. The flat
+  // 10,000 sats comfortably clears the 294-sat P2WPKH dust threshold, so no
+  // buy is ever refused for a dust fee.
   buyFeeBps: 750n, // 7.50%
-  buyFeeFlatSats: 2_500n,
-  // The redemption fee is the price of the exit. A percentage here is charged
-  // against a holder who is already taking the curve price, and it is what a
-  // "floor" is really worth, so it stays flat-only by default.
+  buyFeeFlatSatsAtTopStage: 10_000n,
+  // Redemption is the exit, and the exit is the whole product. A percentage
+  // here is charged against a holder already accepting the curve price and
+  // directly erodes the floor, so it stays flat-only — and at a quarter of the
+  // mint flat, so cashing out a small position remains worth doing.
   redeemFeeBps: 0n,
   redeemFeeFlatSats: 2_500n,
+  // Marketplace: a clean percentage, floored so a small fill is never refused
+  // for a dust fee.
   p2pFeeBps: 750n, // 7.50%
-  p2pFeeFlatSats: 2_500n,
+  p2pFeeFlatSats: 0n,
+  p2pFeeMinSats: 1_000n,
 };
 
 const BPS_DENOM = 10_000n;
@@ -61,11 +85,39 @@ export function deterministicFee(
   grossSats: Sats,
   feeBps: BasisPoints,
   flatSats: Sats = 0n,
+  minSats: Sats = 0n,
 ): Sats {
   if (grossSats < 0n) throw new Error("grossSats must be non-negative");
   if (feeBps < 0n) throw new Error("feeBps must be non-negative");
   if (flatSats < 0n) throw new Error("flatSats must be non-negative");
+  if (minSats < 0n) throw new Error("minSats must be non-negative");
   if (grossSats === 0n) return 0n;
   const pct = feeBps === 0n ? 0n : (grossSats * feeBps + BPS_DENOM - 1n) / BPS_DENOM;
-  return flatSats + pct;
+  const fee = flatSats + pct;
+  return fee < minSats ? minSats : fee;
 }
+
+/** Stage count of the frozen curve. */
+const TOP_STAGE = 20;
+
+/**
+ * The flat fee component for a buy starting at `supply`, scaled to the stage.
+ *
+ * `flat = anchor x stagePrice / topStagePrice`
+ *
+ * So a buy at the first stage pays the same PROPORTION of its purchase as a buy
+ * at the last one, instead of a constant number of sats that is trivial at the
+ * top and ruinous at the bottom.
+ *
+ * Rounds up, so the protocol never under-charges, and never returns zero for a
+ * nonzero anchor — a zero flat would silently turn this into a pure percentage.
+ */
+export function stageScaledFlatSats(supply: DisplayTokens, anchorAtTopStage: Sats): Sats {
+  if (anchorAtTopStage <= 0n) return 0n;
+  const top = geometric20.priceAt(PUBLIC_SUPPLY);
+  const here = geometric20.priceAt(supply);
+  const scaled = (anchorAtTopStage * here + top - 1n) / top;
+  return scaled < 1n ? 1n : scaled;
+}
+
+export { TOP_STAGE };

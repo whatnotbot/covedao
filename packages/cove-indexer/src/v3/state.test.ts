@@ -11,7 +11,7 @@ import {
   encodeRedeemV2,
   encodeTransferV2,
 } from "@crclaunch/cove-wire";
-import { deterministicFee, COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
+import { deterministicFee, stageScaledFlatSats, COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
 import { RESERVE_ANCHOR_SATS } from "./constants.js";
 import { V3IndexerState } from "./state.js";
 
@@ -88,7 +88,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
     // ── MINT 84M ──
     const minted = applyMintV2(s0, MINT_AMOUNT);
     const gross = minted.grossSats;
-    const fee = deterministicFee(gross, COVE_FEE_CONFIG.buyFeeBps, COVE_FEE_CONFIG.buyFeeFlatSats);
+    const fee = deterministicFee(gross, COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(0n, COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage));
     const mintWire = encodeMintV2({ tokenId, amount: MINT_AMOUNT, recipientVout: 2 });
     const carrierScript = Buffer.from("0014" + "a".repeat(40), "hex");
     const mintTxid = tx(

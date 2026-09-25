@@ -166,9 +166,25 @@ async function main() {
   // Manifest + ticker.
   const loaded = loadManifest();
   const ticker = validateTicker(process.env.COVE_PROOF_TICKER ?? loaded?.ticker ?? "FROG");
-  const manifest: ProofManifest = loaded
-    ? { ...loaded, ticker, signerA: signerA.getAddress(), signerB: signerB.getAddress() }
-    : { protocol: "cove", network: "mutinynet", ticker, signerA: signerA.getAddress(), signerB: signerB.getAddress() };
+
+  // Recorded steps belong to the ticker they were broadcast for. Carrying them
+  // across a ticker change makes decideNextAction compare a fresh ticker
+  // against the previous run's deploy txid and halt as BLOCKED_UNRESOLVED on
+  // every retry, so a new ticker starts a clean manifest. The previous run's
+  // txids are confirmed on-chain and stay verifiable there; this file is a
+  // resume cursor, not the record of what happened.
+  const resume = loaded?.ticker === ticker ? loaded : undefined;
+  if (loaded && !resume) {
+    console.log(`ℹ ticker changed ${loaded.ticker} → ${ticker}; starting a fresh proof run.`);
+  }
+  const manifest: ProofManifest = {
+    ...(resume ?? {}),
+    protocol: "cove",
+    network: "mutinynet",
+    ticker,
+    signerA: signerA.getAddress(),
+    signerB: signerB.getAddress(),
+  };
   saveManifest(manifest);
   console.log(`✓ proof ticker: ${ticker} (activation ${CFG.genesisHeight})`);
 

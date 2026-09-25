@@ -13,7 +13,7 @@ const DEPLOY_TXID = "d".repeat(64);
 const atoms = (tokens: number | bigint): bigint => BigInt(tokens) * 100_000_000n;
 
 // 2,000,000 display tokens → 1,000 sats curve + 10 sats fee = 1,010 settlement.
-const MINT_AMOUNT = atoms(2_000_000);
+const MINT_AMOUNT = atoms(1_000);
 
 function deployTx(overrides: Partial<CoveTransaction> = {}): CoveTransaction {
   return {
@@ -30,7 +30,7 @@ function deployTx(overrides: Partial<CoveTransaction> = {}): CoveTransaction {
 function mintTx(
   amount: bigint = MINT_AMOUNT,
   supplyBefore: bigint = 0n,
-  settlementSats: bigint = 1010n,
+  settlementSats: bigint = 8_779n,
   overrides: Partial<CoveTransaction> = {},
 ): CoveTransaction {
   return {
@@ -51,7 +51,7 @@ function mintTx(
 }
 
 function transferTx(
-  amount: bigint = atoms(500_000),
+  amount: bigint = atoms(500),
   overrides: Partial<CoveTransaction> = {},
 ): CoveTransaction {
   return {
@@ -120,21 +120,21 @@ describe("Cove DEPLOY", () => {
 });
 
 describe("Cove MINT (combined settlement + min contribution)", () => {
-  it("accepts + applies a 2M-token mint (curve 1000 + fee 10 = 1010 settlement)", () => {
+  it("accepts + applies a 1,000-token mint (curve 8,692 + fee 87 = 8,779 settlement)", () => {
     const s = deployedState();
     const tx = mintTx();
     expect(validateCoveOperation(s, tx, CFG)).toEqual({ valid: true, reason: null });
     applyCoveOperation(s, tx, CFG);
     const token = s.tokens.get(DEPLOY_TXID)!;
     expect(token.confirmedSupplyAtoms).toBe(MINT_AMOUNT);
-    expect(s.reserveSats).toBe(1000n);
-    expect(s.platformTreasurySats).toBe(10_010n);
+    expect(s.reserveSats).toBe(8_692n);
+    expect(s.platformTreasurySats).toBe(10_087n);
     expect(s.balances.get(RECIPIENT)!.get(DEPLOY_TXID)!.availableAtoms).toBe(MINT_AMOUNT);
   });
 
-  it("rejects below-minimum-contribution mint (1M tokens → 500 sats)", () => {
+  it("rejects below-minimum-contribution mint (100 tokens → 870 sats)", () => {
     const s = deployedState();
-    expect(validateCoveOperation(s, mintTx(atoms(1_000_000), 0n, 505n), CFG)).toEqual({
+    expect(validateCoveOperation(s, mintTx(atoms(100), 0n, 879n), CFG)).toEqual({
       valid: false,
       reason: "BELOW_MIN_CONTRIBUTION",
     });
@@ -146,29 +146,29 @@ describe("Cove MINT (combined settlement + min contribution)", () => {
       valid: false,
       reason: "ZERO_AMOUNT",
     });
-    expect(validateCoveOperation(s, mintTx(MINT_AMOUNT, 0n, 1010n, { ticker: "TOAD" }), CFG)).toEqual({
+    expect(validateCoveOperation(s, mintTx(MINT_AMOUNT, 0n, 8_779n, { ticker: "TOAD" }), CFG)).toEqual({
       valid: false,
       reason: "UNKNOWN_DEPLOYMENT",
     });
   });
 
-  it("advances stage after filling stage 1 (500 → 675 sats/M)", () => {
+  it("advances stair after filling stair 1 (8,692 → 9,066 sats a lot)", () => {
     const s = deployedState();
-    // Fill stage 1 exactly: 42M tokens → 21,000 curve + 210 fee = 21,210 settlement.
-    applyCoveOperation(s, mintTx(atoms(50_000_000), 0n, 25_250n), CFG);
+    // Fill stair 1 exactly: 100k tokens → 869,200 curve + 8,692 fee = 877,892 settlement.
+    applyCoveOperation(s, mintTx(atoms(100_000), 0n, 877_892n), CFG);
     expect(s.tokens.get(DEPLOY_TXID)!.currentStage).toBe(2);
-    // Next 2M tokens at stage 2: 1,350 curve + 14 fee = 1,364 settlement.
-    const next = mintTx(atoms(2_000_000), atoms(50_000_000), 1_364n);
+    // Next 1,000 tokens at stair 2: 9,066 curve + 91 fee = 9,157 settlement.
+    const next = mintTx(atoms(1_000), atoms(100_000), 9_157n);
     expect(validateCoveOperation(s, next, CFG)).toEqual({ valid: true, reason: null });
   });
 
   it("rejects settlement 1 sat under / over", () => {
     const s = deployedState();
-    expect(validateCoveOperation(s, mintTx(MINT_AMOUNT, 0n, 1009n), CFG)).toEqual({
+    expect(validateCoveOperation(s, mintTx(MINT_AMOUNT, 0n, 8_778n), CFG)).toEqual({
       valid: false,
       reason: "UNDERPAYMENT",
     });
-    expect(validateCoveOperation(s, mintTx(MINT_AMOUNT, 0n, 1011n), CFG)).toEqual({
+    expect(validateCoveOperation(s, mintTx(MINT_AMOUNT, 0n, 8_780n), CFG)).toEqual({
       valid: false,
       reason: "OVERPAYMENT",
     });
@@ -254,8 +254,8 @@ describe("Cove TRANSFER (continuation model)", () => {
     const tx = transferTx();
     expect(validateCoveOperation(s, tx, CFG)).toEqual({ valid: true, reason: null });
     applyCoveOperation(s, tx, CFG);
-    expect(s.balances.get(RECIPIENT)!.get(DEPLOY_TXID)!.availableAtoms).toBe(MINT_AMOUNT - atoms(500_000));
-    expect(s.balances.get(RECIPIENT2)!.get(DEPLOY_TXID)!.availableAtoms).toBe(atoms(500_000));
+    expect(s.balances.get(RECIPIENT)!.get(DEPLOY_TXID)!.availableAtoms).toBe(MINT_AMOUNT - atoms(500));
+    expect(s.balances.get(RECIPIENT2)!.get(DEPLOY_TXID)!.availableAtoms).toBe(atoms(500));
   });
 
   it("rejects missing continuation", () => {
@@ -263,7 +263,7 @@ describe("Cove TRANSFER (continuation model)", () => {
     expect(
       validateCoveOperation(
         s,
-        transferTx(atoms(500_000), {
+        transferTx(atoms(500), {
           protocolOutputs: [{ index: 1, scriptPubKeyHex: RECIPIENT2, amountSats: 294n, role: "recipient" }],
         }),
         CFG,
@@ -276,7 +276,7 @@ describe("Cove TRANSFER (continuation model)", () => {
     expect(
       validateCoveOperation(
         s,
-        transferTx(atoms(500_000), {
+        transferTx(atoms(500), {
           protocolOutputs: [
             { index: 1, scriptPubKeyHex: RECIPIENT2, amountSats: 294n, role: "recipient" },
             { index: 2, scriptPubKeyHex: RECIPIENT2, amountSats: 330n, role: "continuation" }, // wrong: not actor

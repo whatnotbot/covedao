@@ -95,7 +95,7 @@ export function SalesFeed({ sales, explorerBase }: { sales: Sale[]; explorerBase
               <th>Time</th>
               <th>Transaction</th>
               <th>Tokens</th>
-              <th>Unit · sats/1M</th>
+              <th>Unit · sats/1k</th>
               <th>Total</th>
             </tr>
           </thead>

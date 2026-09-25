@@ -263,6 +263,7 @@ async function main(): Promise<void> {
     deployerInputs: [deployerUtxo],
     deployerChangeScript: deployerUtxo.script,
     minerFeeSats: MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   deploy.psbt.signInput(0, deployer);
   deploy.psbt.finalizeAllInputs();
@@ -293,7 +294,7 @@ async function main(): Promise<void> {
       ticker: "FROG",
       policyVersion: COVE_POLICY_V3,
       deployTxid,
-      tokenNonce: NONCE,
+      tokenNonce: NONCE, creatorScript: CREATOR_SCRIPT
     },
     { txid: deployTxid, vout: vaultVout },
     deploy.s0,
@@ -302,11 +303,11 @@ async function main(): Promise<void> {
     `✓ DEPLOY ${deployTxid} vault=${vaultVout} value=${vaultValue} tokenId=${tokenId.toString("hex")}`,
   );
 
-  // ── MINT (Alice buys 84M tokens) ──
+  // ── MINT (Alice buys 10k tokens) ──
   console.log(line);
-  console.log("STEP 2/6 — MINT/BUY (Alice, 84M tokens)");
+  console.log("STEP 2/6 — MINT/BUY (Alice, 10k tokens)");
   const aliceUtxo = await fundKey(rpc, provider, alice, 1.0, mineAddr);
-  const mintAmountAtoms = 84_000_000n * 100_000_000n;
+  const mintAmountAtoms = 10_000n * 100_000_000n;
   const mint1 = buildMintPsbtV3({
     network: bitcoin.networks.regtest,
     tokenId,
@@ -325,6 +326,7 @@ async function main(): Promise<void> {
     buyerChangeScript: p2wpkhScript(alice),
     feeScript,
     minerFeeSats: MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   const mintSign = await validateAndSignMintTransition({
     signer,
@@ -358,8 +360,8 @@ async function main(): Promise<void> {
   const mint1Txid = await broadcastValidated(validatedOrThrow(mint1Fin, "MINT"));
   rawTxs.push(mint1Hex);
   await confirm(mint1Txid, "MINT");
-  assert(mint1.grossSats === 47_950n, `mint gross ${mint1.grossSats}`);
-  assert(mint1.buyFeeSats === 3_631n, `mint fee ${mint1.buyFeeSats}`);
+  assert(mint1.grossSats === 86_920n, `mint gross ${mint1.grossSats}`);
+  assert(mint1.buyFeeSats === 16_519n, `mint fee ${mint1.buyFeeSats}`);
   const aliceCarrier: OutPoint = { txid: mint1Txid, vout: 2 };
   view.mint({
     tokenId,
@@ -374,9 +376,9 @@ async function main(): Promise<void> {
     `✓ MINT ${mint1Txid} supply=${mint1.nextState.issuedPublicSupplyAtoms} backing=${mint1.nextState.backingSats} gross=${mint1.grossSats} fee=${mint1.buyFeeSats}`,
   );
 
-  // ── TRANSFER (Alice → Bob, full 84M) ──
+  // ── TRANSFER (Alice → Bob, full 10k) ──
   console.log(line);
-  console.log("STEP 3/6 — TRANSFER (Alice → Bob, 84M tokens)");
+  console.log("STEP 3/6 — TRANSFER (Alice → Bob, 10k tokens)");
   const aliceFund = await fundKey(rpc, provider, alice, 0.01, mineAddr);
   const transfer = buildTransferPsbtV2({
     network: bitcoin.networks.regtest,
@@ -410,9 +412,9 @@ async function main(): Promise<void> {
   );
   console.log(`✓ TRANSFER ${transferTxid} bobCarrier=${bobCarrier.txid}:${bobCarrier.vout} (backing/supply unchanged)`);
 
-  // ── REDEEM (Bob redeems full 84M) ──
+  // ── REDEEM (Bob redeems full 10k) ──
   console.log(line);
-  console.log("STEP 4/6 — REDEEM (Bob, full 84M)");
+  console.log("STEP 4/6 — REDEEM (Bob, full 10k)");
   const redeem = buildRedeemPsbtV3({
     network: bitcoin.networks.regtest,
     tokenId,
@@ -465,9 +467,9 @@ async function main(): Promise<void> {
   const redeemTxid = await broadcastValidated(validatedOrThrow(redeemFin, "REDEEM"));
   rawTxs.push(redeemHex);
   await confirm(redeemTxid, "REDEEM");
-  assert(redeem.grossSats === 47_950n, `redeem gross ${redeem.grossSats}`);
-  assert(redeem.redeemFeeSats === 2_500n, `redeem fee ${redeem.redeemFeeSats}`);
-  assert(redeem.netSats === 45_450n, `redeem net ${redeem.netSats}`);
+  assert(redeem.grossSats === 86_920n, `redeem gross ${redeem.grossSats}`);
+  assert(redeem.redeemFeeSats === 6_519n, `redeem fee ${redeem.redeemFeeSats}`);
+  assert(redeem.netSats === 80_401n, `redeem net ${redeem.netSats}`);
   assert(redeem.changeAtoms === 0n, "full redeem must have zero token change");
   view.redeem({
     tokenId,
@@ -483,9 +485,9 @@ async function main(): Promise<void> {
     `✓ REDEEM ${redeemTxid} gross=${redeem.grossSats} fee=${redeem.redeemFeeSats} net=${redeem.netSats} → supply=0 backing=0`,
   );
 
-  // ── RE-BUY (Alice re-buys released capacity, 84M) ──
+  // ── RE-BUY (Alice re-buys released capacity, 10k) ──
   console.log(line);
-  console.log("STEP 5/6 — RE-BUY released capacity (Alice, 84M)");
+  console.log("STEP 5/6 — RE-BUY released capacity (Alice, 10k)");
   const aliceRebuy = await fundKey(rpc, provider, alice, 1.0, mineAddr);
   const mint2 = buildMintPsbtV3({
     network: bitcoin.networks.regtest,
@@ -505,6 +507,7 @@ async function main(): Promise<void> {
     buyerChangeScript: p2wpkhScript(alice),
     feeScript,
     minerFeeSats: MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   const rebuySign = await validateAndSignMintTransition({
     signer,
@@ -556,14 +559,14 @@ async function main(): Promise<void> {
     `✓ RE-BUY ${mint2Txid} supply=${mint2.nextState.issuedPublicSupplyAtoms} backing=${mint2.nextState.backingSats} (released capacity re-bought)`,
   );
 
-  // ── P2P atomic fill (Alice sells 42M to Carol for 100k sats) ──
+  // ── P2P atomic fill (Alice sells 5k to Carol for 100k sats) ──
   console.log(line);
-  console.log("STEP 6/6 — P2P atomic fill (Alice → Carol, 42M for 100,000 sats)");
+  console.log("STEP 6/6 — P2P atomic fill (Alice → Carol, 5k for 100,000 sats)");
   const p2pPrice = 100_000n;
   const p2pFee = deterministicFee(p2pPrice, COVE_FEE_CONFIG.p2pFeeBps, COVE_FEE_CONFIG.p2pFeeFlatSats);
   assert(p2pFee === 7_500n, `p2p fee ${p2pFee}`); // 7.5% of 100,000, floored at 1,000
   const carolFund = await fundKey(rpc, provider, carol, 0.2, mineAddr);
-  const halfAtoms = 42_000_000n * 100_000_000n;
+  const halfAtoms = 5_000n * 100_000_000n;
   const p2p = buildTransferPsbtV2({
     network: bitcoin.networks.regtest,
     tokenId,
@@ -673,7 +676,7 @@ function replayChain(rawTxs: string[]): { view: CoveChainView; state: CoveStateV
         const s0 = s0StateV2({ tokenId: tokenId.toString("hex") });
         state = s0;
         view.deploy(
-          { tokenId, ticker: env.ticker, policyVersion: env.policyVersion, deployTxid: tx.getId(), tokenNonce: env.tokenNonce },
+          { tokenId, ticker: env.ticker, policyVersion: env.policyVersion, deployTxid: tx.getId(), tokenNonce: env.tokenNonce , creatorScript: CREATOR_SCRIPT},
           { txid: tx.getId(), vout: 1 },
           s0,
         );
@@ -738,6 +741,9 @@ function replayChain(rawTxs: string[]): { view: CoveChainView; state: CoveStateV
 }
 
 import { pathToFileURL } from "node:url";
+
+/** Creator payout script recorded at DEPLOY (output 2). */
+const CREATOR_SCRIPT = Buffer.from("0014" + "9".repeat(40), "hex");
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((e) => {
     console.error("v3-lifecycle failed:", e instanceof Error ? e.message : String(e));

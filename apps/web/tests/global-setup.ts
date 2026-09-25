@@ -10,10 +10,10 @@ const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3100";
  */
 export default async function globalSetup() {
   await mine(101);
-  const wallets = [IDENTITIES.alice, IDENTITIES.bob, IDENTITIES.carol];
-  for (const w of wallets) {
-    await fund(w.address, 5);
-  }
+  await fund(IDENTITIES.alice.address, 5);
+  await fund(IDENTITIES.bob.address, 5);
+  // Carol mints out a whole curve: about ten BTC of curve price plus fees.
+  await fund(IDENTITIES.carol.address, 15);
   await mine(1);
   // Wait for the worker to index everything (health gate requires HEALTHY).
   for (let i = 0; i < 120; i++) {

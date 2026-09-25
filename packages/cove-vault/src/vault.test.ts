@@ -60,13 +60,13 @@ describe("Cove NUMS/dual-leaf vault — golden vectors (V3, current-state)", () 
 
   it("MINT policy identity (V3, current S0) golden", () => {
     expect(mintPolicyIdentity().toString("hex")).toBe(
-      "03e74071a7846ae8e0d52743589cf68387d61eeacbc2d1da163f8bd40cd6b60c",
+      "aadb7fc5428b1f68085b2b881252640285096e5f6b3de214ee761904859e2905",
     );
   });
 
   it("execution leaf commits CURRENT state + V3 MINT CMR (not successor)", () => {
     expect(buildExecutionLeaf(mintPolicyIdentity(), GUARDIAN).toString("hex")).toBe(
-      "2003e74071a7846ae8e0d52743589cf68387d61eeacbc2d1da163f8bd40cd6b60c88" +
+      "20aadb7fc5428b1f68085b2b881252640285096e5f6b3de214ee761904859e290588" +
         "2024653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1cac",
     );
   });
@@ -81,31 +81,31 @@ describe("Cove NUMS/dual-leaf vault — golden vectors (V3, current-state)", () 
   it("tapleaf hashes + merkle root + output key + address (golden)", () => {
     const v = build();
     expect(v.executionLeaf.tapleafHash.toString("hex")).toBe(
-      "8a1b2fc34783de9ea5cb78de339e41caeca338e89b80a7c4d9a8ff1fdb5fb835",
+      "cf8dff0f85373fe8572cbd78c1defb38e0c1966b68d9f72c15225b1f2f6b69f1",
     );
     expect(v.recoveryLeaf.tapleafHash.toString("hex")).toBe(
       "5884d4ba7ae76c9706dd44bb8edfca86180c968af469d3da28b9ccc0fff45998",
     );
     expect(v.merkleRoot.toString("hex")).toBe(
-      "9120ffd085e832e22d3b1a6b9ed3f5b19c8851607809bc3cf4c24c4798823dfe",
+      "5670a09b9288ebe253ede24d45604dcfb9c0acf96c27cc3df5482dc21d886577",
     );
     expect(v.outputKey.toString("hex")).toBe(
-      "23ff75ac4a592a682d1cb8516490480567c39c028e9522628a16264c1886df2e",
+      "e214f3f229f8c12853771dc86eb674282cd730c8efbfe84ca411c5c1c2edfb80",
     );
-    expect(v.outputParity).toBe(1);
+    expect(v.outputParity).toBe(0);
     expect(v.scriptPubKey.toString("hex")).toBe(
-      "512023ff75ac4a592a682d1cb8516490480567c39c028e9522628a16264c1886df2e",
+      "5120e214f3f229f8c12853771dc86eb674282cd730c8efbfe84ca411c5c1c2edfb80",
     );
-    expect(v.address).toBe("bcrt1py0lhttz2ty4xstguhpgkfyzgq4nu88qz362jyc52zcnycxyxmuhq9ps36d");
+    expect(v.address).toBe("bcrt1pug208u3flrqjs5mhrhyxadn59qkdwvxga7l7sn9yz8zurshdlwqqq0fa35");
   });
 
   it("control blocks commit NUMS + sibling tapleaf (golden)", () => {
     const v = build();
     expect(v.executionControlBlock.toString("hex")).toBe(
-      "c1" + COVE_NUMS_X_ONLY + "5884d4ba7ae76c9706dd44bb8edfca86180c968af469d3da28b9ccc0fff45998",
+      "c0" + COVE_NUMS_X_ONLY + "5884d4ba7ae76c9706dd44bb8edfca86180c968af469d3da28b9ccc0fff45998",
     );
     expect(v.recoveryControlBlock.toString("hex")).toBe(
-      "c1" + COVE_NUMS_X_ONLY + "8a1b2fc34783de9ea5cb78de339e41caeca338e89b80a7c4d9a8ff1fdb5fb835",
+      "c0" + COVE_NUMS_X_ONLY + "cf8dff0f85373fe8572cbd78c1defb38e0c1966b68d9f72c15225b1f2f6b69f1",
     );
   });
 
@@ -158,7 +158,7 @@ describe("policy versioning (COVE_POLICY_V1/V2/V3)", () => {
       redeem: "a15ac4cbc450ac2dd113b1a9de178450ccc893a5213d8a2f56471fcd9aa274b7",
     });
     expect(COVE_POLICY_CMRS[COVE_POLICY_V3]).toEqual({
-      mint: "ccdb02000fdb372bfa2e166b9fe0192715d555fc5720f8008ee741fe1a0d58ec",
+      mint: "7fb27adf2db5458882daf976ba9325815f111b2f3b16eedb72e75f96de4269b2",
       redeem: "37e681b3e70a34acc3b38680c06fbe4f1b2799bede2607c6c9ed7fcac8c95d56",
     });
   });

@@ -19,10 +19,10 @@ describe("CanonicalCRCProvider (mock)", () => {
     const rules = crcLaunchV1DeploymentRules();
     expect(rules.profile).toBe("crc-launch-v1");
     expect(rules.decimals).toBe(8);
-    expect(rules.maxSupplyAtoms).toBe(100_000_000_000_000_000n); // 1B tokens @ 8dp
-    expect(rules.stageCount).toBe(20);
+    expect(rules.maxSupplyAtoms).toBe(2_100_000_000_000_000n); // 21M tokens @ 8dp
+    expect(rules.stageCount).toBe(210);
     expect(rules.creatorPremineAtoms).toBe(0n);
-    expect(rules.priceTableSatsPerMillion.length).toBe(20);
+    expect(rules.priceTableSatsPerMillion.length).toBe(210);
   });
 
   it("authorizes a mint with the correct required payment", async () => {
@@ -46,9 +46,9 @@ describe("CanonicalCRCProvider (mock)", () => {
     const auth = await provider.requestMintAuthorization({
       deploymentId: token.deploymentId,
       walletAddress: "bc1qm0ckbuyer0000000000000000000000000000000000000000",
-      requestedAmountAtoms: 2_000_000n * 100_000_000n, // 2M tokens @ 8dp
+      requestedAmountAtoms: 1_000n * 100_000_000n, // one lot @ 8dp
     });
     expect(auth.authorized).toBe(true);
-    expect(auth.requiredPaymentSats).toBe(1_000n); // stage 1: 500 sats/1M → 2M = 1000
+    expect(auth.requiredPaymentSats).toBe(8_692n); // stair 1: 8,692 sats a lot
   });
 });

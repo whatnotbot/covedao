@@ -13,12 +13,13 @@ const S0: CoveState = {
   curveStage: 1,
 };
 
-const MINT_50M = 50_000_000n * ATOMS_PER_TOKEN;
+/** One stair: 100,000 tokens. */
+const MINT_50M = 100_000n * ATOMS_PER_TOKEN;
 
 describe("canonical curve unification (§1.2) + applyRedeem", () => {
   it("applyMint contribution == R-delta == grossBuy", () => {
     const r = applyMint(S0, MINT_50M);
-    expect(r.curveContributionSats).toBe(25_000n);
+    expect(r.curveContributionSats).toBe(869_200n);
     // backing invariant: state.reserveSats == R(issuedSupply in tokens)
     const supplyTokens = r.nextState.publicSupplyAtoms / ATOMS_PER_TOKEN;
     expect(r.nextState.reserveSats).toBe(requiredBackingSats(supplyTokens));
@@ -27,7 +28,7 @@ describe("canonical curve unification (§1.2) + applyRedeem", () => {
   it("applyRedeem: mint then redeem returns to S0 (reserve 0)", () => {
     const mint = applyMint(S0, MINT_50M);
     const redeem = applyRedeem(mint.nextState, MINT_50M);
-    expect(redeem.grossRedeemSats).toBe(25_000n);
+    expect(redeem.grossRedeemSats).toBe(869_200n);
     expect(redeem.nextState.publicSupplyAtoms).toBe(0n);
     expect(redeem.nextState.reserveSats).toBe(0n);
     expect(redeem.nextState.curveStage).toBe(1);
@@ -56,10 +57,10 @@ describe("canonical curve unification (§1.2) + applyRedeem", () => {
     let state = S0;
     for (let i = 0; i < 1000; i++) {
       const supplyTokens = state.publicSupplyAtoms / ATOMS_PER_TOKEN;
-      const qTokens = 1n + rand(42n * 1_000_000n);
+      const qTokens = 1n + rand(420_000n);
       if (rand(2n) === 0n) {
         // BUY
-        if (supplyTokens + qTokens > 1_000_000_000n) continue;
+        if (supplyTokens + qTokens > 21_000_000n) continue;
         try {
           const r = applyMint(state, qTokens * ATOMS_PER_TOKEN);
           state = r.nextState;
@@ -80,7 +81,7 @@ describe("canonical curve unification (§1.2) + applyRedeem", () => {
       }
       // invariant holds after every transition
       const st = state.publicSupplyAtoms / ATOMS_PER_TOKEN;
-      expect(st >= 0n && st <= 1_000_000_000n).toBe(true);
+      expect(st >= 0n && st <= 21_000_000n).toBe(true);
       expect(state.reserveSats).toBe(requiredBackingSats(st));
     }
   });

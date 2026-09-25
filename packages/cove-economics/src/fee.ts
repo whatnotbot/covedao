@@ -1,5 +1,5 @@
-import type { BasisPoints, Sats, DisplayTokens } from "@crclaunch/curve";
-import { geometric20, PUBLIC_SUPPLY } from "./curve.js";
+import type { Atoms, BasisPoints, Sats } from "@crclaunch/curve";
+import { ATOMS_PER_TOKEN, LOT_TOKENS } from "@crclaunch/curve";
 
 /**
  * Cove fee configuration — the ONE canonical place for protocol fees.
@@ -22,16 +22,21 @@ export interface CoveFeeConfig {
   /** Backing buy (primary issuance) fee, in basis points. */
   buyFeeBps: BasisPoints;
   /**
-   * Flat component of the buy fee AT THE TOP STAGE, in sats.
+   * Flat sats charged on every mint, at every stage.
    *
-   * The flat part scales with the stage price rather than being constant. The
-   * curve moves 299x from the first stage to the last, so a constant flat fee
-   * that is reasonable at the top is many times the purchase at the bottom —
-   * at stage 1 a 10,000-sat flat fee on a 1,050-sat buy is 960%. Anchoring it
-   * to the top stage and scaling it down keeps the effective rate the same at
-   * every stage.
+   * A per-mint charge, paired with a per-mint spending limit: a large buyer
+   * mints several times and pays it each time. It is large next to a tiny
+   * early mint by design — the operator chose a flat price per mint over a
+   * stage-scaled one.
    */
-  buyFeeFlatSatsAtTopStage: Sats;
+  buyFeeFlatSats: Sats;
+  /** Sats charged per lot (1,000 tokens) minted, on top of the flat fee. */
+  buyFeeLotSats: Sats;
+  /**
+   * The creator's share of every mint, in basis points of the curve price,
+   * paid on top of it straight to the address that launched the token.
+   */
+  creatorFeeBps: BasisPoints;
   /** Backing redemption (instant sell) fee, in basis points. */
   redeemFeeBps: BasisPoints;
   /** Flat sats deducted from every redemption payout. */
@@ -56,13 +61,15 @@ export const COVE_FEE_CONFIG: CoveFeeConfig = {
   // 10,000 sats comfortably clears the 294-sat P2WPKH dust threshold, so no
   // buy is ever refused for a dust fee.
   buyFeeBps: 750n, // 7.50%
-  buyFeeFlatSatsAtTopStage: 10_000n,
-  // Redemption is the exit, and the exit is the whole product. A percentage
-  // here is charged against a holder already accepting the curve price and
-  // directly erodes the floor, so it stays flat-only — and at a quarter of the
-  // mint flat, so cashing out a small position remains worth doing.
-  redeemFeeBps: 0n,
-  redeemFeeFlatSats: 2_500n,
+  buyFeeFlatSats: 5_000n, // per mint
+  buyFeeLotSats: 500n, // per 1,000-token lot
+  // The creator is paid as the token sells, not by taking the backing: the
+  // vault still holds the full curve price, so redemption is never short.
+  creatorFeeBps: 2_000n, // 20% of the curve price
+  // Redemption: 7.5% of what the vault pays out. A redemption small enough
+  // that 7.5% would be dust is refused by the quote as too small to make.
+  redeemFeeBps: 750n, // 7.50%
+  redeemFeeFlatSats: 0n,
   // Marketplace: a clean percentage, floored so a small fill is never refused
   // for a dust fee.
   p2pFeeBps: 750n, // 7.50%
@@ -97,27 +104,38 @@ export function deterministicFee(
   return fee < minSats ? minSats : fee;
 }
 
-/** Stage count of the frozen curve. */
-const TOP_STAGE = 20;
-
 /**
- * The flat fee component for a buy starting at `supply`, scaled to the stage.
- *
- * `flat = anchor x stagePrice / topStagePrice`
- *
- * So a buy at the first stage pays the same PROPORTION of its purchase as a buy
- * at the last one, instead of a constant number of sats that is trivial at the
- * top and ruinous at the bottom.
- *
- * Rounds up, so the protocol never under-charges, and never returns zero for a
- * nonzero anchor — a zero flat would silently turn this into a pure percentage.
+ * The protocol fee on a mint: a flat charge per mint, a charge per lot, and a
+ * percentage of the curve price. The one formula every builder, validator,
+ * quote and the indexer uses, so they cannot disagree.
  */
-export function stageScaledFlatSats(supply: DisplayTokens, anchorAtTopStage: Sats): Sats {
-  if (anchorAtTopStage <= 0n) return 0n;
-  const top = geometric20.priceAt(PUBLIC_SUPPLY);
-  const here = geometric20.priceAt(supply);
-  const scaled = (anchorAtTopStage * here + top - 1n) / top;
-  return scaled < 1n ? 1n : scaled;
+export function mintFeeSats(
+  grossSats: Sats,
+  amountAtoms: Atoms,
+  feeBps: BasisPoints,
+  flatPerMintSats: Sats,
+  perLotSats: Sats = COVE_FEE_CONFIG.buyFeeLotSats,
+): Sats {
+  const lots = amountAtoms / (LOT_TOKENS * ATOMS_PER_TOKEN);
+  return deterministicFee(grossSats, feeBps, flatPerMintSats + perLotSats * lots);
 }
 
-export { TOP_STAGE };
+/**
+ * A launch records its creator in DEPLOY output 2: exactly this many sats to
+ * the creator's own address. Every mint then pays the creator's share there.
+ */
+export const CREATOR_RECORD_SATS: Sats = 1_000n;
+
+/** The creator's share of a mint: a percentage of the curve price, rounded up. */
+export function creatorFeeSats(grossSats: Sats, creatorBps: BasisPoints = COVE_FEE_CONFIG.creatorFeeBps): Sats {
+  return deterministicFee(grossSats, creatorBps);
+}
+
+/** Scripts a creator can be paid to: native segwit, nested segwit or Taproot. */
+export function isCreatorScript(script: Uint8Array): boolean {
+  const s = script;
+  const p2wpkh = s.length === 22 && s[0] === 0x00 && s[1] === 0x14;
+  const p2tr = s.length === 34 && s[0] === 0x51 && s[1] === 0x20;
+  const p2sh = s.length === 23 && s[0] === 0xa9 && s[1] === 0x14 && s[22] === 0x87;
+  return p2wpkh || p2tr || p2sh;
+}

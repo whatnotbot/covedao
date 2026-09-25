@@ -57,6 +57,10 @@ export function loadCanonicalViewSnapshot(params: {
     getBackingOutpoint(tokenId: Buffer) {
       return backingOutpointByToken.get(tokenId.toString("hex")) ?? null;
     },
+    getTokenCreatorScript(tokenId: Buffer) {
+      const c = state.tokens.get(tokenId.toString("hex"))?.creatorScript;
+      return c ? Buffer.from(c, "hex") : null;
+    },
     getTokenUtxo(o: OutPoint) {
       return utxoByOutpoint.get(opKey(o)) ?? null;
     },

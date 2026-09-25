@@ -9,7 +9,7 @@ import {
 import { buildBackingVaultV3, type VaultRecoveryProfile } from "@crclaunch/cove-vault";
 import { executeMintV3, executeRedeemV3 } from "@crclaunch/cove-simplicity";
 import { OP_DEPLOY, OP_MINT, OP_REDEEM, OP_TRANSFER, computeTokenId } from "@crclaunch/cove-wire";
-import { COVE_FEE_CONFIG, checkFeeSettlement, deterministicFee, stageScaledFlatSats, isP2TR, isP2WPKH } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, CREATOR_RECORD_SATS, checkFeeSettlement, creatorFeeSats, deterministicFee, isCreatorScript, mintFeeSats, isP2TR, isP2WPKH } from "@crclaunch/cove-economics";
 import { s0StateV2 } from "@crclaunch/cove-covenant";
 import { RESERVE_ANCHOR_SATS } from "./builder.js";
 import { decodeCoveOpReturnTx } from "./resolve.js";
@@ -62,7 +62,9 @@ export interface FinalizeParams {
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
   /** Flat sats added on top of the percentage. */
-  buyFeeFlatSatsAtTopStage?: bigint;
+  buyFeeFlatSats?: bigint;
+  /** Creator share of a mint, bps of the curve price. */
+  creatorFeeBps?: bigint;
   redeemFeeBps?: bigint;
   /** Flat sats deducted on top of the percentage. */
   redeemFeeFlatSats?: bigint;
@@ -187,6 +189,10 @@ export function validateFinalizedDeployTransaction(params: {
   if (BigInt(s0Out.value) !== RESERVE_ANCHOR_SATS) {
     return reject("S0_ANCHOR_MISMATCH");
   }
+  const creatorOut = tx.outs[2];
+  if (!creatorOut || BigInt(creatorOut.value) !== CREATOR_RECORD_SATS || !isCreatorScript(creatorOut.script)) {
+    return reject("CREATOR_OUTPUT_MISSING");
+  }
   return validated(params.rawTxHex, tx.getId(), "DEPLOY", tokenId.toString("hex"));
 }
 
@@ -236,10 +242,7 @@ export async function validateFinalizedMintTransaction(params: FinalizeParams): 
   } catch (e) {
     return reject(`REFERENCE_POLICY_REJECTED: ${(e as Error).message}`);
   }
-  const protocolFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(
-      currentState.issuedPublicSupplyAtoms / 100_000_000n,
-      params.buyFeeFlatSatsAtTopStage ?? COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage,
-    ));
+  const protocolFeeSats = mintFeeSats(grossSats, wire.amount, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, params.buyFeeFlatSats ?? COVE_FEE_CONFIG.buyFeeFlatSats);
 
   const nextVault = buildBackingVaultV3({
     state: nextState,
@@ -266,7 +269,21 @@ export async function validateFinalizedMintTransaction(params: FinalizeParams): 
   }
   const settlement = checkFeeSettlement(protocolFeeSats, params.feeScript, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps);
   if (!settlement.isStandard) return reject("PROTOCOL_FEE_DUST");
-  if (tx.outs.length > 5) return reject("UNEXPECTED_OUTPUT");
+  const creatorScript = params.view.getTokenCreatorScript?.(tokenId) ?? null;
+  if (!creatorScript) return reject("CREATOR_UNKNOWN");
+  const creatorOut = tx.outs[4];
+  if (
+    !creatorOut ||
+    BigInt(creatorOut.value) !== creatorFeeSats(grossSats, params.creatorFeeBps ?? COVE_FEE_CONFIG.creatorFeeBps) ||
+    !creatorOut.script.equals(creatorScript)
+  ) {
+    return reject("CREATOR_FEE_MISMATCH");
+  }
+  // OP_RETURN, vault, carrier, fee, creator, change — plus the advisory
+  // discovery OP_RETURN when it is the last output.
+  const last = tx.outs[tx.outs.length - 1];
+  const discovery = tx.outs.length > 5 && last !== undefined && last.script[0] === 0x6a ? 1 : 0;
+  if (tx.outs.length > 6 + discovery) return reject("UNEXPECTED_OUTPUT");
 
   const minerFeeErr = checkMinerFee(tx, params.prevouts, maxMinerFee);
   if (minerFeeErr) return minerFeeErr;

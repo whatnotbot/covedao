@@ -54,7 +54,7 @@ async function expectAgree(w: MintWitness): Promise<void> {
 
 describe("Simplicity CMR is frozen (V3)", () => {
   it("MINT_CMR matches the compiled V3 program", () => {
-    expect(MINT_CMR).toBe("ccdb02000fdb372bfa2e166b9fe0192715d555fc5720f8008ee741fe1a0d58ec");
+    expect(MINT_CMR).toBe("7fb27adf2db5458882daf976ba9325815f111b2f3b16eedb72e75f96de4269b2");
   });
   it("historical V1 CMR is preserved", () => {
     expect(MINT_CMR_V1).toBe("118425967f4aed4fb528bd06a0f7a99a318675e819e837a2c452df6199d359b2");
@@ -64,10 +64,10 @@ describe("Simplicity CMR is frozen (V3)", () => {
 describe("differential: TS validateMint == Simplicity Bit Machine", () => {
   it.skipIf(!isSimplicityAvailable())("valid mints agree (PASS)", async () => {
     const stages: [bigint, bigint][] = [
-      [0n, 42_000_000n],
-      [42_000_000n, 42_000_000n],
-      [420_000_000n, 42_000_000n],
-      [798_000_000n, 42_000_000n], // exactly 840M
+      [0n, 420_000n],
+      [420_000n, 420_000n],
+      [10_500_000n, 420_000n],
+      [20_580_000n, 420_000n], // exactly 21M
     ];
     for (const [prevSupply, amount] of stages) {
       const canonical = applyMint(prevState(prevSupply, 0n), amount * ATOMS);
@@ -88,15 +88,15 @@ describe("differential: TS validateMint == Simplicity Bit Machine", () => {
   });
 
   it.skipIf(!isSimplicityAvailable())("overmint agrees (FAIL)", async () => {
-    await expectAgree({ amount: 840_000_001n, prevSupply: 0n, nextSupply: 840_000_001n, prevReserve: 0n, nextReserve: 0n, contribution: 0n });
+    await expectAgree({ amount: 21_000_001n, prevSupply: 0n, nextSupply: 21_000_001n, prevReserve: 0n, nextReserve: 0n, contribution: 0n });
   });
 
   it.skipIf(!isSimplicityAvailable())("supply-conservation mutation agrees (FAIL)", async () => {
-    await expectAgree({ amount: 42_000_000n, prevSupply: 0n, nextSupply: 42_000_001n, prevReserve: 0n, nextReserve: 21_000n, contribution: 21_000n });
+    await expectAgree({ amount: 420_000n, prevSupply: 0n, nextSupply: 420_001n, prevReserve: 0n, nextReserve: 21_000n, contribution: 21_000n });
   });
 
   it.skipIf(!isSimplicityAvailable())("reserve-movement mutation agrees (FAIL)", async () => {
-    await expectAgree({ amount: 42_000_000n, prevSupply: 0n, nextSupply: 42_000_000n, prevReserve: 0n, nextReserve: 21_001n, contribution: 21_000n });
+    await expectAgree({ amount: 420_000n, prevSupply: 0n, nextSupply: 420_000n, prevReserve: 0n, nextReserve: 21_001n, contribution: 21_000n });
   });
 });
 

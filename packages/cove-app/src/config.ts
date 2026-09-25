@@ -4,6 +4,7 @@ import { ECPairFactory } from "ecpair";
 import { CHAIN_BITCOIN_REGTEST, CHAIN_BITCOIN_SIGNET, CHAIN_BITCOIN_TESTNET, CHAIN_BITCOIN_MAINNET } from "@crclaunch/cove-wire";
 import { loadMainnetProfile, hashMainnetProfile, type MainnetProfile } from "@crclaunch/cove-mainnet";
 import { COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
+import { PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
 import { AppError } from "./errors.js";
 import type { VaultRecoveryProfile } from "@crclaunch/cove-vault";
 
@@ -39,7 +40,7 @@ export interface V3AppConfig {
   /** Protocol backing-buy fee, basis points (§P1-4; mainnet: from the profile). */
   buyFeeBps: bigint;
   /** Flat buy-fee component at the TOP stage; scaled down for earlier stages. */
-  buyFeeFlatSatsAtTopStage: bigint;
+  buyFeeFlatSats: bigint;
   /**
    * Emit the advisory crc-20 discovery envelope (§D1). OFF by default: it needs
    * two OP_RETURNs per transaction, which Bitcoin Core rejects as
@@ -69,7 +70,7 @@ export interface V3AppConfig {
   guardianAuthToken?: string;
 }
 
-const PUBLIC_SUPPLY_ATOMS_CAP = 1_000_000_000n * 100_000_000n;
+const PUBLIC_SUPPLY_ATOMS_CAP = PUBLIC_SUPPLY_ATOMS;
 const REGTEST_GUARDIAN_PRIV = Buffer.alloc(32, 0x42);
 const REGTEST_RECOVERY_PRIV = Buffer.alloc(32, 0x43);
 const REGTEST_FEE_PRIV = Buffer.alloc(32, 0x44);
@@ -182,7 +183,7 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
       canaryAllowedWalletScripts: profile.canary.allowedWalletScripts,
       p2pFeeBps: profile.p2pFeeBps ?? undefined,
       buyFeeBps: BigInt(profile.buyFeeBps!),
-      buyFeeFlatSatsAtTopStage: COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage,
+      buyFeeFlatSats: COVE_FEE_CONFIG.buyFeeFlatSats,
       discoveryEnvelope: ["true", "1", "yes", "on"].includes((env.COVE_V3_DISCOVERY_ENVELOPE ?? "").toLowerCase()),
       redeemFeeBps: BigInt(profile.redeemFeeBps!),
       redeemFeeFlatSats: COVE_FEE_CONFIG.redeemFeeFlatSats,
@@ -232,12 +233,17 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
     // exists there anyway.
     activationHeight: BigInt(env.COVE_ACTIVATION_HEIGHT ?? "0"),
     buyFeeBps: COVE_FEE_CONFIG.buyFeeBps,
-    buyFeeFlatSatsAtTopStage: COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage,
+    buyFeeFlatSats: COVE_FEE_CONFIG.buyFeeFlatSats,
     discoveryEnvelope: ["true", "1", "yes", "on"].includes((env.COVE_V3_DISCOVERY_ENVELOPE ?? "").toLowerCase()),
     redeemFeeBps: COVE_FEE_CONFIG.redeemFeeBps,
     redeemFeeFlatSats: COVE_FEE_CONFIG.redeemFeeFlatSats,
     maxMinerFeeSats: 20_000n,
     maxListingBlocks: 21_000n,
     reservationTtlSeconds: 90,
+    // Regtest only: the end-to-end suite mints a whole curve, which at the
+    // real 200,000-sat limit would take about 5,000 mints.
+    ...(network === "regtest" && env.COVE_REGTEST_MAX_MINT_GROSS_SATS
+      ? { mintLimits: { maxMintAtoms: PUBLIC_SUPPLY_ATOMS_CAP, maxGrossSats: BigInt(env.COVE_REGTEST_MAX_MINT_GROSS_SATS), minGrossSats: 0n } }
+      : {}),
   };
 }

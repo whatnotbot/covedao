@@ -12,12 +12,18 @@ import {
 } from "../src/index.js";
 
 describe("stage pricing", () => {
-  it("CURVE-001: stage 1 price equals 500 sats / 1M", () => {
-    expect(getStagePrice(1)).toBe(500n);
+  it("CURVE-001: stair 1 costs 8,692 sats a lot (8,692,000 sats / 1M)", () => {
+    expect(getStagePrice(1)).toBe(8_692_000n);
   });
 
-  it("CURVE-002: stage 20 price equals 149,731 sats / 1M", () => {
-    expect(getStagePrice(20)).toBe(149_731n);
+  it("CURVE-002: stair 210 costs 86,858 sats a lot (86,858,000 sats / 1M)", () => {
+    expect(getStagePrice(210)).toBe(86_858_000n);
+  });
+
+  it("every stair is exactly 374 sats a lot dearer than the one below", () => {
+    for (let i = 1; i < STAGE_PRICES_SATS_PER_MILLION.length; i++) {
+      expect(STAGE_PRICES_SATS_PER_MILLION[i]! - STAGE_PRICES_SATS_PER_MILLION[i - 1]!).toBe(374_000n);
+    }
   });
 
   it("prices are strictly increasing", () => {
@@ -30,13 +36,13 @@ describe("stage pricing", () => {
 
   it("getStagePrice rejects out-of-range stages", () => {
     expect(() => getStagePrice(0)).toThrow(CurveError);
-    expect(() => getStagePrice(21)).toThrow(CurveError);
+    expect(() => getStagePrice(211)).toThrow(CurveError);
     expect(() => getStagePrice(1.5)).toThrow(CurveError);
     expect(() => getStagePrice(-1)).toThrow(CurveError);
   });
 
   it("getStageForSupply maps supply boundaries correctly (property-style)", () => {
-    // Stage s covers supply [ (s-1)*42M, s*42M ).
+    // Stair s covers supply [ (s-1)*100k, s*100k ).
     for (let s = 1; s <= STAGE_COUNT; s++) {
       const start = BigInt(s - 1) * TOKENS_PER_STAGE;
       const end = BigInt(s) * TOKENS_PER_STAGE;
@@ -58,13 +64,13 @@ describe("stage pricing", () => {
   });
 
   it("getStageSupplyRange returns inclusive ranges", () => {
-    expect(getStageSupplyRange(1)).toEqual({ start: 0n, end: 50_000_000n });
-    expect(getStageSupplyRange(20)).toEqual({ start: 950_000_000n, end: 1_000_000_000n });
+    expect(getStageSupplyRange(1)).toEqual({ start: 0n, end: 100_000n });
+    expect(getStageSupplyRange(210)).toEqual({ start: 20_900_000n, end: 21_000_000n });
   });
 
   it("getStageSupplyRange rejects invalid stages", () => {
     expect(() => getStageSupplyRange(0)).toThrow(CurveError);
-    expect(() => getStageSupplyRange(21)).toThrow(CurveError);
+    expect(() => getStageSupplyRange(211)).toThrow(CurveError);
   });
 
   it("isCurveError type guard works", () => {

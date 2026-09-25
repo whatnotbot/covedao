@@ -103,6 +103,7 @@ export async function getTokenDetailDb(db: Database, network: string, tokenId: s
       deployTxid: t.deployTxid,
       deployHeight: t.deployHeight,
       deployBlockHash: t.deployBlockHash,
+      creatorScript: t.creatorScript,
     },
     {
       tokenId: b.tokenId,

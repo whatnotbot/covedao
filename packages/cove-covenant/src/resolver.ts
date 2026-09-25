@@ -25,6 +25,8 @@ export interface TokenMeta {
   policyVersion: number;
   deployTxid: string;
   tokenNonce: Buffer;
+  /** Creator payout script, from DEPLOY output 2. */
+  creatorScript?: Buffer;
 }
 
 export interface BackingView {
@@ -43,6 +45,8 @@ export interface CoveCanonicalView {
   getCurrentBackingState(tokenId: Buffer): CoveStateV2 | null;
   getBackingOutpoint(tokenId: Buffer): OutPoint | null;
   getTokenUtxo(outpoint: OutPoint): TokenUtxo | null;
+  /** The token's creator payout script, recorded at DEPLOY. Required to validate a MINT. */
+  getTokenCreatorScript?(tokenId: Buffer): Buffer | null;
 }
 
 function opKey(o: OutPoint): string {
@@ -156,6 +160,11 @@ export class CoveChainView {
       if (opKey(b.outpoint) === opKey(o)) return b.state;
     }
     return null;
+  }
+
+  /** The creator payout script recorded at DEPLOY. */
+  getTokenCreatorScript(tokenId: Buffer): Buffer | null {
+    return this.tokens.get(tokenId.toString("hex"))?.creatorScript ?? null;
   }
 
   /** Resolve a single token UTXO by outpoint. */

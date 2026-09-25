@@ -20,9 +20,9 @@
   "p2pFeeBps": 50,
   "carrierSats": "1000",
   "anchorSats": "10000",
-  "maxProtocolSupplyAtoms": "100000000000000000",
+  "maxProtocolSupplyAtoms": "2100000000000000",
   "reserveAllocationAtoms": "0",
-  "mintCmr": "ccdb02000fdb372bfa2e166b9fe0192715d555fc5720f8008ee741fe1a0d58ec",
+  "mintCmr": "7fb27adf2db5458882daf976ba9325815f111b2f3b16eedb72e75f96de4269b2",
   "redeemCmr": "37e681b3e70a34acc3b38680c06fbe4f1b2799bede2607c6c9ed7fcac8c95d56",
   "canary": {
     "allowedWalletScripts": [
@@ -33,10 +33,10 @@
       "4710488a0ab304fb2316e0174360a41937e1f0a81f2b26dee5a38ef79fb2d252"
     ],
     "maxBackingSats": "1000000000",
-    "maxSingleBuySats": "50000000",
+    "maxSingleBuySats": "200000",
     "maxSingleRedeemPayoutSats": "50000000",
     "maxP2pSettlementSats": "10000000",
-    "maxMintAtoms": "210000000000000",
+    "maxMintAtoms": "2100000000000000",
     "minMintGrossSats": "5000"
   }
 }

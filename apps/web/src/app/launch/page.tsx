@@ -107,7 +107,7 @@ export default function LaunchPage() {
     <div className="mx-auto max-w-xl space-y-6">
       <div>
         <h1 className="text-2xl text-bone">Launch a token</h1>
-        <p className="text-sm text-bone-dim">Precomputable tokenId, deterministic geometric20 backing, policy V3.</p>
+        <p className="text-sm text-bone-dim">Precomputable tokenId, deterministic stairs210 backing, policy V3.</p>
       </div>
 
       <div className="space-y-3">
@@ -147,7 +147,8 @@ export default function LaunchPage() {
           <Row k="Total supply" v={`${fmtInt(BigInt(prepared.publicCapAtoms) / 100_000_000n)} tokens`} />
           <Row k="Held back for the team" v="0 tokens" />
           <Row k="Sold on the curve" v={`${fmtInt(BigInt(prepared.publicSupplyAtoms) / 100_000_000n)} tokens`} />
-          <Row k="Backing curve" v={prepared.curve} />
+          <Row k="Price" v="210 even stairs, lots of 1,000" />
+          <Row k="You earn" v="20% of the curve price of every mint" />
           <Row k="Vault anchor" v={`${fmtInt(prepared.vaultAnchorSats)} sats`} />
           <div className="mt-5">
             <FeePicker

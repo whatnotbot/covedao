@@ -58,7 +58,7 @@ function build() {
 describe("Cove V3 dual-op MAST — golden vectors (§5)", () => {
   it("MINT/REDEEM policy identities (V3, current S0)", () => {
     expect(mintPi().toString("hex")).toBe(
-      "03e74071a7846ae8e0d52743589cf68387d61eeacbc2d1da163f8bd40cd6b60c",
+      "aadb7fc5428b1f68085b2b881252640285096e5f6b3de214ee761904859e2905",
     );
     expect(redeemPi().toString("hex")).toBe(
       "c2d8198992fb068488b509b4538b67eecb01dde2eaf076d43031201e3e5a55e9",
@@ -68,7 +68,7 @@ describe("Cove V3 dual-op MAST — golden vectors (§5)", () => {
   it("3-leaf merkle root + output key + address (golden)", () => {
     const v = build();
     expect(v.mintLeaf.tapleafHash.toString("hex")).toBe(
-      "8a1b2fc34783de9ea5cb78de339e41caeca338e89b80a7c4d9a8ff1fdb5fb835",
+      "cf8dff0f85373fe8572cbd78c1defb38e0c1966b68d9f72c15225b1f2f6b69f1",
     );
     expect(v.redeemLeaf.tapleafHash.toString("hex")).toBe(
       "d2f9528c18645d5b0015027ff328f22efddcc3615c525bba7577c5f39c17eb68",
@@ -77,16 +77,16 @@ describe("Cove V3 dual-op MAST — golden vectors (§5)", () => {
       "5884d4ba7ae76c9706dd44bb8edfca86180c968af469d3da28b9ccc0fff45998",
     );
     expect(v.merkleRoot.toString("hex")).toBe(
-      "db9d89a287b59c7413afb4062420fa9a396757a28d2f43a3afdee91ab4b559bb",
+      "2231c5102804204426a212036e75b241d2ece3297eda801f71e6de8698227e3d",
     );
     expect(v.outputKey.toString("hex")).toBe(
-      "5ee8ec4f1fd433dfb52641a6a1503101bc61c153f4242b7e4ce8db88c9cb7be7",
+      "005e9d219324d236fdb2eb6f062fb3a3f1cad6ee9796e18bf6aca91cf82f4e7b",
     );
     expect(v.outputParity).toBe(0);
     expect(v.scriptPubKey.toString("hex")).toBe(
-      "51205ee8ec4f1fd433dfb52641a6a1503101bc61c153f4242b7e4ce8db88c9cb7be7",
+      "5120005e9d219324d236fdb2eb6f062fb3a3f1cad6ee9796e18bf6aca91cf82f4e7b",
     );
-    expect(v.address).toBe("bcrt1ptm5wcncl6sealdfxgxn2z5p3qx7xrs2n7sjzkljvardc3jwt00nsrztahn");
+    expect(v.address).toBe("bcrt1pqp0f6gvnynfrdldjadhsvtan50cu44hwj7twrzlk4j53e7p0feast69uu9");
   });
 
   it("control blocks commit NUMS + correct merkle paths (golden)", () => {
@@ -98,11 +98,11 @@ describe("Cove V3 dual-op MAST — golden vectors (§5)", () => {
         "d2f9528c18645d5b0015027ff328f22efddcc3615c525bba7577c5f39c17eb68",
     );
     expect(v.redeemControlBlock.toString("hex")).toBe(
-      prefix + "9120ffd085e832e22d3b1a6b9ed3f5b19c8851607809bc3cf4c24c4798823dfe",
+      prefix + "5670a09b9288ebe253ede24d45604dcfb9c0acf96c27cc3df5482dc21d886577",
     );
     expect(v.recoveryControlBlock.toString("hex")).toBe(
       prefix +
-        "8a1b2fc34783de9ea5cb78de339e41caeca338e89b80a7c4d9a8ff1fdb5fb835" +
+        "cf8dff0f85373fe8572cbd78c1defb38e0c1966b68d9f72c15225b1f2f6b69f1" +
         "d2f9528c18645d5b0015027ff328f22efddcc3615c525bba7577c5f39c17eb68",
     );
   });

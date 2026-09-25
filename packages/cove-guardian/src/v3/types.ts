@@ -20,6 +20,9 @@ export type { CoveCanonicalView } from "@crclaunch/cove-covenant";
 /** Typed reasons the Guardian refuses to sign (fail-closed). */
 export type ValidationFailureCode =
   | "MAINNET_DISABLED"
+  | "CREATOR_UNKNOWN"
+  | "CREATOR_FEE_MISMATCH"
+  | "CREATOR_OUTPUT_MISSING"
   | "MAINNET_PROFILE_REQUIRED"
   | "BAD_NETWORK"
   | "BAD_PSBT"
@@ -77,6 +80,9 @@ export interface MintAnalysis {
   nextState: CoveStateV2;
   grossSats: bigint;
   protocolFeeSats: bigint;
+  /** The creator's share, paid at vout 4 to the script recorded at DEPLOY. */
+  creatorFeeSats: bigint;
+  creatorScript: Buffer;
   minerFeeSats: bigint;
   backingInputIndex: number;
   buyerInputIndices: number[];

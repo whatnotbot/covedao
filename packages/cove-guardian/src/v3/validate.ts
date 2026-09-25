@@ -25,12 +25,13 @@ import {
  * Full independent Cove transition validation (§9/§11). This is where the
  * Guardian decides VALID_TO_SIGN or refuses. It requires BOTH the real
  * Simplicity predicate PASS and the full canonical TypeScript/reference Cove
- * policy PASS (the latter includes the exact geometric20 R-delta, which the
+ * policy PASS (the latter includes the exact stairs210 R-delta, which the
  * Simplicity predicate intentionally does not implement).
  */
 
 const MINT_CARRIER_VOUT = 2;
 const MINT_FEE_VOUT = 3;
+const MINT_CREATOR_VOUT = 4;
 const REDEEM_SUCCESSOR_VOUT = 1;
 const REDEEM_PAYOUT_VOUT = 2;
 const REDEEM_FEE_VOUT = 3;
@@ -191,6 +192,12 @@ export async function validateMintTransitionV3(params: ValidateParams): Promise<
     );
   }
 
+  // ── creator share (vout 4), to the address recorded at DEPLOY ──
+  const creatorOut = outputs[MINT_CREATOR_VOUT];
+  if (!creatorOut || creatorOut.value !== analysis.creatorFeeSats || !creatorOut.script.equals(analysis.creatorScript)) {
+    return reject("CREATOR_FEE_MISMATCH", `vout 4 must pay the creator ${analysis.creatorFeeSats} sats`);
+  }
+
   // ── advisory crc-20 discovery envelope (§D1): never read into state, but a
   //    contradicting payload is refused a signature outright ──
   const discovery = checkDiscoveryOutput(outputs, decodeCoveOpReturn(params.psbt), params.discoveryTicker);
@@ -198,8 +205,8 @@ export async function validateMintTransitionV3(params: ValidateParams): Promise<
     return reject("DISCOVERY_MISMATCH", discovery.reason ?? "discovery envelope mismatch");
   }
 
-  // ── no unexpected outputs (0..4: OP_RETURN, vault, carrier, fee, change) ──
-  if (outputs.length > 5 + discovery.allowance) {
+  // ── no unexpected outputs (0..5: OP_RETURN, vault, carrier, fee, creator, change) ──
+  if (outputs.length > 6 + discovery.allowance) {
     return reject("UNEXPECTED_OUTPUT", `too many outputs (${outputs.length})`);
   }
 

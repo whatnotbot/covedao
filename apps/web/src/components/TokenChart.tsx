@@ -182,7 +182,7 @@ export function TokenChart({
   return (
     <div className={`panel ${className}`}>
       <div className="flex items-center justify-between border-b border-rule px-4 py-2.5">
-        <p className="eyebrow">Price · sats per 1M {ticker}</p>
+        <p className="eyebrow">Price · sats per 1,000 {ticker}</p>
         <div className="flex gap-px bg-rule">
           {INTERVALS.map((i) => (
             <button

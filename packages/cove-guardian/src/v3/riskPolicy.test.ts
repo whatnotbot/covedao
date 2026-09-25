@@ -30,6 +30,8 @@ function mintAnalysis(overrides: Partial<MintAnalysis> = {}): MintAnalysis {
     nextState: s0StateV2({ tokenId: TOKEN }),
     grossSats: 100_000n,
     protocolFeeSats: 1_000n,
+    creatorFeeSats: 20_000n,
+    creatorScript: Buffer.from("0014" + "9".repeat(40), "hex"),
     minerFeeSats: 1_000n,
     backingInputIndex: 0,
     buyerInputIndices: [1],

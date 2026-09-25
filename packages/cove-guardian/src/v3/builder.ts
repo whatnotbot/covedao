@@ -21,7 +21,7 @@ import {
   type TokenIdentityInput,
 } from "@crclaunch/cove-wire";
 import { grossBuy } from "@crclaunch/cove-economics";
-import { deterministicFee, stageScaledFlatSats, dustThreshold, COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
+import { deterministicFee, mintFeeSats, creatorFeeSats, CREATOR_RECORD_SATS, dustThreshold, COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
 import type { Sats } from "@crclaunch/curve";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
@@ -96,6 +96,8 @@ export function buildDeployPsbtV3(params: {
   recoveryProfile?: VaultRecoveryProfile;
   deployerInputs: ResolvedInput[];
   deployerChangeScript: Buffer;
+  /** Where the creator's share of every mint is paid. Defaults to the deployer's change script. */
+  creatorScript?: Buffer;
   minerFeeSats: Sats;
 }): DeployResult {
   const tokenId = computeTokenId(params.identity);
@@ -120,9 +122,11 @@ export function buildDeployPsbtV3(params: {
   }
   psbt.addOutput({ script: Buffer.concat([Buffer.from([0x6a, wire.length]), wire]), value: 0 });
   psbt.addOutput({ script: vault.scriptPubKey, value: Number(RESERVE_ANCHOR_SATS) });
+  // Output 2 records the creator: every mint pays their share to this script.
+  psbt.addOutput({ script: params.creatorScript ?? params.deployerChangeScript, value: Number(CREATOR_RECORD_SATS) });
 
   const totalIn = params.deployerInputs.reduce((s, i) => s + i.valueSats, 0n);
-  const change = totalIn - RESERVE_ANCHOR_SATS - params.minerFeeSats;
+  const change = totalIn - RESERVE_ANCHOR_SATS - CREATOR_RECORD_SATS - params.minerFeeSats;
   if (change < 0n) throw new Error("insufficient deployer funds");
   const settled = addChangeOrAbsorb(psbt, params.deployerChangeScript, change, params.minerFeeSats);
 
@@ -136,6 +140,7 @@ export interface MintResult {
   nextVault: CoveVaultV3;
   grossSats: Sats;
   buyFeeSats: Sats;
+  creatorFeeSats: Sats;
   wire: Buffer;
   stateInputIndex: number;
   /** The fee actually paid, including any change too small to be an output. */
@@ -145,7 +150,7 @@ export interface MintResult {
 /**
  * Build a real MINT/backing-buy PSBT (§9). Canonical outputs: [0] OP_RETURN,
  * [1] successor backing vault, [2] buyer token carrier, [3] Cove buy fee,
- * [4] buyer BTC change. The state input (index 0) is signed script-path by the
+ * [4] creator's share, [5] buyer BTC change. The state input (index 0) is signed script-path by the
  * Guardian; the buyer funds BTC + carrier sats + fee + miner fee.
  */
 export function buildMintPsbtV3(params: {
@@ -161,11 +166,15 @@ export function buildMintPsbtV3(params: {
   buyerCarrierScript: Buffer; // buyer token carrier output script
   buyerChangeScript: Buffer;
   feeScript: Buffer; // Cove protocol fee destination
+  /** The token's creator, recorded at DEPLOY; paid their share at vout 4. */
+  creatorScript: Buffer;
+  /** Creator share, bps of the curve price. Defaults to COVE_FEE_CONFIG. */
+  creatorFeeBps?: bigint;
   minerFeeSats: Sats;
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
   /** Flat sats added on top of the percentage. */
-  buyFeeFlatSatsAtTopStage?: bigint;
+  buyFeeFlatSats?: bigint;
   /**
    * Emit the advisory `crc-20` discovery envelope as a trailing OP_RETURN
    * (§D1). OPT-IN: it needs two OP_RETURNs in one transaction, which Bitcoin
@@ -189,10 +198,7 @@ export function buildMintPsbtV3(params: {
       recoveryProfile: params.recoveryProfile,
     network: params.network,
   });
-  const buyFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(
-      params.prevState.issuedPublicSupplyAtoms / 100_000_000n,
-      params.buyFeeFlatSatsAtTopStage ?? COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage,
-    ));
+  const buyFeeSats = mintFeeSats(grossSats, params.mintAmountAtoms, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, params.buyFeeFlatSats ?? COVE_FEE_CONFIG.buyFeeFlatSats);
   const wire = encodeMintV2({
     tokenId: params.tokenId,
     amount: params.mintAmountAtoms,
@@ -225,6 +231,8 @@ export function buildMintPsbtV3(params: {
   });
   psbt.addOutput({ script: params.buyerCarrierScript, value: Number(TOKEN_CARRIER_SATS) });
   psbt.addOutput({ script: params.feeScript, value: Number(buyFeeSats) });
+  const creatorFee = creatorFeeSats(grossSats, params.creatorFeeBps ?? COVE_FEE_CONFIG.creatorFeeBps);
+  psbt.addOutput({ script: params.creatorScript, value: Number(creatorFee) });
 
   const totalIn =
     params.prevBacking.valueSats + params.buyerInputs.reduce((s, i) => s + i.valueSats, 0n);
@@ -233,6 +241,7 @@ export function buildMintPsbtV3(params: {
     (RESERVE_ANCHOR_SATS + nextState.backingSats) -
     TOKEN_CARRIER_SATS -
     buyFeeSats -
+    creatorFee -
     params.minerFeeSats;
   if (change < 0n) throw new Error("insufficient buyer funds");
   const settled = addChangeOrAbsorb(psbt, params.buyerChangeScript, change, params.minerFeeSats);
@@ -255,6 +264,7 @@ export function buildMintPsbtV3(params: {
     nextVault,
     grossSats,
     buyFeeSats,
+    creatorFeeSats: creatorFee,
     wire,
     stateInputIndex: 0,
     minerFeeSats: settled.minerFeeSats,

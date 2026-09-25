@@ -78,7 +78,7 @@ export function TokenActivity({
                 <th>What</th>
                 <th className="text-right">Amount</th>
                 <th className="text-right">Value</th>
-                <th className="text-right">Price / 1M</th>
+                <th className="text-right">Price / 1k</th>
                 <th>Transaction</th>
               </tr>
             </thead>

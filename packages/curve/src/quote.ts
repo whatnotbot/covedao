@@ -108,6 +108,9 @@ export function quoteExactSats(input: ExactSatsInput): QuoteResult {
     // Max tokens t with ceil(t*price/1M) <= remainingSats  <=>  t*price <= remainingSats*1M.
     const maxAffordableInStage = (remainingSats * PRICE_UNIT_TOKENS) / price;
     const chunk = maxAffordableInStage < remainingInStage ? maxAffordableInStage : remainingInStage;
+    // Not enough left for one more token: stop. A token can cost more than a
+    // sat, so this is no longer unreachable, and without it the loop spins.
+    if (chunk === 0n) break;
 
     const cost = ceilDiv(chunk * price, PRICE_UNIT_TOKENS);
     totalTokens += chunk;

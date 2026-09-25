@@ -47,7 +47,7 @@ jobs:
           BIN=target/release/cove-simplicity
           MINT_CMR=$("$BIN" build mint | python3 -c 'import sys,json; print(json.load(sys.stdin)["cmr"])')
           REDEEM_CMR=$("$BIN" build redeem | python3 -c 'import sys,json; print(json.load(sys.stdin)["cmr"])')
-          test "$MINT_CMR" = "ccdb02000fdb372bfa2e166b9fe0192715d555fc5720f8008ee741fe1a0d58ec"
+          test "$MINT_CMR" = "7fb27adf2db5458882daf976ba9325815f111b2f3b16eedb72e75f96de4269b2"
           test "$REDEEM_CMR" = "37e681b3e70a34acc3b38680c06fbe4f1b2799bede2607c6c9ed7fcac8c95d56"
           echo "compiled MINT CMR: $MINT_CMR"
           echo "compiled REDEEM CMR: $REDEEM_CMR"

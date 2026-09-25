@@ -267,6 +267,7 @@ async function main(): Promise<void> {
     deployerInputs: [inputs[0]!],
     deployerChangeScript: funderScript,
     minerFeeSats: MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   deploy.psbt.signInput(0, funder);
   deploy.psbt.finalizeAllInputs();
@@ -297,7 +298,7 @@ async function main(): Promise<void> {
   const vaultValue = BigInt(deployTx.outs[vaultVout]!.value);
   assert(vaultValue === RESERVE_ANCHOR_SATS, `S0 vault value ${vaultValue}`);
   view.deploy(
-    { tokenId, ticker, policyVersion: COVE_POLICY_V3, deployTxid, tokenNonce },
+    { tokenId, ticker, policyVersion: COVE_POLICY_V3, deployTxid, tokenNonce, creatorScript: CREATOR_SCRIPT },
     { txid: deployTxid, vout: vaultVout },
     deploy.s0,
   );
@@ -305,12 +306,9 @@ async function main(): Promise<void> {
 
   // ── MINT ──
   console.log(line);
-  // The protocol fee is a percentage of the curve price, and an output below
-  // the dust limit cannot be created. A small mint therefore produces a fee
-  // the Guardian must refuse (PROTOCOL_FEE_DUST). 84M tokens is the same
-  // quantity the regtest lifecycle asserts on: gross 49,350 sats, fee 494 —
-  // comfortably above the 294-sat dust floor.
-  const mintTokens = BigInt(process.env.COVE_PROOF_MINT_TOKENS ?? "84000000");
+  // 10k tokens is the same quantity the regtest lifecycle asserts on: gross
+  // 86,920 sats, fee 16,519, creator share 17,384 — all far above dust.
+  const mintTokens = BigInt(process.env.COVE_PROOF_MINT_TOKENS ?? "10000");
   const mintAmountAtoms = mintTokens * 100_000_000n;
   console.log(`STEP 2/3 — MINT (buy ${mintTokens.toLocaleString("en-US")} tokens from the curve)`);
   inputs = await fundingInputs(funderAddress, funderScript);
@@ -334,6 +332,7 @@ async function main(): Promise<void> {
     buyerChangeScript: funderScript,
     feeScript,
     minerFeeSats: MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
 
   const mintSign = await validateAndSignMintTransition({
@@ -435,6 +434,9 @@ async function main(): Promise<void> {
 }
 
 import { pathToFileURL } from "node:url";
+
+/** Creator payout script recorded at DEPLOY (output 2). */
+const CREATOR_SCRIPT = Buffer.from("0014" + "9".repeat(40), "hex");
 const isMain =
   process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {

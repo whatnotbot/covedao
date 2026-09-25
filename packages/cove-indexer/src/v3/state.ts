@@ -18,7 +18,7 @@ import {
   computeTokenId,
   type ParsedEnvelopeV2,
 } from "@crclaunch/cove-wire";
-import { COVE_FEE_CONFIG, deterministicFee, stageScaledFlatSats, isP2TR, isP2WPKH } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, CREATOR_RECORD_SATS, creatorFeeSats, isCreatorScript, deterministicFee, mintFeeSats, isP2TR, isP2WPKH } from "@crclaunch/cove-economics";
 import { RESERVE_ANCHOR_SATS } from "./constants.js";
 import { parseCoveTx, txidOf } from "./parser.js";
 import { computeStateRoot } from "./root.js";
@@ -117,6 +117,10 @@ export class V3IndexerState {
   }
   getBackingOutpoint(tokenId: Buffer): OutPoint | null {
     return this.backing.get(tokenId.toString("hex"))?.outpoint ?? null;
+  }
+  getTokenCreatorScript(tokenId: Buffer): Buffer | null {
+    const c = this.tokens.get(tokenId.toString("hex"))?.creatorScript;
+    return c ? Buffer.from(c, "hex") : null;
   }
   getTokenUtxo(o: OutPoint): TokenUtxo | null {
     const u = this.tokenUtxos.get(outpointKey(o.txid, o.vout));
@@ -329,6 +333,12 @@ export class V3IndexerState {
     if (BigInt(s0Out.value) !== RESERVE_ANCHOR_SATS) {
       return { op: "DEPLOY", valid: false, reason: "S0_ANCHOR_MISMATCH", tokenId: tokenIdHex, undo: null };
     }
+    // Output 2 names the creator: exactly CREATOR_RECORD_SATS to the address
+    // every mint will pay the creator's share to.
+    const creatorOut = tx.outs[2];
+    if (!creatorOut || BigInt(creatorOut.value) !== CREATOR_RECORD_SATS || !isCreatorScript(creatorOut.script)) {
+      return { op: "DEPLOY", valid: false, reason: "CREATOR_OUTPUT_MISSING", tokenId: tokenIdHex, undo: null };
+    }
     const meta: V3TokenMeta = {
       tokenId: tokenIdHex,
       ticker: envelope.ticker,
@@ -337,6 +347,7 @@ export class V3IndexerState {
       deployTxid: txid,
       deployHeight: block.height,
       deployBlockHash: block.hash,
+      creatorScript: creatorOut.script.toString("hex"),
     };
     const backing: V3Backing = {
       tokenId: tokenIdHex,
@@ -383,10 +394,7 @@ export class V3IndexerState {
     } catch (e) {
       return { op: "MINT", valid: false, reason: `REFERENCE_REJECTED: ${(e as Error).message}`, tokenId: tokenIdHex, undo: null };
     }
-    const feeSats = deterministicFee(grossSats, this.config.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(
-      backing.state.issuedPublicSupplyAtoms / 100_000_000n,
-      this.config.buyFeeFlatSatsAtTopStage ?? COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage,
-    ));
+    const feeSats = mintFeeSats(grossSats, envelope.amount, this.config.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, this.config.buyFeeFlatSats ?? COVE_FEE_CONFIG.buyFeeFlatSats);
     const nextVault = buildBackingVaultV3({
       state: nextState,
       guardianXOnly: this.config.guardianXOnly,
@@ -411,6 +419,15 @@ export class V3IndexerState {
     const feeOut = tx.outs[3];
     if (!feeOut || BigInt(feeOut.value) !== feeSats || !feeOut.script.equals(this.config.feeScript)) {
       return { op: "MINT", valid: false, reason: "FEE_MISMATCH", tokenId: tokenIdHex, undo: null };
+    }
+    const creatorOut = tx.outs[4];
+    const creator = this.tokens.get(tokenIdHex)?.creatorScript ?? "";
+    if (
+      !creatorOut ||
+      BigInt(creatorOut.value) !== creatorFeeSats(grossSats, this.config.creatorFeeBps ?? COVE_FEE_CONFIG.creatorFeeBps) ||
+      creatorOut.script.toString("hex") !== creator
+    ) {
+      return { op: "MINT", valid: false, reason: "CREATOR_FEE_MISMATCH", tokenId: tokenIdHex, undo: null };
     }
 
     const priorBacking = backing;

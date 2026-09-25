@@ -6,10 +6,13 @@ import { eq, and, isNull } from "drizzle-orm";
 import { CHAIN_BITCOIN_REGTEST, computeTokenId, encodeDeployV2, encodeMintV2, encodeRedeemV2, encodeTransferV2 } from "@crclaunch/cove-wire";
 import { applyMintV2, applyRedeemV2, s0StateV2 } from "@crclaunch/cove-covenant";
 import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
-import { COVE_FEE_CONFIG, deterministicFee, stageScaledFlatSats } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, CREATOR_RECORD_SATS, creatorFeeSats, deterministicFee, mintFeeSats } from "@crclaunch/cove-economics";
 import { V3IndexerState } from "./state.js";
 import { V3Store } from "./store.js";
 import { RESERVE_ANCHOR_SATS } from "./constants.js";
+
+/** Creator payout script recorded at DEPLOY (output 2). */
+const CREATOR_SCRIPT = Buffer.from("0014" + "9".repeat(40), "hex");
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 
@@ -19,7 +22,7 @@ const recoveryXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x43), tr
 const NONCE = Buffer.alloc(32, 0xab);
 const feeScript = Buffer.from("0014" + "f".repeat(40), "hex");
 const ATOMS = 100_000_000n;
-const MINT_AMOUNT = 84_000_000n * ATOMS;
+const MINT_AMOUNT = 10_000n * ATOMS;
 
 function config() {
   return { network: "regtest" as const, chainIdentity: CHAIN_BITCOIN_REGTEST, guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript, genesisHeight: 0n };
@@ -56,7 +59,7 @@ describe.skipIf(!URL)("V3Store persistence — DEPLOY/MINT/TRANSFER/REDEEM + rev
     const deployWire = encodeDeployV2({ policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
     const deployHex = tx([{ txid: "d0".repeat(32), vout: 0 }], [
       { script: opReturn(deployWire), value: 0n },
-      { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS },
+      { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS }, { script: CREATOR_SCRIPT, value: CREATOR_RECORD_SATS },
     ]);
     const deployTxid = bitcoin.Transaction.fromHex(deployHex).getId();
     const b1 = block(1, [deployHex]);
@@ -66,13 +69,14 @@ describe.skipIf(!URL)("V3Store persistence — DEPLOY/MINT/TRANSFER/REDEEM + rev
     // ── MINT (height 2) ──
     const minted = applyMintV2(s0, MINT_AMOUNT);
     const gross = minted.grossSats;
-    const mintFee = deterministicFee(gross, COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(0n, COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage));
+    const mintFee = mintFeeSats(gross, MINT_AMOUNT, COVE_FEE_CONFIG.buyFeeBps, COVE_FEE_CONFIG.buyFeeFlatSats);
     const mintWire = encodeMintV2({ tokenId, amount: MINT_AMOUNT, recipientVout: 2 });
     const mintHex = tx([{ txid: deployTxid, vout: 1 }], [
       { script: opReturn(mintWire), value: 0n },
       { script: vaultScript(minted.nextState), value: RESERVE_ANCHOR_SATS + minted.nextState.backingSats },
       { script: carrierScript, value: 1_000n },
       { script: feeScript, value: mintFee },
+    { script: CREATOR_SCRIPT, value: creatorFeeSats(minted.grossSats) },
     ]);
     const mintTxid = bitcoin.Transaction.fromHex(mintHex).getId();
     const b2 = block(2, [mintHex]);

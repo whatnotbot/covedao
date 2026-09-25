@@ -3,14 +3,19 @@ import {
   GRADUATION_RESERVE_TOKENS,
   PUBLIC_SUPPLY_TOKENS,
   STAGE_PRICES_SATS_PER_MILLION,
+  STAGE_COUNT,
   TOTAL_SUPPLY_TOKENS,
   TOKENS_PER_STAGE,
 } from "./constants.js";
 
+/** The canonical first and last stair prices, per 1M tokens. */
+const FIRST_PRICE = STAGE_PRICES_SATS_PER_MILLION[0]!;
+const LAST_PRICE = STAGE_PRICES_SATS_PER_MILLION[STAGE_COUNT - 1]!;
+
 /**
  * Exact theoretical full-primary-mint raise in sats.
- * Every stage sells exactly TOKENS_PER_STAGE (42,000,000) tokens, and
- * 42,000,000 × price / 1,000,000 = 42 × price exactly (no rounding).
+ * Every stair sells exactly TOKENS_PER_STAGE (100,000) tokens, and each
+ * stair price is a whole number of sats per 1,000 tokens, so there is no rounding.
  */
 export function getTheoreticalFullRaise(): Sats {
   let total = 0n;
@@ -37,8 +42,8 @@ export interface CurveConfigInput {
  * list of invariant violations (empty when valid).
  */
 /**
- * Sats raised when the entire public supply mints out: 20 stages x 50,000,000
- * tokens at the frozen stage prices. Derived, so it cannot drift from the table.
+ * Sats raised when the entire public supply mints out: every stair at its
+ * price. Derived, so it cannot drift from the table.
  */
 export const FULL_RAISE_SATS: Sats = STAGE_PRICES_SATS_PER_MILLION.reduce(
   (acc, p) => acc + (TOKENS_PER_STAGE * p) / 1_000_000n,
@@ -53,18 +58,18 @@ export function validateCurveConfig(input: CurveConfigInput = {}): string[] {
   const prices = input.stagePrices ?? STAGE_PRICES_SATS_PER_MILLION;
 
   const problems: string[] = [];
-  if (total !== 1_000_000_000n) problems.push("TOTAL_SUPPLY_TOKENS must be 1B.");
+  if (total !== TOTAL_SUPPLY_TOKENS) problems.push(`TOTAL_SUPPLY_TOKENS must be ${TOTAL_SUPPLY_TOKENS}.`);
   if (publicSupply + reserve !== total) {
     problems.push("public + reserve must equal total supply.");
   }
-  if (prices.length !== 20) {
-    problems.push("Must be exactly 20 stages.");
+  if (prices.length !== STAGE_COUNT) {
+    problems.push(`Must be exactly ${STAGE_COUNT} stages.`);
   }
-  if (prices[0] !== 500n) {
-    problems.push("Stage 1 price must be 500.");
+  if (prices[0] !== FIRST_PRICE) {
+    problems.push(`Stage 1 price must be ${FIRST_PRICE}.`);
   }
-  if (prices[19] !== 149_731n) {
-    problems.push("Stage 20 price must be 149,731.");
+  if (prices[STAGE_COUNT - 1] !== LAST_PRICE) {
+    problems.push(`Stage ${STAGE_COUNT} price must be ${LAST_PRICE}.`);
   }
   for (let i = 1; i < prices.length; i++) {
     const prev = prices[i - 1]!;

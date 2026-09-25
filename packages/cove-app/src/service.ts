@@ -24,8 +24,8 @@ import {
   validateRedeemTransitionV3,
 } from "@crclaunch/cove-guardian/v3";
 import { loadCanonicalViewSnapshotFromDb, computeHealth, getTokenUtxosByScriptDb, getLiveTokenUtxosAtDb } from "@crclaunch/cove-indexer/v3";
-import { grossBuy, grossRedeem, deterministicFee, stageScaledFlatSats, checkRedeemPayout } from "@crclaunch/cove-economics";
-import { ATOMS_PER_TOKEN, PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
+import { grossBuy, grossRedeem, deterministicFee, mintFeeSats, creatorFeeSats, CREATOR_RECORD_SATS, checkRedeemPayout } from "@crclaunch/cove-economics";
+import { ATOMS_PER_TOKEN, LOT_TOKENS, PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
 import { canonicalTicker, computeTokenId, OP_MINT, OP_REDEEM, type ParsedEnvelopeV2 } from "@crclaunch/cove-wire";
 import {
   MarketService,
@@ -109,6 +109,8 @@ export interface BackingQuote {
   backingAfterSats: bigint;
   grossSats: bigint;
   feeSats: bigint;
+  /** The creator's share, paid on top of the curve price. */
+  creatorFeeSats: bigint;
   feeBps: bigint;
   indexedHeight: bigint;
   indexedBlockHash: string;
@@ -135,6 +137,9 @@ export interface IntentV3 {
   tokenAmountAtoms: bigint | null;
   grossSats: bigint | null;
   protocolFeeSats: bigint | null;
+  /** Mint only: the creator's share and where it is paid. */
+  creatorFeeSats?: bigint;
+  creatorScript?: string;
   minerFeeSats: bigint;
   netSats: bigint | null;
   /** The payments scriptPubKey: where BTC comes from and change returns. */
@@ -465,7 +470,19 @@ export class V3AppService {
           ? tip.state
           : view.getBackingStateByOutpoint(outpoint),
       getTokenUtxo: (outpoint) => view.getTokenUtxo(outpoint),
+      getTokenCreatorScript: (tokenId) => view.getTokenCreatorScript?.(tokenId) ?? null,
     };
+  }
+
+  /** The creator payout script recorded when the token was launched. */
+  private async creatorScriptOf(tokenId: string): Promise<Buffer> {
+    const rows = await this.db
+      .select({ creatorScript: schema.coveV3Tokens.creatorScript })
+      .from(schema.coveV3Tokens)
+      .where(and(eq(schema.coveV3Tokens.network, this.config.network), eq(schema.coveV3Tokens.tokenId, tokenId), eq(schema.coveV3Tokens.canonical, true)));
+    const c = rows[0]?.creatorScript;
+    if (!c) throw new AppError("TOKEN_NOT_FOUND", "token has no recorded creator");
+    return Buffer.from(c, "hex");
   }
 
   private async loadView(tokenId: string, relevantOutpoints: { txid: string; vout: number }[] = []): Promise<CoveCanonicalView> {
@@ -646,7 +663,7 @@ export class V3AppService {
       chainIdentity: this.config.chainIdentity,
       publicCapAtoms: PUBLIC_SUPPLY_ATOMS,
       publicSupplyAtoms: PUBLIC_SUPPLY_ATOMS,
-      curve: "geometric20",
+      curve: "stairs210",
       vaultAnchorSats: RESERVE_ANCHOR_SATS,
     };
   }
@@ -673,12 +690,13 @@ export class V3AppService {
     const wallet = resolveWalletIdentity(walletIdentityFrom(params));
     const tokenId = computeTokenId({ chainIdentity: this.config.chainIdentity, policyVersion: 3, ticker: canonicalTicker(params.ticker), tokenNonce: Buffer.from(params.nonceHex, "hex") }).toString("hex");
     this.assertCanaryAllowed({ tokenId, walletScript: params.walletScript });
-    // The deploy funds the vault anchor plus the miner fee, nothing else.
+    // The deploy funds the vault anchor, the creator record (which comes back
+    // to the creator's own address) and the miner fee.
     const { inputs: deployerInputs, minerFeeSats } = await this.resolveFundingAndFee({
       op: "DEPLOY",
       wallet,
       candidates: params.funding,
-      targetSats: RESERVE_ANCHOR_SATS,
+      targetSats: RESERVE_ANCHOR_SATS + CREATOR_RECORD_SATS,
       feeRateSatPerVb: params.feeRateSatPerVb,
       explicitMinerFeeSats: params.minerFeeSats,
     });
@@ -690,6 +708,8 @@ export class V3AppService {
       recoveryProfile: this.config.recoveryProfile,
       deployerInputs,
       deployerChangeScript: wallet.payments.scriptBuffer,
+      // The creator is paid at their payment address, where BTC belongs.
+      creatorScript: wallet.payments.scriptBuffer,
       minerFeeSats,
     });
     const psbtBase64 = result.psbt.toBase64();
@@ -780,6 +800,8 @@ export class V3AppService {
     amountAtoms: bigint;
     grossSats: bigint;
     feeSats: bigint;
+    /** The creator's share, paid on top of the curve price. */
+    creatorFeeSats: bigint;
     carrierSats: bigint;
     totalSats: bigint;
     /** Why it stopped where it did — the budget, the per-mint limit, or the curve running out. */
@@ -790,37 +812,41 @@ export class V3AppService {
     const backing = await this.loadBacking(tokenId);
     const supplyTokens = backing.state.issuedPublicSupplyAtoms / ATOMS_PER_TOKEN;
     const remaining = (PUBLIC_SUPPLY_ATOMS - backing.state.issuedPublicSupplyAtoms) / ATOMS_PER_TOKEN;
-    const flat = stageScaledFlatSats(supplyTokens, this.config.buyFeeFlatSatsAtTopStage);
     const costOf = (n: bigint) => {
       const gross = grossBuy(supplyTokens, n);
-      const fee = deterministicFee(gross, this.config.buyFeeBps, flat);
-      return { gross, fee, total: gross + fee + TOKEN_CARRIER_SATS };
+      const fee = mintFeeSats(gross, n * ATOMS_PER_TOKEN, this.config.buyFeeBps, this.config.buyFeeFlatSats);
+      const creator = creatorFeeSats(gross);
+      return { gross, fee, creator, total: gross + fee + creator + TOKEN_CARRIER_SATS };
     };
     const limits = this.mintLimits();
-    const perMintTokens = limits.maxMintAtoms / ATOMS_PER_TOKEN;
-    const fits = (n: bigint) => {
-      const c = costOf(n);
+    // Search in whole lots: nothing smaller can be minted.
+    const perMintLots = limits.maxMintAtoms / ATOMS_PER_TOKEN / LOT_TOKENS;
+    const remainingLots = remaining / LOT_TOKENS;
+    const fits = (lots: bigint) => {
+      const c = costOf(lots * LOT_TOKENS);
       return c.total <= budgetSats && (limits.maxGrossSats === null || c.gross <= limits.maxGrossSats);
     };
-    // The curve only ever gets more expensive, so cost is monotonic in n.
-    let lo = 0n;
-    let hi = remaining < perMintTokens ? remaining : perMintTokens;
-    while (lo < hi) {
-      const mid = (lo + hi + 1n) / 2n;
-      if (fits(mid)) lo = mid;
-      else hi = mid - 1n;
+    // The curve only ever gets more expensive, so cost is monotonic in lots.
+    let loLots = 0n;
+    let hiLots = remainingLots < perMintLots ? remainingLots : perMintLots;
+    while (loLots < hiLots) {
+      const mid = (loLots + hiLots + 1n) / 2n;
+      if (fits(mid)) loLots = mid;
+      else hiLots = mid - 1n;
     }
+    const lo = loLots * LOT_TOKENS;
+    const perMintTokens = perMintLots * LOT_TOKENS;
     const c = costOf(lo);
-    const next = lo < remaining ? costOf(lo + 1n) : null;
+    const next = lo < remaining ? costOf(lo + LOT_TOKENS) : null;
     const limitedBy =
       lo === remaining ? "supply"
         : lo === perMintTokens || (next !== null && next.total <= budgetSats) ? "per-mint limit"
           : "budget";
     const base = { carrierSats: TOKEN_CARRIER_SATS, limitedBy, minGrossSats: limits.minGrossSats, maxGrossSats: limits.maxGrossSats } as const;
     if (lo === 0n || c.gross < limits.minGrossSats) {
-      return { ...base, amountAtoms: 0n, grossSats: 0n, feeSats: 0n, totalSats: 0n, limitedBy: "budget" };
+      return { ...base, amountAtoms: 0n, grossSats: 0n, feeSats: 0n, creatorFeeSats: 0n, totalSats: 0n, limitedBy: "budget" };
     }
-    return { ...base, amountAtoms: lo * ATOMS_PER_TOKEN, grossSats: c.gross, feeSats: c.fee, totalSats: c.total };
+    return { ...base, amountAtoms: lo * ATOMS_PER_TOKEN, grossSats: c.gross, feeSats: c.fee, creatorFeeSats: c.creator, totalSats: c.total };
   }
 
   async quoteBackingBuy(tokenId: string, amountAtoms: bigint): Promise<BackingQuote> {
@@ -829,11 +855,7 @@ export class V3AppService {
     const supply = backing.state.issuedPublicSupplyAtoms;
     if (supply + amountAtoms > PUBLIC_SUPPLY_ATOMS) throw new AppError("TOKEN_AMOUNT_INVALID", "exceeds public cap");
     const gross = grossBuy(supply / ATOMS_PER_TOKEN, amountAtoms / ATOMS_PER_TOKEN);
-    const fee = deterministicFee(
-      gross,
-      this.config.buyFeeBps,
-      stageScaledFlatSats(supply / ATOMS_PER_TOKEN, this.config.buyFeeFlatSatsAtTopStage),
-    );
+    const fee = mintFeeSats(gross, amountAtoms, this.config.buyFeeBps, this.config.buyFeeFlatSats);
     const next = applyMintV2(backing.state, amountAtoms).nextState;
     const cursor = await this.db.select().from(schema.coveV3Cursor).where(eq(schema.coveV3Cursor.network, this.config.network));
     const c = cursor[0];
@@ -848,6 +870,7 @@ export class V3AppService {
       backingAfterSats: next.backingSats,
       grossSats: gross,
       feeSats: fee,
+      creatorFeeSats: creatorFeeSats(gross),
       feeBps: this.config.buyFeeBps,
       indexedHeight: c?.height ?? 0n,
       indexedBlockHash: c?.blockHash ?? "",
@@ -890,19 +913,14 @@ export class V3AppService {
     // supplies the existing backing and the successor consumes it, so neither
     // appears here.
     const { grossSats: quotedGrossSats } = applyMintV2(backing.state, params.amountAtoms);
-    const quotedBuyFeeSats = deterministicFee(
-      quotedGrossSats,
-      this.config.buyFeeBps,
-      stageScaledFlatSats(
-        backing.state.issuedPublicSupplyAtoms / ATOMS_PER_TOKEN,
-        this.config.buyFeeFlatSatsAtTopStage,
-      ),
-    );
+    const quotedBuyFeeSats = mintFeeSats(quotedGrossSats, params.amountAtoms, this.config.buyFeeBps, this.config.buyFeeFlatSats);
+    const creatorScript = await this.creatorScriptOf(params.tokenId);
+    const quotedCreatorFeeSats = creatorFeeSats(quotedGrossSats);
     const { inputs: buyerInputs, minerFeeSats } = await this.resolveFundingAndFee({
       op: "BACKING_BUY",
       wallet,
       candidates: params.funding,
-      targetSats: quotedGrossSats + quotedBuyFeeSats + TOKEN_CARRIER_SATS,
+      targetSats: quotedGrossSats + quotedBuyFeeSats + quotedCreatorFeeSats + TOKEN_CARRIER_SATS,
       discovery: discoveryTicker !== undefined,
       feeRateSatPerVb: params.feeRateSatPerVb,
       explicitMinerFeeSats: params.minerFeeSats,
@@ -923,9 +941,10 @@ export class V3AppService {
       buyerCarrierScript: wallet.ordinals.scriptBuffer,
       buyerChangeScript: wallet.payments.scriptBuffer,
       feeScript: this.config.feeScript,
+      creatorScript,
       minerFeeSats,
       buyFeeBps: this.config.buyFeeBps,
-      buyFeeFlatSatsAtTopStage: this.config.buyFeeFlatSatsAtTopStage,
+      buyFeeFlatSats: this.config.buyFeeFlatSats,
       discoveryEnvelope: discoveryTicker ? { ticker: discoveryTicker } : undefined,
     });
     const view = this.overlayPendingBacking(
@@ -935,7 +954,7 @@ export class V3AppService {
     );
     const req: TransitionSignRequest = { psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
       recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, buyFeeBps: this.config.buyFeeBps,
-      buyFeeFlatSatsAtTopStage: this.config.buyFeeFlatSatsAtTopStage,
+      buyFeeFlatSats: this.config.buyFeeFlatSats,
       discoveryTicker };
     // Validate now so a bad build fails before the wallet is asked, but do NOT
     // sign: a Guardian signature reserves the vault outpoint, and reserving it
@@ -970,6 +989,8 @@ export class V3AppService {
         tokenAmountAtoms: params.amountAtoms,
         grossSats: result.grossSats,
         protocolFeeSats: result.buyFeeSats,
+        creatorFeeSats: result.creatorFeeSats,
+        creatorScript: creatorScript.toString("hex"),
         minerFeeSats: result.minerFeeSats,
         netSats: null,
         walletScript: wallet.payments.script,
@@ -1001,7 +1022,7 @@ export class V3AppService {
       : undefined;
     const signed = await this.transitionSigner.signMint({ psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
       recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, buyFeeBps: this.config.buyFeeBps,
-      buyFeeFlatSatsAtTopStage: this.config.buyFeeFlatSatsAtTopStage,
+      buyFeeFlatSats: this.config.buyFeeFlatSats,
       discoveryTicker });
     if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
     for (let i = 1; i < psbt.data.inputs.length; i++) psbt.finalizeInput(i);
@@ -1016,7 +1037,7 @@ export class V3AppService {
       feeScript: this.config.feeScript,
       maxMinerFeeSats: this.config.maxMinerFeeSats,
       buyFeeBps: this.config.buyFeeBps,
-      buyFeeFlatSatsAtTopStage: this.config.buyFeeFlatSatsAtTopStage,
+      buyFeeFlatSats: this.config.buyFeeFlatSats,
     });
     if (!("rawTxHex" in validated)) throw new AppError("GUARDIAN_REJECTED", validated.reason);
     const txid = await this.broadcast(validated);
@@ -1581,7 +1602,7 @@ export class V3AppService {
     return getBuyRoutes(this.db, this.config.network, tokenId, amountAtoms, {
       buyFeeBps: this.config.buyFeeBps,
       p2pFeeBps: this.market.config.p2pFeeBps,
-      buyFeeFlatSatsAtTopStage: this.config.buyFeeFlatSatsAtTopStage,
+      buyFeeFlatSats: this.config.buyFeeFlatSats,
       p2pFeeMinSats: this.market.config.p2pFeeMinSats,
     });
   }

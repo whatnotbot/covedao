@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { computePlatformFee, PUBLIC_SUPPLY_TOKENS } from "@crclaunch/curve";
+import { computePlatformFee, PUBLIC_SUPPLY_TOKENS, quoteExactTokens } from "@crclaunch/curve";
 import { MemoryStorage } from "./store.js";
 import { MockChainNode } from "./node.js";
 import { MockCRCAdapter } from "./adapter.js";
 import { MOCK_FAUCET_SATS } from "./chain.js";
+
+// The whole curve raises about ten BTC plus the platform fee: more than the
+// mock faucet gives, so a wallet that mints out is topped up first.
+const FULL_CURVE = quoteExactTokens({ desiredTokens: PUBLIC_SUPPLY_TOKENS, currentSupply: 0n }).curveContributionSats;
+async function fund(node: MockChainNode, address: string): Promise<void> {
+  await node.mutate((s) => {
+    s.balances[address] = { btcSats: 20n * 100_000_000n, tokens: {}, lockedTokens: {} };
+  });
+}
 
 const TREASURY = "bc1qm0cktreasury000000000000000000000000000000000000";
 
@@ -49,7 +58,8 @@ describe("mock chain end-to-end", () => {
     expect(token!.confirmedMintedAtoms).toBe(0n);
 
     // MINT full supply (single tx for brevity)
-    const curve = 28_805_700n;
+    const curve = FULL_CURVE;
+    await fund(node, buyer);
     const platformFee = computePlatformFee(curve, 100n);
     const minerFee = 450n;
     const mint = await adapter.buildMint({
@@ -143,17 +153,19 @@ describe("mock chain end-to-end", () => {
     const token = (await adapter.getTokenByTicker("RACE"))!;
     const stateHash = await node.getStateHash();
 
+    await fund(node, b1);
+    await fund(node, b2);
     // Both mint the final tokens from the same stale supply snapshot.
     const mint1 = await adapter.buildMint({
       deploymentId: token.deploymentId, ticker: "RACE", buyerAddress: b1, treasuryAddress: TREASURY,
-      tokenAmountAtoms: PUBLIC_SUPPLY_TOKENS, curveContributionSats: 28_805_700n,
-      platformFeeSats: computePlatformFee(28_805_700n, 100n), minerFeeSats: 450n,
+      tokenAmountAtoms: PUBLIC_SUPPLY_TOKENS, curveContributionSats: FULL_CURVE,
+      platformFeeSats: computePlatformFee(FULL_CURVE, 100n), minerFeeSats: 450n,
       currentSupplyAtoms: 0n, stateHash,
     });
     const mint2 = await adapter.buildMint({
       deploymentId: token.deploymentId, ticker: "RACE", buyerAddress: b2, treasuryAddress: TREASURY,
-      tokenAmountAtoms: PUBLIC_SUPPLY_TOKENS, curveContributionSats: 28_805_700n,
-      platformFeeSats: computePlatformFee(28_805_700n, 100n), minerFeeSats: 450n,
+      tokenAmountAtoms: PUBLIC_SUPPLY_TOKENS, curveContributionSats: FULL_CURVE,
+      platformFeeSats: computePlatformFee(FULL_CURVE, 100n), minerFeeSats: 450n,
       currentSupplyAtoms: 0n, stateHash,
     });
 
@@ -184,15 +196,15 @@ describe("mock chain end-to-end", () => {
     for (let i = 0; i < 3; i++) {
       const mint = await adapter.buildMint({
         deploymentId: token.deploymentId, ticker: "RORG", buyerAddress: buyer, treasuryAddress: TREASURY,
-        tokenAmountAtoms: 2_000_000n, curveContributionSats: 1_000n, platformFeeSats: 10n,
-        minerFeeSats: 450n, currentSupplyAtoms: BigInt(i * 2_000_000), stateHash: await node.getStateHash(),
+        tokenAmountAtoms: 1_000n, curveContributionSats: 8_692n, platformFeeSats: 87n,
+        minerFeeSats: 450n, currentSupplyAtoms: BigInt(i * 1_000), stateHash: await node.getStateHash(),
       });
       await signAndSubmit(adapter, mint, buyer);
       await node.mineBlock();
     }
 
     const before = await adapter.getTokenByDeployment(token.deploymentId);
-    expect(before!.confirmedMintedAtoms).toBe(6_000_000n);
+    expect(before!.confirmedMintedAtoms).toBe(3_000n);
 
     await node.reorg(3);
     const afterReorg = await adapter.getTokenByDeployment(token.deploymentId);
@@ -201,7 +213,7 @@ describe("mock chain end-to-end", () => {
     // Re-mine the returned mempool txs.
     for (let i = 0; i < 3; i++) await node.mineBlock();
     const afterRemine = await adapter.getTokenByDeployment(token.deploymentId);
-    expect(afterRemine!.confirmedMintedAtoms).toBe(6_000_000n);
+    expect(afterRemine!.confirmedMintedAtoms).toBe(3_000n);
   });
 
   it("mint is rejected when buyer lacks BTC", async () => {
@@ -222,7 +234,7 @@ describe("mock chain end-to-end", () => {
 
     const mint = await adapter.buildMint({
       deploymentId: token.deploymentId, ticker: "POOR", buyerAddress: poor, treasuryAddress: TREASURY,
-      tokenAmountAtoms: 2_000_000n, curveContributionSats: 1_000n, platformFeeSats: 10n,
+      tokenAmountAtoms: 1_000n, curveContributionSats: 8_692n, platformFeeSats: 87n,
       minerFeeSats: 450n, currentSupplyAtoms: 0n, stateHash: await node.getStateHash(),
     });
     await signAndSubmit(adapter, mint, poor);

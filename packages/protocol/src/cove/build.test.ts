@@ -36,11 +36,11 @@ describe("Cove PSBT builders", () => {
     expect(o1!.scriptPubKeyHex).toBe(CFG.treasuryScript);
   });
 
-  it("builds MINT (combined settlement = 1010 sats, no dust outputs)", () => {
+  it("builds MINT (combined settlement = 8,779 sats, no dust outputs)", () => {
     const psbt = buildCoveMintPsbt({
       network: "signet",
       ticker: "FROG",
-      amountAtoms: 200_000_000_000_000n, // 2M tokens → 1000 curve + 10 fee
+      amountAtoms: 100_000_000_000n, // 1,000 tokens → 8,692 curve + 87 fee
       supplyBeforeAtoms: 0n,
       recipientScriptHex: RECIPIENT,
       inputs: [input],
@@ -53,14 +53,14 @@ describe("Cove PSBT builders", () => {
     expect(decodeCoveEnvelope(o0!.opReturnData!).envelope).toEqual({
       op: "mint",
       tick: "FROG",
-      amt: 200_000_000_000_000n,
+      amt: 100_000_000_000n,
       s: 0n,
     });
     expect(o1!.valueSats).toBe(330n); // P2TR recipient dust-safe
     expect(o1!.scriptPubKeyHex).toBe(RECIPIENT);
-    expect(o2!.valueSats).toBe(1010n); // combined curve+fee
+    expect(o2!.valueSats).toBe(8_779n); // combined curve+fee
     expect(o2!.scriptPubKeyHex).toBe(CFG.settlementScript);
-    // settlement (1010) is above dust (294 P2WPKH) — no dust protocol output.
+    // settlement (8,779) is above dust (294 P2WPKH) — no dust protocol output.
     expect(o2!.valueSats).toBeGreaterThan(294n);
   });
 
@@ -69,7 +69,7 @@ describe("Cove PSBT builders", () => {
       buildCoveMintPsbt({
         network: "signet",
         ticker: "FROG",
-        amountAtoms: 100_000_000_000_000n, // 1M tokens → 500 sats < 1000
+        amountAtoms: 10_000_000_000n, // 100 tokens → 870 sats < 1000
         supplyBeforeAtoms: 0n,
         recipientScriptHex: RECIPIENT,
         inputs: [input],

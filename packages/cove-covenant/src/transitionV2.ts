@@ -1,4 +1,7 @@
-import { ATOMS_PER_TOKEN, PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
+import { ATOMS_PER_TOKEN, LOT_TOKENS, PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
+
+/** Mints and redemptions move whole lots of 1,000 tokens. */
+const LOT_ATOMS = LOT_TOKENS * ATOMS_PER_TOKEN;
 import type { Atoms, Sats } from "@crclaunch/curve";
 import { requiredBackingSats } from "@crclaunch/cove-economics";
 import { COVE_POLICY_V3 } from "@crclaunch/cove-wire";
@@ -25,6 +28,9 @@ export function validateStateV2(state: CoveStateV2): void {
   }
   if (state.issuedPublicSupplyAtoms % ATOMS_PER_TOKEN !== 0n) {
     throw new CovenantError("SUPPLY_NOT_ATOMIC", "issued supply is not a whole display token");
+  }
+  if (state.issuedPublicSupplyAtoms % LOT_ATOMS !== 0n) {
+    throw new CovenantError("SUPPLY_NOT_LOTS", "issued supply is not a whole number of lots");
   }
   const implied = impliedStageV2(state.issuedPublicSupplyAtoms);
   if (state.curveStage !== implied) {
@@ -69,6 +75,8 @@ export function applyMintV2(prev: CoveStateV2, amountAtoms: Atoms): MintV2Result
   if (amountAtoms <= 0n) throw new CovenantError("ZERO_MINT", "amount must be positive");
   if (amountAtoms % ATOMS_PER_TOKEN !== 0n)
     throw new CovenantError("SUBTOKEN_MINT", "amount must be whole token");
+  if (amountAtoms % LOT_ATOMS !== 0n)
+    throw new CovenantError("NOT_WHOLE_LOTS", `mint whole lots of ${LOT_TOKENS} tokens`);
   const nextSupply = prev.issuedPublicSupplyAtoms + amountAtoms;
   if (nextSupply > PUBLIC_SUPPLY_ATOMS) throw new CovenantError("OVERMINT", "exceeds public cap");
 
@@ -93,6 +101,8 @@ export function applyRedeemV2(prev: CoveStateV2, amountAtoms: Atoms): RedeemV2Re
   if (amountAtoms <= 0n) throw new CovenantError("ZERO_REDEEM", "amount must be positive");
   if (amountAtoms % ATOMS_PER_TOKEN !== 0n)
     throw new CovenantError("SUBTOKEN_REDEEM", "amount must be whole token");
+  if (amountAtoms % LOT_ATOMS !== 0n)
+    throw new CovenantError("NOT_WHOLE_LOTS", `redeem whole lots of ${LOT_TOKENS} tokens`);
   if (amountAtoms > prev.issuedPublicSupplyAtoms)
     throw new CovenantError("REDEEM_EXCEEDS_SUPPLY", "amount exceeds issued supply");
 

@@ -9,6 +9,9 @@ import { buildDeployPsbtV3, buildMintPsbtV3, RESERVE_ANCHOR_SATS } from "./build
 import { validateAndSignMintTransition } from "./guardian.js";
 import { GuardianV3Signer } from "./signer.js";
 
+/** Creator payout script recorded at DEPLOY (output 2). */
+const CREATOR_SCRIPT = Buffer.from("0014" + "9".repeat(40), "hex");
+
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 const ECPair = ECPairFactory(ecc);
 
@@ -43,6 +46,7 @@ describe("production-profile MINT path (§137) — MAINNET1 vault through the Gu
       deployerInputs: [{ txid: "a".repeat(64), vout: 0, script: Buffer.from("0014" + "c".repeat(40), "hex"), valueSats: 1_000_000n }],
       deployerChangeScript: Buffer.from("0014" + "c".repeat(40), "hex"),
       minerFeeSats: 1_000n,
+      creatorScript: CREATOR_SCRIPT,
     });
 
     const mint = buildMintPsbtV3({
@@ -50,7 +54,7 @@ describe("production-profile MINT path (§137) — MAINNET1 vault through the Gu
       tokenId,
       prevState: s0,
       prevBacking: { txid: "a".repeat(64), vout: 1, script: deploy.vault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS },
-      mintAmountAtoms: 84_000_000n * 100_000_000n,
+      mintAmountAtoms: 10_000n * 100_000_000n,
       guardianXOnly,
       recoveryKeyXOnly: recoveryKeyXOnly,
       recoveryProfile: MAINNET1,
@@ -59,6 +63,7 @@ describe("production-profile MINT path (§137) — MAINNET1 vault through the Gu
       buyerChangeScript: Buffer.from("0014" + "e".repeat(40), "hex"),
       feeScript: Buffer.from("0014" + "f".repeat(40), "hex"),
       minerFeeSats: 1_000n,
+      creatorScript: CREATOR_SCRIPT,
     });
     // The prev vault must use the 2-of-3 threshold recovery leaf (not single-key 144 CSV).
     expect(mint.prevVault.recoveryLeaf.script.toString("hex")).not.toBe(
@@ -69,7 +74,7 @@ describe("production-profile MINT path (§137) — MAINNET1 vault through the Gu
 
     const view = new CoveChainView();
     view.deploy(
-      { tokenId, ticker: "FROG", policyVersion: 3, deployTxid: "a".repeat(64), tokenNonce: Buffer.alloc(32, 0xab) },
+      { tokenId, ticker: "FROG", policyVersion: 3, deployTxid: "a".repeat(64), tokenNonce: Buffer.alloc(32, 0xab), creatorScript: CREATOR_SCRIPT },
       { txid: "a".repeat(64), vout: 1 },
       s0,
     );

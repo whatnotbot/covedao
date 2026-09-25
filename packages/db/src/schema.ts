@@ -499,6 +499,8 @@ export const coveV3Tokens = pgTable(
     deployTxid: text("deploy_txid").notNull(),
     deployHeight: atoms("deploy_height").notNull(),
     deployBlockHash: text("deploy_block_hash").notNull(),
+    /** Where the creator's share of every mint is paid (DEPLOY output 2). */
+    creatorScript: text("creator_script").notNull().default(""),
     canonical: boolean("canonical").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

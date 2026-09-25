@@ -144,8 +144,8 @@ function MarketContent() {
               <thead>
                 <tr>
                   <th>Token</th>
-                  <th>Ask &middot; sats/1M</th>
-                  <th>Last &middot; sats/1M</th>
+                  <th>Ask &middot; sats/1k</th>
+                  <th>Last &middot; sats/1k</th>
                   <th>Trend</th>
                   <th>Lot</th>
                   <th>Total</th>

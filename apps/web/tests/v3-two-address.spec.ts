@@ -128,9 +128,9 @@ test("X-002 buy lands the tokens on the Taproot address", async ({ browser }) =>
   const page = await walletPage(browser, DAVE);
   await page.goto(`${BASE}/token/${tokenId}`);
   await page.getByRole("button", { name: /connect wallet/i }).click();
-  await page.getByLabel(/Spend . sats/i).fill("80000");
+  await page.getByLabel(/Spend . sats/i).fill("400000");
   await expect(page.getByText(/≈ .* DAVE/)).toBeVisible({ timeout: 30_000 });
-  const q = await fetch(`${BASE}/api/v3/backing/buy/quote-sats`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tokenId, budgetSats: "80000" }) }).then((r) => r.json());
+  const q = await fetch(`${BASE}/api/v3/backing/buy/quote-sats`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tokenId, budgetSats: "400000" }) }).then((r) => r.json());
   minted = BigInt(q.data.amountAtoms);
   await page.getByRole("button", { name: /review mint/i }).click();
   await expect(page.getByText(/you are minting/i)).toBeVisible({ timeout: 30_000 });
@@ -141,7 +141,7 @@ test("X-002 buy lands the tokens on the Taproot address", async ({ browser }) =>
   const pf = await portfolio(dave.ordinalsAddress);
   const h = pf.data.holdings.find((x: { tokenId: string }) => x.tokenId === tokenId);
   expect(BigInt(h.amountAtoms)).toBe(minted);
-  expect(minted).toBeGreaterThan(40_000_000n * T);
+  expect(minted).toBeGreaterThan(20_000n * T);
 });
 
 test("X-003 transfer from Taproot to another Taproot wallet", async ({ browser }) => {
@@ -149,7 +149,7 @@ test("X-003 transfer from Taproot to another Taproot wallet", async ({ browser }
   await page.goto(`${BASE}/wallet`);
   await page.getByRole("button", { name: /connect wallet/i }).click();
   await page.getByRole("button", { name: "Send", exact: true }).first().click();
-  await page.getByLabel("Send amount").fill("30000000");
+  await page.getByLabel("Send amount").fill("10000");
   await page.getByLabel("Send to address").fill(erin.ordinalsAddress);
   await page.getByRole("button", { name: "Send", exact: true }).last().click();
   await expect(page.getByText(/^sent\./i).first()).toBeVisible({ timeout: 60_000 });
@@ -157,7 +157,7 @@ test("X-003 transfer from Taproot to another Taproot wallet", async ({ browser }
 
   const pf = await portfolio(erin.ordinalsAddress);
   const h = pf.data.holdings.find((x: { tokenId: string }) => x.tokenId === tokenId);
-  expect(BigInt(h.amountAtoms)).toBe(30_000_000n * T);
+  expect(BigInt(h.amountAtoms)).toBe(10_000n * T);
 });
 
 test("X-004 sell back to the vault from a Taproot carrier", async ({ browser }) => {
@@ -165,7 +165,7 @@ test("X-004 sell back to the vault from a Taproot carrier", async ({ browser }) 
   await page.goto(`${BASE}/token/${tokenId}`);
   await page.getByRole("button", { name: /connect wallet/i }).click();
   await page.getByRole("button", { name: "Redeem", exact: true }).click();
-  await page.getByLabel(/^Redeem/).fill("10000000");
+  await page.getByLabel(/^Redeem/).fill("3000");
   await page.getByRole("button", { name: /review redeem/i }).click();
   await expect(page.getByText(/you are redeeming/i)).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: /confirm . sign/i }).click();
@@ -173,11 +173,11 @@ test("X-004 sell back to the vault from a Taproot carrier", async ({ browser }) 
   await mineAndWait(1);
 
   const detail = await fetch(`${BASE}/api/v3/tokens/${tokenId}`).then((r) => r.json());
-  expect(BigInt(detail.data.issuedSupplyAtoms)).toBe(minted - 10_000_000n * T);
+  expect(BigInt(detail.data.issuedSupplyAtoms)).toBe(minted - 3_000n * T);
 });
 
 test("X-005 list with a Taproot BIP-322 signature", async () => {
-  await apiList(DAVE, 10_000_000n, 50_000);
+  await apiList(DAVE, 3_000n, 50_000);
 
   const listings = await fetch(`${BASE}/api/v3/market/listings?tokenId=${tokenId}`).then((r) => r.json());
   expect(listings.data.filter((l: { status: string }) => l.status === "ACTIVE").length).toBe(1);
@@ -204,12 +204,12 @@ test("X-006 P2P fill: nested-segwit buyer, Taproot seller", async ({ browser }) 
   expect(pf.data.listings.find((l: { listingId: string }) => l.listingId === listingId).status).toBe("FILLED");
   const erinPf = await portfolio(erin.ordinalsAddress);
   const h = erinPf.data.holdings.find((x: { tokenId: string }) => x.tokenId === tokenId);
-  // 30M transferred − 10M redeemed + 10M bought.
-  expect(BigInt(h.amountAtoms)).toBe(30_000_000n * T);
+  // 10k transferred − 3k redeemed + 3k bought.
+  expect(BigInt(h.amountAtoms)).toBe(10_000n * T);
 });
 
 test("X-007 cancel with a Taproot signature", async ({ browser }) => {
-  await apiList(DAVE, 5_000_000n, 40_000);
+  await apiList(DAVE, 2_000n, 40_000);
   const page = await walletPage(browser, DAVE);
   await page.goto(`${BASE}/wallet`);
   await page.getByRole("button", { name: /connect wallet/i }).click();

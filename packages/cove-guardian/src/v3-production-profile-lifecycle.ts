@@ -30,6 +30,9 @@ import {
   type ValidatedCoveTransaction,
 } from "./v3/index.js";
 
+/** Creator payout script recorded at DEPLOY (output 2). */
+const CREATOR_SCRIPT = Buffer.from("0014" + "9".repeat(40), "hex");
+
 /**
  * Production-profile-regtest lifecycle (Phase 8.1 §37-§39). Runs the FULL
  * DEPLOY→MINT→TRANSFER→REDEEM→RE-BUY→P2P journey on REAL Bitcoin Core regtest
@@ -51,7 +54,7 @@ const PROFILE_PATH = resolve(process.env.INIT_CWD ?? process.cwd(), process.env.
 
 const MINER_FEE = 1_000n;
 const NONCE = Buffer.alloc(32, 0xab);
-const MINT_AMOUNT = 84_000_000n * 100_000_000n;
+const MINT_AMOUNT = 10_000n * 100_000_000n;
 
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(`ASSERT FAILED: ${msg}`);
@@ -193,6 +196,7 @@ async function main(): Promise<void> {
     identity: { chainIdentity: CHAIN_BITCOIN_REGTEST, policyVersion: 3, ticker: "FROG", tokenNonce: NONCE },
     guardianXOnly, recoveryKeyXOnly, recoveryProfile,
     deployerInputs: [deployerUtxo], deployerChangeScript: deployerUtxo.script, minerFeeSats: MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   deploy.psbt.signInput(0, deployer);
   deploy.psbt.finalizeAllInputs();
@@ -202,17 +206,18 @@ async function main(): Promise<void> {
   await rpc.generateToAddress(1, mineAddr);
   const tokenId = deploy.tokenId;
   const tokenIdHex = tokenId.toString("hex");
-  view.deploy({ tokenId, ticker: "FROG", policyVersion: COVE_POLICY_V3, deployTxid, tokenNonce: NONCE }, { txid: deployTxid, vout: 1 }, deploy.s0);
+  view.deploy({ tokenId, ticker: "FROG", policyVersion: COVE_POLICY_V3, deployTxid, tokenNonce: NONCE , creatorScript: CREATOR_SCRIPT}, { txid: deployTxid, vout: 1 }, deploy.s0);
   console.log(`✓ DEPLOY ${deployTxid} (token ${tokenIdHex})`);
 
   // ── MINT via remote Guardian ──
-  console.log("STEP 2/6 — MINT (remote Guardian, 84M)");
+  console.log("STEP 2/6 — MINT (remote Guardian, 10k)");
   const aliceUtxo = await fundKey(rpc, provider, alice, 1.0, mineAddr);
   const mint1 = buildMintPsbtV3({
     network: bitcoin.networks.regtest, tokenId, prevState: deploy.s0,
     prevBacking: { txid: deployTxid, vout: 1, script: deploy.vault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS },
     mintAmountAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly, recoveryProfile,
     buyerInputs: [aliceUtxo], buyerCarrierScript: p2wpkhScript(alice), buyerChangeScript: p2wpkhScript(alice), feeScript, minerFeeSats: MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   const mintSign = await remoteSigner.signMint({ psbt: mint1.psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile, feeScript, maxMinerFeeSats: MINER_FEE });
   if (!mintSign.ok) throw new Error(`remote Guardian refused MINT: ${mintSign.reason}: ${(mintSign as { detail?: string }).detail}`);
@@ -222,12 +227,12 @@ async function main(): Promise<void> {
   const mint1Val = orThrow(await validateFinalizedMintTransaction({ rawTxHex: mint1Hex, view, network: "regtest", guardianXOnly, recoveryKeyXOnly, recoveryProfile, feeScript }), "MINT");
   const mint1Txid = await broadcast(mint1Val);
   await rpc.generateToAddress(1, mineAddr);
-  assert(mint1.grossSats === 47_950n, `mint gross ${mint1.grossSats}`);
+  assert(mint1.grossSats === 86_920n, `mint gross ${mint1.grossSats}`);
   view.mint({ tokenId, nextState: mint1.nextState, prevBackingOutpoint: { txid: deployTxid, vout: 1 }, nextBackingOutpoint: { txid: mint1Txid, vout: 1 }, recipientOutpoint: { txid: mint1Txid, vout: 2 }, recipientScript: p2wpkhScript(alice), amountAtoms: MINT_AMOUNT });
   console.log(`✓ MINT ${mint1Txid} (remote Guardian signed)`);
 
   // ── TRANSFER Alice→Bob ──
-  console.log("STEP 3/6 — TRANSFER (Alice → Bob, 84M)");
+  console.log("STEP 3/6 — TRANSFER (Alice → Bob, 10k)");
   const aliceFund = await fundKey(rpc, provider, alice, 0.01, mineAddr);
   const transfer = buildTransferPsbtV2({
     network: bitcoin.networks.regtest, tokenId,
@@ -247,7 +252,7 @@ async function main(): Promise<void> {
   console.log(`✓ TRANSFER ${transferTxid}`);
 
   // ── REDEEM via remote Guardian ──
-  console.log("STEP 4/6 — REDEEM (remote Guardian, full 84M)");
+  console.log("STEP 4/6 — REDEEM (remote Guardian, full 10k)");
   const redeem = buildRedeemPsbtV3({
     network: bitcoin.networks.regtest, tokenId, prevState: mint1.nextState,
     prevBacking: { txid: mint1Txid, vout: 1, script: mint1.nextVault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS + mint1.nextState.backingSats },
@@ -264,18 +269,19 @@ async function main(): Promise<void> {
   const redeemVal = orThrow(await validateFinalizedRedeemTransaction({ rawTxHex: redeemHex, view, network: "regtest", guardianXOnly, recoveryKeyXOnly, recoveryProfile, feeScript }), "REDEEM");
   const redeemTxid = await broadcast(redeemVal);
   await rpc.generateToAddress(1, mineAddr);
-  assert(redeem.grossSats === 47_950n, `redeem gross ${redeem.grossSats}`);
+  assert(redeem.grossSats === 86_920n, `redeem gross ${redeem.grossSats}`);
   view.redeem({ tokenId, nextState: redeem.nextState, prevBackingOutpoint: { txid: mint1Txid, vout: 1 }, nextBackingOutpoint: { txid: redeemTxid, vout: 1 }, spentTokenOutpoints: [{ txid: transferTxid, vout: 1 }], change: [] });
   console.log(`✓ REDEEM ${redeemTxid} (remote Guardian signed)`);
 
   // ── RE-BUY via remote Guardian ──
-  console.log("STEP 5/6 — RE-BUY (remote Guardian, 84M)");
+  console.log("STEP 5/6 — RE-BUY (remote Guardian, 10k)");
   const aliceRebuy = await fundKey(rpc, provider, alice, 1.0, mineAddr);
   const mint2 = buildMintPsbtV3({
     network: bitcoin.networks.regtest, tokenId, prevState: redeem.nextState,
     prevBacking: { txid: redeemTxid, vout: 1, script: redeem.nextVault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS + redeem.nextState.backingSats },
     mintAmountAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly, recoveryProfile,
     buyerInputs: [aliceRebuy], buyerCarrierScript: p2wpkhScript(alice), buyerChangeScript: p2wpkhScript(alice), feeScript, minerFeeSats: MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   const rebuySign = await remoteSigner.signMint({ psbt: mint2.psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile, feeScript, maxMinerFeeSats: MINER_FEE });
   if (!rebuySign.ok) throw new Error(`remote Guardian refused RE-BUY: ${rebuySign.reason}`);
@@ -289,7 +295,7 @@ async function main(): Promise<void> {
   console.log(`✓ RE-BUY ${mint2Txid} (remote Guardian signed)`);
 
   // ── P2P atomic fill (Guardian-independent) ──
-  console.log("STEP 6/6 — P2P (Alice sells 42M to Carol)");
+  console.log("STEP 6/6 — P2P (Alice sells 5k to Carol)");
   const half = MINT_AMOUNT / 2n;
   const p2pPrice = 100_000n;
   const p2p = buildTransferPsbtV2({

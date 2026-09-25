@@ -30,10 +30,10 @@ function failClosedTransport(): GuardianTransport {
 }
 
 export const DEV_RISK_POLICY: GuardianRiskPolicy = {
-  maxGrossSats: 1_000_000n,
-  // Dev is deliberately permissive: the regtest harnesses mint the whole
-  // curve in single steps. Production sets 2,100,000 tokens and a 5,000-sat
-  // floor from the committed profile.
+  // The product's per-mint spending limit. Big buyers mint several times and
+  // pay the flat mint fee each time. No token-count limit: at stage 1 one
+  // would cap a mint far below the flat fee.
+  maxGrossSats: 200_000n,
   maxMintAtoms: 1_000_000_000n * 100_000_000n,
   minMintGrossSats: 0n,
   maxRedeemPayoutSats: 1_000_000n,
@@ -53,7 +53,11 @@ export function buildAppTransitionSigner(db: Database, config: V3AppConfig): Gua
       localSigningBackend(signer),
       new PostgresSigningJournal(db),
       new PostgresGuardianAudit(db, config.recoveryProfile?.profileVersion ?? "COVE_V3_VAULT_PROFILE_DEV1"),
-      { ...DEV_RISK_POLICY, maxMinerFeeSats: config.maxMinerFeeSats },
+      {
+        ...DEV_RISK_POLICY,
+        maxMinerFeeSats: config.maxMinerFeeSats,
+        ...(config.mintLimits?.maxGrossSats != null ? { maxGrossSats: config.mintLimits.maxGrossSats } : {}),
+      },
     );
   }
 

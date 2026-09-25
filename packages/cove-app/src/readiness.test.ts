@@ -24,9 +24,9 @@ const profile: MainnetProfile = {
   p2pFeeBps: 50,
   carrierSats: 1000n,
   anchorSats: 10_000n,
-  maxProtocolSupplyAtoms: 1_000_000_000n * 100_000_000n,
+  maxProtocolSupplyAtoms: 21_000_000n * 100_000_000n,
   reserveAllocationAtoms: 0n,
-  mintCmr: "ccdb02000fdb372bfa2e166b9fe0192715d555fc5720f8008ee741fe1a0d58ec",
+  mintCmr: "7fb27adf2db5458882daf976ba9325815f111b2f3b16eedb72e75f96de4269b2",
   redeemCmr: "37e681b3e70a34acc3b38680c06fbe4f1b2799bede2607c6c9ed7fcac8c95d56",
   canary: {
     allowedWalletScripts: ["0014" + "66".repeat(20)],

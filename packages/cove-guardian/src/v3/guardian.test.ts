@@ -21,6 +21,9 @@ import { LocalGuardianTransitionSigner, type GuardianRiskPolicy } from "./transi
 import { InMemorySigningJournal } from "./journal.js";
 import type { AuditRecord } from "./types.js";
 
+/** Creator payout script recorded at DEPLOY (output 2). */
+const CREATOR_SCRIPT = Buffer.from("0014" + "9".repeat(40), "hex");
+
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 const ECPair = ECPairFactory(ecc);
 
@@ -29,7 +32,7 @@ const guardianXOnly = signer.xOnlyPubkey();
 const recoveryXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x43), true)!.subarray(1));
 const NONCE = Buffer.alloc(32, 0xab);
 const feeScript = Buffer.from("0014" + "f".repeat(40), "hex"); // valid P2WPKH
-const MINT_AMOUNT = 84_000_000n * 100_000_000n;
+const MINT_AMOUNT = 10_000n * 100_000_000n;
 
 type K = ReturnType<typeof ECPair.makeRandom>;
 function p2wpkh(key: K): Buffer {
@@ -71,10 +74,11 @@ function mintSetup(overrides: Partial<Parameters<typeof buildMintPsbtV3>[0]> = {
     deployerInputs: [{ txid: "dd".repeat(32), vout: 0, script: p2wpkh(ECPair.makeRandom()), valueSats: 1_000_000n }],
     deployerChangeScript: p2wpkh(ECPair.makeRandom()),
     minerFeeSats: 1_000n,
+    creatorScript: CREATOR_SCRIPT,
   });
   const view = new CoveChainView();
   view.deploy(
-    { tokenId: deploy.tokenId, ticker: "FROG", policyVersion: 3, deployTxid: DEPLOY_TXID, tokenNonce: NONCE },
+    { tokenId: deploy.tokenId, ticker: "FROG", policyVersion: 3, deployTxid: DEPLOY_TXID, tokenNonce: NONCE , creatorScript: CREATOR_SCRIPT},
     { txid: DEPLOY_TXID, vout: 1 },
     deploy.s0,
   );
@@ -98,6 +102,7 @@ function mintSetup(overrides: Partial<Parameters<typeof buildMintPsbtV3>[0]> = {
     feeScript,
     minerFeeSats: 1_000n,
     ...overrides,
+    creatorScript: CREATOR_SCRIPT,
   });
   return { deploy, view, mint, alice };
 }

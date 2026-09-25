@@ -29,6 +29,9 @@ import { computeHealth } from "./health.js";
 import { getTokenUtxosByScriptDb } from "./read-models-db.js";
 import { REGTEST_KEYS, REGTEST_GUARDIAN_PRIV, REGTEST_FEE_SCRIPT, REGTEST_NONCE, REGTEST_MINER_FEE, regtestConfig } from "./testing/regtest-fixture.js";
 
+/** Creator payout script recorded at DEPLOY (output 2). */
+const CREATOR_SCRIPT = Buffer.from("0014" + "9".repeat(40), "hex");
+
 /**
  * REAL persistent lifecycle proof (§3-§12). Requires Postgres + Bitcoin Core +
  * a built Simplicity binary; NO skip. Uses persistentWorker to index EVERY
@@ -41,9 +44,9 @@ const RPC_USER = process.env.COVE_REGTEST_RPC_USER ?? "user";
 const RPC_PASSWORD = process.env.COVE_REGTEST_RPC_PASSWORD ?? "pass";
 const DB_URL = process.env.COVE_DATABASE_URL ?? process.env.DATABASE_URL;
 
-const MINT_AMOUNT = 84_000_000n * 100_000_000n;
+const MINT_AMOUNT = 10_000n * 100_000_000n;
 /** Required backing after minting MINT_AMOUNT from S0, from the frozen curve. */
-const R_84M = requiredBackingSats(MINT_AMOUNT / 100_000_000n);
+const R_10K = requiredBackingSats(MINT_AMOUNT / 100_000_000n);
 
 function p2wpkh(key: { publicKey: Uint8Array }): Buffer {
   return bitcoin.payments.p2wpkh({ pubkey: key.publicKey as Buffer, network: bitcoin.networks.regtest }).output!;
@@ -135,6 +138,7 @@ async function main() {
     identity: { chainIdentity: cfg.chainIdentity, policyVersion: 3, ticker: "FROG", tokenNonce: REGTEST_NONCE },
     guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     deployerInputs: [deployerUtxo], deployerChangeScript: deployerUtxo.script, minerFeeSats: REGTEST_MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   deploy.psbt.signInput(0, deployer);
   deploy.psbt.finalizeAllInputs();
@@ -158,6 +162,7 @@ async function main() {
     prevBacking: { txid: deployTxid, vout: 1, script: deploy.vault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS },
     mintAmountAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     buyerInputs: [aliceUtxo], buyerCarrierScript: p2wpkh(alice), buyerChangeScript: p2wpkh(alice), feeScript, minerFeeSats: REGTEST_MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   const mintSign = await validateAndSignMintTransition({ signer, psbt: mint1.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!mintSign.ok) throw new Error(`guardian refused MINT: ${mintSign.reason}`);
@@ -169,7 +174,7 @@ async function main() {
   await mine();
   {
     const h = await hydrateState(db, "regtest", cfg);
-    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_84M) throw new Error("MINT backing != R(84M)");
+    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_10K) throw new Error("MINT backing != R(10k)");
     if (h.tokenUtxos.size !== 1) throw new Error("MINT should create 1 token utxo");
   }
   console.log(`✓ MINT persisted ${mintTxid}`);
@@ -192,7 +197,7 @@ async function main() {
   await mine();
   {
     const h = await hydrateState(db, "regtest", cfg);
-    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_84M) throw new Error("TRANSFER moved backing");
+    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_10K) throw new Error("TRANSFER moved backing");
   }
   console.log(`✓ TRANSFER persisted ${transferTxid}`);
 
@@ -226,6 +231,7 @@ async function main() {
     prevBacking: { txid: redeemTxid, vout: 1, script: redeem.nextVault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS },
     mintAmountAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     buyerInputs: [aliceRebuy], buyerCarrierScript: p2wpkh(alice), buyerChangeScript: p2wpkh(alice), feeScript, minerFeeSats: REGTEST_MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   const rebuySign = await validateAndSignMintTransition({ signer, psbt: mint2.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!rebuySign.ok) throw new Error(`guardian refused RE-BUY: ${rebuySign.reason}`);
@@ -237,7 +243,7 @@ async function main() {
   await mine();
   {
     const h = await hydrateState(db, "regtest", cfg);
-    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_84M) throw new Error("RE-BUY backing != R(84M)");
+    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_10K) throw new Error("RE-BUY backing != R(10k)");
   }
   console.log(`✓ RE-BUY persisted ${mint2Txid}`);
 
@@ -269,7 +275,7 @@ async function main() {
     const h = await hydrateState(db, "regtest", cfg);
     const after = await getTokenUtxosByScriptDb(db, "regtest", aliceScript);
     if (after.some((u) => u.txid === sellerX.txid && u.vout === sellerX.vout)) throw new Error("seller UTXO still unspent after P2P");
-    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_84M) throw new Error("P2P moved backing");
+    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_10K) throw new Error("P2P moved backing");
     // spent marker
     const spent = await db.select().from(schema.coveV3TokenUtxos).where(and(eq(schema.coveV3TokenUtxos.network, "regtest"), eq(schema.coveV3TokenUtxos.txid, sellerX.txid), eq(schema.coveV3TokenUtxos.vout, sellerX.vout)));
     if (spent[0]!.spentByTxid !== p2pTxid) throw new Error("P2P spentByTxid mismatch");
@@ -290,6 +296,7 @@ async function main() {
     prevBacking: { txid: mint2Txid, vout: 1, script: mint2.nextVault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS + mint2.nextState.backingSats },
     mintAmountAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     buyerInputs: [newBuyerFund], buyerCarrierScript: p2wpkh(newBuyer), buyerChangeScript: p2wpkh(newBuyer), feeScript, minerFeeSats: REGTEST_MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   const snapSign = await validateAndSignMintTransition({ signer, psbt: mint3.psbt, view: snapshot, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!snapSign.ok) throw new Error(`snapshot-driven Guardian refused: ${snapSign.reason}`);

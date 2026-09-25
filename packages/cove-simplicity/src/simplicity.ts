@@ -26,13 +26,15 @@ export const REDEEM_CMR_V2 = "a15ac4cbc450ac2dd113b1a9de178450ccc893a5213d8a2f56
  * different commitment. Kept for reference; no live deployment used it.
  */
 export const MINT_CMR_CAP840 = "0b594eb3fadec17b45bb1d245ae18f8c512a1ba42751f820cd28351ced6c8377";
+/** The MINT CMR for the 1,000,000,000-token cap, before the 21M staircase. */
+export const MINT_CMR_CAP1B = "ccdb02000fdb372bfa2e166b9fe0192715d555fc5720f8008ee741fe1a0d58ec";
 
 /**
  * Production CMRs (COVE_POLICY_V3): the predicates now enforce the u64
  * overflow/borrow flags directly (see rust/src/mint.simf + redeem.simf). These
  * are the ONLY CMRs new deployments should use.
  */
-export const MINT_CMR = "ccdb02000fdb372bfa2e166b9fe0192715d555fc5720f8008ee741fe1a0d58ec";
+export const MINT_CMR = "7fb27adf2db5458882daf976ba9325815f111b2f3b16eedb72e75f96de4269b2";
 export const REDEEM_CMR = "37e681b3e70a34acc3b38680c06fbe4f1b2799bede2607c6c9ed7fcac8c95d56";
 
 export interface MintWitness {

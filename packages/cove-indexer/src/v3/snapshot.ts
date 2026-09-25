@@ -45,7 +45,11 @@ export async function loadCanonicalViewSnapshotFromDb(params: {
           isNull(schema.coveV3TokenUtxos.spentByTxid),
         ),
       );
-    return { cursor, backing, utxos };
+    const token = await tx
+      .select({ creatorScript: schema.coveV3Tokens.creatorScript })
+      .from(schema.coveV3Tokens)
+      .where(and(eq(schema.coveV3Tokens.network, network), eq(schema.coveV3Tokens.tokenId, snapshotTokenId), eq(schema.coveV3Tokens.canonical, true)));
+    return { cursor, backing, utxos, token };
   }, { isolationLevel: "repeatable read" });
 
   const cur = rows.cursor[0];
@@ -105,6 +109,11 @@ export async function loadCanonicalViewSnapshotFromDb(params: {
     },
     getTokenUtxo(o: OutPoint) {
       return utxoByOutpoint.get(opKey(o)) ?? null;
+    },
+    getTokenCreatorScript(tokenId: Buffer) {
+      const c = rows.token[0]?.creatorScript;
+      if (tokenId.toString("hex") !== snapshotTokenId || !c) return null;
+      return Buffer.from(c, "hex");
     },
   });
 }

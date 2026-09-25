@@ -5,7 +5,7 @@ import {
   type CoveStateV2,
 } from "@crclaunch/cove-covenant";
 import { OP_MINT, OP_REDEEM } from "@crclaunch/cove-wire";
-import { COVE_FEE_CONFIG, deterministicFee, stageScaledFlatSats } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, creatorFeeSats, deterministicFee, mintFeeSats } from "@crclaunch/cove-economics";
 import { decodeCoveOpReturn, readPsbtInputs, readPsbtOutputs } from "./resolve.js";
 import {
   type CoveCanonicalView,
@@ -38,7 +38,9 @@ export interface AnalyzeParams {
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
   /** Flat sats added on top of the percentage. */
-  buyFeeFlatSatsAtTopStage?: bigint;
+  buyFeeFlatSats?: bigint;
+  /** Creator share of a mint, bps of the curve price. */
+  creatorFeeBps?: bigint;
   redeemFeeBps?: bigint;
   /** Flat sats deducted on top of the percentage. */
   redeemFeeFlatSats?: bigint;
@@ -89,10 +91,10 @@ export function analyzeMintTransitionV3(params: AnalyzeParams): MintAnalysis {
     throw new CoveAnalyzeError("REFERENCE_POLICY_REJECTED", (e as Error).message);
   }
 
-  const protocolFeeSats = deterministicFee(grossSats, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(
-      currentState.issuedPublicSupplyAtoms / 100_000_000n,
-      params.buyFeeFlatSatsAtTopStage ?? COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage,
-    ));
+  const protocolFeeSats = mintFeeSats(grossSats, amountAtoms, params.buyFeeBps ?? COVE_FEE_CONFIG.buyFeeBps, params.buyFeeFlatSats ?? COVE_FEE_CONFIG.buyFeeFlatSats);
+  const creatorScript = params.view.getTokenCreatorScript?.(tokenId) ?? null;
+  if (!creatorScript) throw new CoveAnalyzeError("CREATOR_UNKNOWN", "the view has no creator for this token");
+  const creatorFee = creatorFeeSats(grossSats, params.creatorFeeBps ?? COVE_FEE_CONFIG.creatorFeeBps);
   const outputs = readPsbtOutputs(params.psbt);
   const totalIn = inputs.reduce((s, i) => s + i.valueSats, 0n);
   const totalOut = outputs.reduce((s, o) => s + o.value, 0n);
@@ -108,6 +110,8 @@ export function analyzeMintTransitionV3(params: AnalyzeParams): MintAnalysis {
     nextState,
     grossSats,
     protocolFeeSats,
+    creatorFeeSats: creatorFee,
+    creatorScript,
     minerFeeSats,
     backingInputIndex: 0,
     buyerInputIndices: inputs.slice(1).map((i) => i.index),

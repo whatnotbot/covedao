@@ -33,11 +33,11 @@ function mint(supplyBefore: bigint): CoveTransaction {
     actor: ACTOR,
     recipient: RECIPIENT,
     ticker: "FROG",
-    amountAtoms: 200_000_000_000_000n,
+    amountAtoms: 100_000_000_000n,
     supplyBeforeAtoms: supplyBefore,
     protocolOutputs: [
       { index: 1, scriptPubKeyHex: RECIPIENT, amountSats: 330n, role: "recipient" },
-      { index: 2, scriptPubKeyHex: "0014" + "11".repeat(20), amountSats: 1010n, role: "settlement" },
+      { index: 2, scriptPubKeyHex: "0014" + "11".repeat(20), amountSats: 8_779n, role: "settlement" },
     ],
   };
 }
@@ -50,7 +50,7 @@ function transfer(): CoveTransaction {
     actor: RECIPIENT,
     recipient: RECIPIENT2,
     ticker: "FROG",
-    amountAtoms: 50_000_000_000_000n,
+    amountAtoms: 50_000_000_000n,
     protocolOutputs: [
       { index: 1, scriptPubKeyHex: RECIPIENT2, amountSats: 294n, role: "recipient" },
       { index: 2, scriptPubKeyHex: RECIPIENT, amountSats: 330n, role: "continuation" },

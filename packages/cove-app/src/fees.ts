@@ -76,11 +76,12 @@ export function estimateOperationVsize(op: CoveOperation, input: OperationShapeI
 
   switch (op) {
     case "DEPLOY":
-      outputs.push(SCRIPT_BYTES_P2TR, wallet);
+      // vault, creator record, BTC change
+      outputs.push(SCRIPT_BYTES_P2TR, wallet, wallet);
       break;
     case "BACKING_BUY":
-      // vault successor, token carrier, protocol fee, BTC change
-      outputs.push(SCRIPT_BYTES_P2TR, carrier, input.feeScriptBytes, wallet);
+      // vault successor, token carrier, protocol fee, creator share, BTC change
+      outputs.push(SCRIPT_BYTES_P2TR, carrier, input.feeScriptBytes, SCRIPT_BYTES_P2TR, wallet);
       if (input.discovery) outputs.push(DISCOVERY_SCRIPT_BYTES);
       break;
     case "REDEEM":

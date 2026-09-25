@@ -95,6 +95,7 @@ export class V3Store {
           deployTxid: meta.deployTxid,
           deployHeight: meta.deployHeight,
           deployBlockHash: meta.deployBlockHash,
+          creatorScript: meta.creatorScript,
           canonical: true,
         });
         await tx.insert(tables.coveV3BackingStates).values(this.backingRow(backing));

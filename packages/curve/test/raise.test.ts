@@ -14,13 +14,13 @@ import {
 } from "../src/index.js";
 
 describe("raise economics", () => {
-  it("CURVE-005 (golden): full raise = 28,805,700 sats", () => {
-    expect(getTheoreticalFullRaise()).toBe(28_805_700n);
+  it("CURVE-005 (golden): full raise = 1,003,275,000 sats", () => {
+    expect(getTheoreticalFullRaise()).toBe(1_003_275_000n);
   });
 
-  it("reserve contribution before fees = 0.24196788 BTC", () => {
+  it("reserve contribution before fees is about ten BTC", () => {
     const sats = getTheoreticalFullRaise();
-    expect(sats).toBe(28_805_700n);
+    expect(sats).toBe(1_003_275_000n);
     expect(sats * 100_000_000n / 100_000_000n).toBe(sats);
   });
 
@@ -30,41 +30,41 @@ describe("raise economics", () => {
 
   it("validateCurveConfig flags each invariant violation", () => {
     const prices = [...STAGE_PRICES_SATS_PER_MILLION];
-    expect(validateCurveConfig({ totalSupplyTokens: 999_999_999n })).toContain(
-      "TOTAL_SUPPLY_TOKENS must be 1B.",
+    expect(validateCurveConfig({ totalSupplyTokens: 20_999_999n })).toContain(
+      "TOTAL_SUPPLY_TOKENS must be 21000000.",
     );
     expect(
-      validateCurveConfig({ publicSupplyTokens: 800_000_000n, reserveSupplyTokens: 100_000_000n }),
+      validateCurveConfig({ publicSupplyTokens: 20_000_000n, reserveSupplyTokens: 100_000n }),
     ).toContain("public + reserve must equal total supply.");
-    expect(validateCurveConfig({ stagePrices: prices.slice(0, 19) })).toContain(
-      "Must be exactly 20 stages.",
+    expect(validateCurveConfig({ stagePrices: prices.slice(0, 209) })).toContain(
+      "Must be exactly 210 stages.",
     );
     const badFirst = [...prices];
-    badFirst[0] = 501n;
-    expect(validateCurveConfig({ stagePrices: badFirst })).toContain("Stage 1 price must be 500.");
+    badFirst[0] = 8_692_001n;
+    expect(validateCurveConfig({ stagePrices: badFirst })).toContain("Stage 1 price must be 8692000.");
     const badLast = [...prices];
-    badLast[19] = 149_730n;
+    badLast[209] = 86_857_999n;
     expect(validateCurveConfig({ stagePrices: badLast })).toContain(
-      "Stage 20 price must be 149,731.",
+      "Stage 210 price must be 86858000.",
     );
     const badOrder = [...prices];
     badOrder[5] = badOrder[4]!;
     expect(validateCurveConfig({ stagePrices: badOrder })).toContain(
       "Stage 6 price must exceed stage 5 price.",
     );
-    expect(validateCurveConfig({ tokensPerStage: 41_000_000n }).join(" ")).toContain(
-      "Full raise must be 28805700 sats",
+    expect(validateCurveConfig({ tokensPerStage: 99_000n }).join(" ")).toContain(
+      "Full raise must be 1003275000 sats",
     );
   });
 
   it("tokenomics are standardized (100% public, zero premine/team/reserve)", () => {
-    expect(TOTAL_SUPPLY_TOKENS).toBe(1_000_000_000n);
-    expect(PUBLIC_SUPPLY_TOKENS).toBe(1_000_000_000n);
+    expect(TOTAL_SUPPLY_TOKENS).toBe(21_000_000n);
+    expect(PUBLIC_SUPPLY_TOKENS).toBe(21_000_000n);
     expect(GRADUATION_RESERVE_TOKENS).toBe(0n);
     expect(CREATOR_PREMINE_TOKENS).toBe(0n);
     expect(TEAM_ALLOCATION_TOKENS).toBe(0n);
     expect(PUBLIC_SUPPLY_TOKENS + GRADUATION_RESERVE_TOKENS).toBe(TOTAL_SUPPLY_TOKENS);
-    expect(STAGE_COUNT).toBe(20);
+    expect(STAGE_COUNT).toBe(210);
   });
 
   it("getPublicMintProgress computes integer basis points", () => {
@@ -76,7 +76,7 @@ describe("raise economics", () => {
     expect(getPublicMintProgress(PUBLIC_SUPPLY_TOKENS).bps).toBe(10_000);
     expect(getPublicMintProgress(PUBLIC_SUPPLY_TOKENS / 2n).bps).toBe(5_000);
     // 63% example from spec.
-    const p = getPublicMintProgress(630_000_000n);
+    const p = getPublicMintProgress(13_230_000n);
     expect(p.bps).toBe(6_300);
   });
 
@@ -90,7 +90,7 @@ describe("raise economics", () => {
 
   it("getRemainingPublicSupply clamps at zero", () => {
     expect(getRemainingPublicSupply(0n)).toBe(PUBLIC_SUPPLY_TOKENS);
-    expect(getRemainingPublicSupply(1_000_000_000n)).toBe(0n);
-    expect(getRemainingPublicSupply(1_100_000_000n)).toBe(0n);
+    expect(getRemainingPublicSupply(21_000_000n)).toBe(0n);
+    expect(getRemainingPublicSupply(22_000_000n)).toBe(0n);
   });
 });

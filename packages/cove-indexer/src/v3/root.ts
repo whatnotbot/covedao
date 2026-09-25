@@ -22,7 +22,7 @@ export function computeStateRoot(params: {
   const tokenLines: string[] = [];
   for (const t of [...params.tokens.values()].sort((a, b) => a.tokenId.localeCompare(b.tokenId))) {
     tokenLines.push(
-      line(["TOKEN", t.tokenId, t.ticker, String(t.policyVersion), t.tokenNonce, t.deployTxid, t.deployHeight.toString()]),
+      line(["TOKEN", t.tokenId, t.ticker, String(t.policyVersion), t.tokenNonce, t.deployTxid, t.deployHeight.toString(), t.creatorScript]),
     );
   }
   const backingLines: string[] = [];

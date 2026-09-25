@@ -23,8 +23,8 @@ fn main() {
     let (carry, sum_supply): (bool, u64) = jet::add_64(prev_supply, amount);
     assert!(jet::le_64(prev_supply, sum_supply));
     assert!(jet::eq_64(sum_supply, next_supply));
-    // No overmint: public supply cap = 840,000,000 display tokens.
-    assert!(jet::le_64(next_supply, 840_000_000));
+    // No overmint: public supply cap = 21,000,000 display tokens.
+    assert!(jet::le_64(next_supply, 21_000_000));
     // Positive amount.
     assert!(jet::lt_64(0, amount));
     // Reserve movement: reserve grows by exactly the curve contribution; NO overflow.

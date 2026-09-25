@@ -17,6 +17,9 @@ import {
 import { unsignedTransaction } from "./resolve.js";
 import { validateFinalizedMintTransaction, validateFinalizedRedeemTransaction } from "./finalize.js";
 
+/** Creator payout script recorded at DEPLOY (output 2). */
+const CREATOR_SCRIPT = Buffer.from("0014" + "9".repeat(40), "hex");
+
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 const ECPair = ECPairFactory(ecc);
 
@@ -24,7 +27,7 @@ const guardianXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x42), tr
 const recoveryXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x43), true)!.subarray(1));
 const NONCE = Buffer.alloc(32, 0xab);
 const feeScript = Buffer.from("0014" + "f".repeat(40), "hex");
-const MINT_AMOUNT = 84_000_000n * 100_000_000n;
+const MINT_AMOUNT = 10_000n * 100_000_000n;
 const DEPLOY_TXID = "aa".repeat(32);
 const MINT_TXID = "ff".repeat(32);
 
@@ -42,10 +45,11 @@ function deploySetup() {
     deployerInputs: [{ txid: "dd".repeat(32), vout: 0, script: p2wpkh(ECPair.makeRandom()), valueSats: 1_000_000n }],
     deployerChangeScript: p2wpkh(ECPair.makeRandom()),
     minerFeeSats: 1_000n,
+    creatorScript: CREATOR_SCRIPT,
   });
   const view = new CoveChainView();
   view.deploy(
-    { tokenId: deploy.tokenId, ticker: "FROG", policyVersion: 3, deployTxid: DEPLOY_TXID, tokenNonce: NONCE },
+    { tokenId: deploy.tokenId, ticker: "FROG", policyVersion: 3, deployTxid: DEPLOY_TXID, tokenNonce: NONCE , creatorScript: CREATOR_SCRIPT},
     { txid: DEPLOY_TXID, vout: 1 },
     deploy.s0,
   );
@@ -63,6 +67,7 @@ function deploySetup() {
     buyerChangeScript: p2wpkh(alice),
     feeScript,
     minerFeeSats: 1_000n,
+    creatorScript: CREATOR_SCRIPT,
   });
   return { deploy, view, mint, alice };
 }
@@ -130,7 +135,7 @@ describe("finalize — full/partial redeem BTC change layout (§3)", () => {
   it.skipIf(!isSimplicityAvailable())("partial redeem + token change carrier (5 outputs) → valid", async () => {
     const s = mintedSetup();
     // Redeem 60M (leave 24M change): gross 37,350 → fee 374 clears P2WPKH dust.
-    const raw = redeemRaw(60_000_000n * 100_000_000n, 0n);
+    const raw = redeemRaw(6_000n * 100_000_000n, 0n);
     const r = await validateFinalizedRedeemTransaction({ rawTxHex: raw, view: s.view, ...base() });
     expect("ok" in r).toBe(false);
   });

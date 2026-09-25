@@ -10,14 +10,15 @@ const S0 = {
   curveStage: 1,
 };
 
-const MINT_50M = 50_000_000n * 100_000_000n;
+/** One stair: 100,000 tokens. */
+const MINT_50M = 100_000n * 100_000_000n;
 
 describe("MINT transition (S0 → S1)", () => {
   it("computes the correct successor state and curve payment", () => {
     const r = applyMint(S0, MINT_50M);
-    expect(r.curveContributionSats).toBe(25_000n); // 50M x 500 sats/1M
+    expect(r.curveContributionSats).toBe(869_200n); // 100 lots x 8,692 sats
     expect(r.nextState.publicSupplyAtoms).toBe(MINT_50M);
-    expect(r.nextState.reserveSats).toBe(25_000n);
+    expect(r.nextState.reserveSats).toBe(869_200n);
     expect(r.nextState.curveStage).toBe(2);
     expect(r.nextState.phase).toBe("PUBLIC_MINT");
   });
@@ -31,13 +32,13 @@ describe("MINT transition (S0 → S1)", () => {
   });
 
   it("rejects an over-supply mint", () => {
-    expect(() => applyMint(S0, 1_000_000_001n * 100_000_000n)).toThrow(/exceed public supply/);
+    expect(() => applyMint(S0, 21_000_001n * 100_000_000n)).toThrow(/exceed public supply/);
   });
 
-  it("accepts a mint that lands exactly at 1B", () => {
-    const r = applyMint(S0, 1_000_000_000n * 100_000_000n);
-    expect(r.nextState.publicSupplyAtoms).toBe(1_000_000_000n * 100_000_000n);
-    expect(r.curveContributionSats).toBe(28_805_700n); // full raise
+  it("accepts a mint that lands exactly at 21M", () => {
+    const r = applyMint(S0, 21_000_000n * 100_000_000n);
+    expect(r.nextState.publicSupplyAtoms).toBe(21_000_000n * 100_000_000n);
+    expect(r.curveContributionSats).toBe(1_003_275_000n); // full raise
   });
 
   it("recognizes the correct successor and rejects a manipulated one", () => {

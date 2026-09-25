@@ -302,7 +302,7 @@ function TokenTable({
           <tr>
             <th>Ticker</th>
             <th>Status</th>
-            <th>Last · sats/1M</th>
+            <th>Last · sats/1k</th>
             <th>Trend</th>
             <th>Issued / cap</th>
             <th>Progress</th>
@@ -369,7 +369,7 @@ function TokenTable({
                   <div className="mt-1 text-xs text-bone-dim">{pct.toFixed(1)}%</div>
                 </td>
                 <td className="whitespace-nowrap text-bone-2">{fmtBtc(BigInt(t.backingSats))}</td>
-                <td className="whitespace-nowrap text-bone-dim">{t.curveStage} / 20</td>
+                <td className="whitespace-nowrap text-bone-dim">{t.curveStage} / 210</td>
                 <td className="text-bone-2">{fmtInt(t.holderCount)}</td>
                 <td className="whitespace-nowrap text-bone-2">
                   {t.bestAskSats ? (

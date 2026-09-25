@@ -26,6 +26,9 @@ import { V3Store } from "./store.js";
 import { createDb } from "@crclaunch/db";
 import { reorgToTip } from "./reorg.js";
 
+/** Creator payout script recorded at DEPLOY (output 2). */
+const CREATOR_SCRIPT = Buffer.from("0014" + "9".repeat(40), "hex");
+
 /**
  * Phase 4.4 lifecycle → V3 indexer fixture (§28). Indexes REAL mined blocks
  * into V3IndexerState, asserts state, then performs a real reorg and asserts
@@ -41,7 +44,7 @@ const signer = GuardianV3Signer.fromPrivateKey(REGTEST_GUARDIAN_PRIV);
 const guardianXOnly = signer.xOnlyPubkey();
 const recoveryXOnly = REGTEST_RECOVERY_XONLY;
 const NONCE = REGTEST_NONCE;
-const MINT_AMOUNT = 84_000_000n * 100_000_000n;
+const MINT_AMOUNT = 10_000n * 100_000_000n;
 const MINER_FEE = REGTEST_MINER_FEE;
 
 type K = ECPairInterface;
@@ -133,6 +136,7 @@ async function main() {
     identity: { chainIdentity: CHAIN_BITCOIN_REGTEST, policyVersion: 3, ticker: "FROG", tokenNonce: NONCE },
     guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     deployerInputs: [deployerUtxo], deployerChangeScript: deployerUtxo.script, minerFeeSats: MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   deploy.psbt.signInput(0, deployer);
   deploy.psbt.finalizeAllInputs();
@@ -143,13 +147,14 @@ async function main() {
   const tokenId = deploy.tokenId;
   console.log(`✓ DEPLOY indexed supply=0 backing=0`);
 
-  // ── MINT 84M ──
+  // ── MINT 10k ──
   const aliceUtxo = await fund(alice, 1.0);
   const mint1 = buildMintPsbtV3({
     network: bitcoin.networks.regtest, tokenId, prevState: deploy.s0,
     prevBacking: { txid: deployVal.txid, vout: 1, script: deploy.vault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS },
     mintAmountAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     buyerInputs: [aliceUtxo], buyerCarrierScript: p2wpkh(alice), buyerChangeScript: p2wpkh(alice), feeScript, minerFeeSats: MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   const mintSign = await validateAndSignMintTransition({ signer, psbt: mint1.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!mintSign.ok) throw new Error(`guardian refused MINT: ${mintSign.reason}`);
@@ -161,7 +166,7 @@ async function main() {
   await mineIndex();
   console.log(`✓ MINT indexed supply=${state.backing.get(tokenId.toString("hex"))!.state.issuedPublicSupplyAtoms} backing=${state.backing.get(tokenId.toString("hex"))!.state.backingSats}`);
 
-  // ── TRANSFER full 84M → Bob ──
+  // ── TRANSFER full 10k → Bob ──
   const aliceFund = await fund(alice, 0.01);
   const transfer = buildTransferPsbtV2({
     network: bitcoin.networks.regtest, tokenId,
@@ -180,7 +185,7 @@ async function main() {
   await mineIndex();
   console.log(`✓ TRANSFER indexed (backing/supply unchanged)`);
 
-  // ── REDEEM full 84M ──
+  // ── REDEEM full 10k ──
   const redeem = buildRedeemPsbtV3({
     network: bitcoin.networks.regtest, tokenId, prevState: mint1.nextState,
     prevBacking: { txid: mintVal.txid, vout: 1, script: mint1.nextVault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS + mint1.nextState.backingSats },

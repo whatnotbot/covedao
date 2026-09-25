@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PUBLIC_SUPPLY } from "./curve.js";
 import {
-  BackingError,
+  type BackingError,
   grossBuy,
   grossRedeem,
   quoteBuy,
@@ -11,51 +11,45 @@ import {
 import { dustThreshold, isDustSafe } from "./dust.js";
 
 const M = 1_000_000n;
-const STAGE = 42n * M;
+/** One stair: 100,000 tokens. */
+const STAGE = 100_000n;
 
-function expectBackingError(fn: () => unknown, code: string): void {
-  try {
-    fn();
-    throw new Error(`expected BackingError ${code}`);
-  } catch (e) {
-    expect(e).toBeInstanceOf(BackingError);
-    expect((e as BackingError).code).toBe(code);
-  }
-}
 
 describe("zero-delta economics (§1.1)", () => {
-  it("positive quantity with zero R-delta is rejected (ECONOMIC_DUST)", () => {
-    // R(1001) == R(1000) at stage 0 (500 sats/M): a 1-token buy from 1000 is 0 sats.
-    expect(requiredBackingSats(1001n)).toBe(requiredBackingSats(1000n));
-    expectBackingError(() => grossBuy(1000n, 1n), "ECONOMIC_DUST");
-    expectBackingError(() => grossRedeem(1001n, 1n), "ECONOMIC_DUST");
+  it("no positive quantity has a zero R-delta: every token costs at least 8 sats", () => {
+    // The cheapest lot is 8,692 sats, so one token is 8.692 sats; ECONOMIC_DUST
+    // is unreachable for any positive amount on this curve.
+    for (const s of [0n, 999n, 1_000n, STAGE - 1n, STAGE, 10n * STAGE, PUBLIC_SUPPLY - 1n]) {
+      expect(grossBuy(s, 1n) >= 8n, `buy 1 at ${s}`).toBe(true);
+    }
+    expect(requiredBackingSats(1001n) - requiredBackingSats(1000n)).toBe(9n);
   });
 
-  it("a quantity whose R-delta is 1 sat is accepted", () => {
-    expect(grossBuy(0n, 1n)).toBe(1n);
-    expect(grossRedeem(1n, 1n)).toBe(1n);
+  it("a single token at stair 1 costs 9 sats (8.692, rounded up)", () => {
+    expect(grossBuy(0n, 1n)).toBe(9n);
+    expect(grossRedeem(1n, 1n)).toBe(9n);
   });
 
   it("BUY and REDEEM use identical R (gross round-trip exact)", () => {
-    for (let k = 0n; k < 20n; k++) {
-      const s = k * STAGE; // stage boundary: 1-token delta is always >= 1 sat
+    for (let k = 0n; k < 210n; k++) {
+      const s = k * STAGE; // stair boundary: 1-token delta is always >= 8 sats
       const q = 1n;
       expect(grossRedeem(s + q, q)).toBe(grossBuy(s, q));
     }
   });
 
-  it("rejected dust transition does not modify supply or backing", () => {
-    const supply = 1000n;
+  it("a rejected transition does not modify supply or backing", () => {
+    const supply = PUBLIC_SUPPLY;
     const backing = requiredBackingSats(supply);
-    expectBackingError(() => grossBuy(supply, 1n), "ECONOMIC_DUST");
+    expect(() => grossBuy(supply, 1n)).toThrow(/cap/);
     // Unchanged (pure functions; the rejection is before any mutation).
     expect(requiredBackingSats(supply)).toBe(backing);
   });
 
   it("redemption net payout below destination dust is rejected (P2TR dust=330)", () => {
-    // Redeem 1 token from supply 1: gross 1 sat, fee 1 sat (ceil 0.01) → net 0.
+    // Redeem 1 token from supply 1: gross 9 sats, fee 1 sat (7.5%, rounded up) → net 8.
     const q = quoteRedeem(1n, 1n);
-    expect(q.gross).toBe(1n);
+    expect(q.gross).toBe(9n);
     const p2tr = Buffer.from("5120" + "ab".repeat(32), "hex");
     expect(dustThreshold(p2tr)).toBe(330n);
     expect(isDustSafe(q.net, p2tr)).toBe(false);
@@ -71,8 +65,8 @@ describe("zero-delta economics (§1.1)", () => {
       return seed % n;
     };
     for (let i = 0; i < 5000; i++) {
-      const s = rand(20n) * STAGE + rand(STAGE);
-      const q = 1n + rand(10n * M);
+      const s = rand(210n) * STAGE + rand(STAGE);
+      const q = 1n + rand(M);
       if (s + q > PUBLIC_SUPPLY) continue;
       let paid: bigint;
       let received: bigint;
@@ -105,8 +99,8 @@ describe("zero-delta economics (§1.1)", () => {
     }
   });
 
-  it("boundary around every geometric20 stage: 1-token buy at stage start is positive", () => {
-    for (let k = 0n; k < 20n; k++) {
+  it("boundary around every stairs210 stage: 1-token buy at stage start is positive", () => {
+    for (let k = 0n; k < 210n; k++) {
       const s = k * STAGE;
       const g = grossBuy(s, 1n);
       expect(g >= 1n).toBe(true);

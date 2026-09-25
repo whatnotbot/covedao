@@ -11,9 +11,9 @@ import {
 } from "./simplicity.js";
 
 const VALID: MintWitness = {
-  amount: 42_000_000n,
+  amount: 420_000n,
   prevSupply: 0n,
-  nextSupply: 42_000_000n,
+  nextSupply: 420_000n,
   prevReserve: 0n,
   nextReserve: 21_000n,
   contribution: 21_000n,

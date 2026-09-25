@@ -8,7 +8,7 @@ import {
 
 const TOKEN = "ab".repeat(32);
 const ATOMS = 100_000_000n;
-const MINT_AMOUNT = 84_000_000n * ATOMS;
+const MINT_AMOUNT = 10_000n * ATOMS;
 
 function s0(): CoveStateV2 {
   return s0StateV2({ tokenId: TOKEN });
@@ -17,7 +17,7 @@ function s0(): CoveStateV2 {
 describe("atomsToDisplayTokensExact (unit-conversion boundaries)", () => {
   it("exact conversion", () => {
     expect(atomsToDisplayTokensExact(ATOMS)).toBe(1n);
-    expect(atomsToDisplayTokensExact(84_000_000n * ATOMS)).toBe(84_000_000n);
+    expect(atomsToDisplayTokensExact(10_000n * ATOMS)).toBe(10_000n);
     expect(atomsToDisplayTokensExact(0n)).toBe(0n);
   });
   it("sub-token amount rejected (no truncating division)", () => {
@@ -39,12 +39,12 @@ describe("buildMintSimplicityWitness (canonical, no caller-supplied values)", ()
       amountAtoms: MINT_AMOUNT,
       canonicalGrossSats: canonical.grossSats,
     });
-    expect(w.amount).toBe(84_000_000n);
+    expect(w.amount).toBe(10_000n);
     expect(w.prevSupply).toBe(0n);
-    expect(w.nextSupply).toBe(84_000_000n);
+    expect(w.nextSupply).toBe(10_000n);
     expect(w.prevReserve).toBe(0n);
-    expect(w.nextReserve).toBe(47_950n);
-    expect(w.contribution).toBe(47_950n);
+    expect(w.nextReserve).toBe(86_920n);
+    expect(w.contribution).toBe(86_920n);
   });
 
   it("rejects a non-canonical successor state", () => {
@@ -98,12 +98,12 @@ describe("buildRedeemSimplicityWitness (canonical, no caller-supplied values)", 
       amountAtoms: MINT_AMOUNT,
       canonicalGrossSats: canonical.grossSats,
     });
-    expect(w.amount).toBe(84_000_000n);
-    expect(w.oldSupply).toBe(84_000_000n);
+    expect(w.amount).toBe(10_000n);
+    expect(w.oldSupply).toBe(10_000n);
     expect(w.newSupply).toBe(0n);
-    expect(w.oldBacking).toBe(47_950n);
+    expect(w.oldBacking).toBe(86_920n);
     expect(w.newBacking).toBe(0n);
-    expect(w.payout).toBe(47_950n);
+    expect(w.payout).toBe(86_920n);
   });
 
   it("rejects a non-canonical successor state", () => {

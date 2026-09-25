@@ -3,7 +3,7 @@ export {
   TOTAL_SUPPLY,
   RESERVED,
   PRICE_UNIT,
-  geometric20,
+  stairs210,
   linearRamp,
   quadratic,
   twoSegmentLinear,
@@ -22,7 +22,10 @@ export {
 export {
   COVE_FEE_CONFIG,
   deterministicFee,
-  stageScaledFlatSats,
+  mintFeeSats,
+  creatorFeeSats,
+  isCreatorScript,
+  CREATOR_RECORD_SATS,
   type CoveFeeConfig,
 } from "./fee.js";
 export { checkFeeSettlement, type FeeSettlementCheck } from "./feeSettlement.js";

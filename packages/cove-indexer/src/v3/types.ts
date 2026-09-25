@@ -15,6 +15,8 @@ export interface V3TokenMeta {
   deployTxid: string;
   deployHeight: bigint;
   deployBlockHash: string;
+  /** Creator payout script (hex), from DEPLOY output 2. */
+  creatorScript: string;
 }
 
 export interface V3Backing {
@@ -98,7 +100,9 @@ export interface V3IndexerConfig {
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
   /** Flat sats added to every backing buy, on top of the percentage. */
-  buyFeeFlatSatsAtTopStage?: bigint;
+  buyFeeFlatSats?: bigint;
+  /** Creator share of a mint, bps of the curve price (default COVE_FEE_CONFIG). */
+  creatorFeeBps?: bigint;
   redeemFeeBps?: bigint;
   /** Flat sats deducted from every redemption, on top of the percentage. */
   redeemFeeFlatSats?: bigint;

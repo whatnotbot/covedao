@@ -39,6 +39,9 @@ export interface ClientIntent {
   tokenAmountAtoms: string | null;
   grossSats: string | null;
   protocolFeeSats: string | null;
+  /** Mint only: the creator's share of the curve price, and where it goes. */
+  creatorFeeSats?: string | null;
+  creatorScript?: string | null;
   minerFeeSats: string;
   netSats: string | null;
   /** The payments scriptPubKey: where BTC comes from and change returns. */
@@ -195,11 +198,21 @@ export function verifyClientIntent(
   // the transaction is not the one that was described.
   if (intent.operation === "BACKING_BUY") {
     if (gross === null || protocolFee === null) mismatch("buy intent is missing its price");
-    const expected = -(gross + protocolFee + expectedMinerFee);
+    // The creator's share is a real output to the creator; it leaves the
+    // wallet unless the buyer IS the creator.
+    const creatorFee = bigintOr(intent.creatorFeeSats) ?? 0n;
+    const creatorScript = intent.creatorScript?.toLowerCase() ?? null;
+    if (creatorFee > 0n) {
+      if (!creatorScript || !outputs.some((o) => o.scriptHex === creatorScript && o.value === creatorFee)) {
+        mismatch(`no ${creatorFee}-sat creator payment`);
+      }
+    }
+    const creatorLeaves = creatorScript !== null && !isMine(creatorScript) ? creatorFee : 0n;
+    const expected = -(gross + protocolFee + creatorLeaves + expectedMinerFee);
     if (walletDeltaSats !== expected) {
       mismatch(
         `buying costs ${-walletDeltaSats} sats, not the ${-expected} you were shown ` +
-          `(${gross} price + ${protocolFee} protocol fee + ${expectedMinerFee} miner fee)`,
+          `(${gross} price + ${protocolFee} protocol fee + ${creatorLeaves} creator + ${expectedMinerFee} miner fee)`,
       );
     }
   } else if (intent.operation === "P2P_BUY") {

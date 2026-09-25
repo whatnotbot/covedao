@@ -134,7 +134,7 @@ export function TokenMarketPanel({
       <div className={`mt-5 grid grid-cols-2 gap-px bg-rule sm:grid-cols-5${market ? " hidden" : ""}`}>
         <Stat
           value={stats ? fmtInt(Math.round(stats.last)) : "—"}
-          label="Last · sats/1M"
+          label="Last · sats/1k"
           tone={stats ? (up ? "up" : "down") : undefined}
         />
         <Stat

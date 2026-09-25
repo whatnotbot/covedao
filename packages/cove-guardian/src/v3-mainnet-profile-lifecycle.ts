@@ -26,6 +26,9 @@ import {
   type ValidatedCoveTransaction,
 } from "./v3/index.js";
 
+/** Creator payout script recorded at DEPLOY (output 2). */
+const CREATOR_SCRIPT = Buffer.from("0014" + "9".repeat(40), "hex");
+
 /**
  * Phase 8 production-profile lifecycle (§137/§145) — the SAME full
  * DEPLOY→MINT→REDEEM→RE-BUY journey as the DEV1 `v3-lifecycle`, but under the
@@ -45,7 +48,7 @@ const RPC_PASSWORD = process.env.COVE_REGTEST_RPC_PASSWORD ?? "pass";
 
 const MINER_FEE = 1_000n;
 const NONCE = Buffer.alloc(32, 0xab);
-const MINT_AMOUNT = 84_000_000n * 100_000_000n;
+const MINT_AMOUNT = 10_000n * 100_000_000n;
 
 function xonly(byte: number): Buffer {
   return Buffer.from(ECPair.fromPrivateKey(Buffer.alloc(32, byte)).publicKey.subarray(1));
@@ -207,6 +210,7 @@ async function main(): Promise<void> {
     deployerInputs: [deployerUtxo],
     deployerChangeScript: deployerUtxo.script,
     minerFeeSats: MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   // Prove the recovery leaf is the MAINNET1 2-of-3 threshold script (CSV 2016 → 0x02 …), not DEV1 144-CSV.
   assert(deploy.vault.recoveryLeaf.script[0] === 0x02, "MAINNET1 recovery leaf must start with 2-byte CSV operand (2016)");
@@ -226,11 +230,11 @@ async function main(): Promise<void> {
   const vaultValue = BigInt(deployTx.outs[vaultVout]!.value);
   assert(vaultValue === RESERVE_ANCHOR_SATS, `S0 vault value ${vaultValue}`);
   const tokenId = deploy.tokenId;
-  view.deploy({ tokenId, ticker: "FROG", policyVersion: COVE_POLICY_V3, deployTxid, tokenNonce: NONCE }, { txid: deployTxid, vout: vaultVout }, deploy.s0);
+  view.deploy({ tokenId, ticker: "FROG", policyVersion: COVE_POLICY_V3, deployTxid, tokenNonce: NONCE , creatorScript: CREATOR_SCRIPT}, { txid: deployTxid, vout: vaultVout }, deploy.s0);
   console.log(`✓ DEPLOY ${deployTxid} (MAINNET1 vault ${deploy.vault.address})`);
 
   // ── MINT via durable transition signer ──
-  console.log("STEP 2/4 — MINT (durable signer, 84M tokens)");
+  console.log("STEP 2/4 — MINT (durable signer, 10k tokens)");
   const aliceUtxo = await fundKey(rpc, provider, alice, 1.0, mineAddr);
   const mint1 = buildMintPsbtV3({
     network: bitcoin.networks.regtest,
@@ -246,6 +250,7 @@ async function main(): Promise<void> {
     buyerChangeScript: p2wpkhScript(alice),
     feeScript,
     minerFeeSats: MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   const mintSign = await transitionSigner.signMint({
     psbt: mint1.psbt, view, network: "regtest", recoveryKeyXOnly,
@@ -263,7 +268,7 @@ async function main(): Promise<void> {
   }), "MINT");
   const mint1Txid = await broadcastValidated(mint1Val);
   await rpc.generateToAddress(1, mineAddr);
-  assert(mint1.grossSats === 47_950n, `mint gross ${mint1.grossSats}`);
+  assert(mint1.grossSats === 86_920n, `mint gross ${mint1.grossSats}`);
   const aliceCarrier: OutPoint = { txid: mint1Txid, vout: 2 };
   view.mint({
     tokenId, nextState: mint1.nextState,
@@ -283,7 +288,7 @@ async function main(): Promise<void> {
   assert(conflict === "CONFLICT", `expected CONFLICT, got ${conflict}`);
 
   // ── REDEEM via durable transition signer ──
-  console.log("STEP 3/4 — REDEEM (durable signer, full 84M)");
+  console.log("STEP 3/4 — REDEEM (durable signer, full 10k)");
   const redeem = buildRedeemPsbtV3({
     network: bitcoin.networks.regtest,
     tokenId,
@@ -315,8 +320,8 @@ async function main(): Promise<void> {
   }), "REDEEM");
   const redeemTxid = await broadcastValidated(redeemVal);
   await rpc.generateToAddress(1, mineAddr);
-  assert(redeem.grossSats === 47_950n, `redeem gross ${redeem.grossSats}`);
-  assert(redeem.netSats === 45_450n, `redeem net ${redeem.netSats}`);
+  assert(redeem.grossSats === 86_920n, `redeem gross ${redeem.grossSats}`);
+  assert(redeem.netSats === 80_401n, `redeem net ${redeem.netSats}`);
   assert(redeem.changeAtoms === 0n, "full redeem must have zero token change");
   view.redeem({
     tokenId, nextState: redeem.nextState,
@@ -329,7 +334,7 @@ async function main(): Promise<void> {
   console.log(`✓ REDEEM ${redeemTxid} (durable audit #${audit.links.length})`);
 
   // ── RE-BUY via durable transition signer ──
-  console.log("STEP 4/4 — RE-BUY released capacity (durable signer, 84M)");
+  console.log("STEP 4/4 — RE-BUY released capacity (durable signer, 10k)");
   const aliceRebuy = await fundKey(rpc, provider, alice, 1.0, mineAddr);
   const mint2 = buildMintPsbtV3({
     network: bitcoin.networks.regtest,
@@ -345,6 +350,7 @@ async function main(): Promise<void> {
     buyerChangeScript: p2wpkhScript(alice),
     feeScript,
     minerFeeSats: MINER_FEE,
+    creatorScript: CREATOR_SCRIPT,
   });
   const rebuySign = await transitionSigner.signMint({
     psbt: mint2.psbt, view, network: "regtest", recoveryKeyXOnly,

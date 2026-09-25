@@ -57,6 +57,13 @@
       "when": 1790354810302,
       "tag": "0007_tired_wild_child",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790365021277,
+      "tag": "0008_massive_echo",
+      "breakpoints": true
     }
   ]
 }

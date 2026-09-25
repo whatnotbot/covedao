@@ -29,7 +29,7 @@ describe("validateStateV2 (§2)", () => {
       () =>
         validateStateV2({
           ...s,
-          issuedPublicSupplyAtoms: 50n * M * ATOMS_PER_TOKEN,
+          issuedPublicSupplyAtoms: 100_000n * ATOMS_PER_TOKEN,
           curveStage: 2,
           backingSats: 999n,
         }),
@@ -40,8 +40,8 @@ describe("validateStateV2 (§2)", () => {
   it("corrupted stage rejected", () => {
     const s = {
       ...s0StateV2({ tokenId: TOKEN }),
-      issuedPublicSupplyAtoms: 50n * M * ATOMS_PER_TOKEN,
-      backingSats: 25_000n,
+      issuedPublicSupplyAtoms: 100_000n * ATOMS_PER_TOKEN,
+      backingSats: 869_200n,
       curveStage: 1,
     };
     expectError(() => validateStateV2(s), "CURVE_STAGE_MISMATCH");
@@ -61,7 +61,7 @@ describe("validateStateV2 (§2)", () => {
   it("over-cap state rejected", () => {
     const s = s0StateV2({ tokenId: TOKEN });
     expectError(
-      () => validateStateV2({ ...s, issuedPublicSupplyAtoms: 840_000_001n * M * ATOMS_PER_TOKEN }),
+      () => validateStateV2({ ...s, issuedPublicSupplyAtoms: 21_000_001n * ATOMS_PER_TOKEN }),
       "SUPPLY_OUT_OF_RANGE",
     );
   });
@@ -69,27 +69,27 @@ describe("validateStateV2 (§2)", () => {
 
 describe("applyMintV2 / applyRedeemV2 exact successors", () => {
   it("MINT V2 exact successor: backing recomputed as R(nextSupply)", () => {
-    const r = applyMintV2(s0StateV2({ tokenId: TOKEN }), 50n * M * ATOMS_PER_TOKEN);
-    expect(r.grossSats).toBe(25_000n);
-    expect(r.nextState.issuedPublicSupplyAtoms).toBe(50n * M * ATOMS_PER_TOKEN);
-    expect(r.nextState.backingSats).toBe(requiredBackingSats(50n * M));
+    const r = applyMintV2(s0StateV2({ tokenId: TOKEN }), 100_000n * ATOMS_PER_TOKEN);
+    expect(r.grossSats).toBe(869_200n);
+    expect(r.nextState.issuedPublicSupplyAtoms).toBe(100_000n * ATOMS_PER_TOKEN);
+    expect(r.nextState.backingSats).toBe(requiredBackingSats(100_000n));
     expect(r.nextState.curveStage).toBe(2);
     expect(() => validateStateV2(r.nextState)).not.toThrow();
   });
 
   it("REDEEM V2 exact successor", () => {
-    const mint = applyMintV2(s0StateV2({ tokenId: TOKEN }), 42n * M * ATOMS_PER_TOKEN);
-    const redeem = applyRedeemV2(mint.nextState, 10n * M * ATOMS_PER_TOKEN);
-    expect(redeem.grossSats).toBe(requiredBackingSats(42n * M) - requiredBackingSats(32n * M));
-    expect(redeem.nextState.issuedPublicSupplyAtoms).toBe(32n * M * ATOMS_PER_TOKEN);
-    expect(redeem.nextState.backingSats).toBe(requiredBackingSats(32n * M));
+    const mint = applyMintV2(s0StateV2({ tokenId: TOKEN }), 420_000n * ATOMS_PER_TOKEN);
+    const redeem = applyRedeemV2(mint.nextState, 100_000n * ATOMS_PER_TOKEN);
+    expect(redeem.grossSats).toBe(requiredBackingSats(420_000n) - requiredBackingSats(320_000n));
+    expect(redeem.nextState.issuedPublicSupplyAtoms).toBe(320_000n * ATOMS_PER_TOKEN);
+    expect(redeem.nextState.backingSats).toBe(requiredBackingSats(320_000n));
     expect(() => validateStateV2(redeem.nextState)).not.toThrow();
   });
 
   it("buy→redeem returns exact backing state", () => {
     const s0 = s0StateV2({ tokenId: TOKEN });
-    const mint = applyMintV2(s0, 42n * M * ATOMS_PER_TOKEN);
-    const redeem = applyRedeemV2(mint.nextState, 42n * M * ATOMS_PER_TOKEN);
+    const mint = applyMintV2(s0, 420_000n * ATOMS_PER_TOKEN);
+    const redeem = applyRedeemV2(mint.nextState, 420_000n * ATOMS_PER_TOKEN);
     expect(redeem.nextState.backingSats).toBe(0n);
     expect(redeem.nextState.issuedPublicSupplyAtoms).toBe(0n);
     expect(stateHashV2(redeem.nextState)).toBe(stateHashV2(s0));
@@ -104,10 +104,11 @@ describe("applyMintV2 / applyRedeemV2 exact successors", () => {
     let state: CoveStateV2 = s0StateV2({ tokenId: TOKEN });
     for (let i = 0; i < 1000; i++) {
       const supplyTokens = state.issuedPublicSupplyAtoms / ATOMS_PER_TOKEN;
-      const q = 1n + rand(42n * M);
+      // Mints and redemptions move whole lots of 1,000 tokens.
+      const q = (1n + rand(420n)) * 1_000n;
       try {
         if (rand(2n) === 0n) {
-          if (supplyTokens + q > 840n * M) continue;
+          if (supplyTokens + q > 21n * M) continue;
           state = applyMintV2(state, q * ATOMS_PER_TOKEN).nextState;
         } else {
           if (q > supplyTokens) continue;

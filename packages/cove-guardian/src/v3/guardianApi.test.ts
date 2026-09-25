@@ -14,6 +14,9 @@ import { InMemorySigningJournal } from "./journal.js";
 import { InProcessGuardianTransport, HttpGuardianTransport, type GuardianTransport } from "./guardianApi.js";
 import type { AuditRecord } from "./types.js";
 
+/** Creator payout script recorded at DEPLOY (output 2). */
+const CREATOR_SCRIPT = Buffer.from("0014" + "9".repeat(40), "hex");
+
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 const ECPair = ECPairFactory(ecc);
 
@@ -48,18 +51,20 @@ function mintFixture(): { psbt: bitcoin.Psbt; view: CoveChainView; tokenId: stri
     deployerInputs: [{ txid: "a".repeat(64), vout: 0, script: Buffer.from("0014" + "c".repeat(40), "hex"), valueSats: 1_000_000n }],
     deployerChangeScript: Buffer.from("0014" + "c".repeat(40), "hex"),
     minerFeeSats: 1_000n,
+    creatorScript: CREATOR_SCRIPT,
   });
   const mint = buildMintPsbtV3({
     network: bitcoin.networks.regtest, tokenId, prevState: deploy.s0,
     prevBacking: { txid: "a".repeat(64), vout: 1, script: deploy.vault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS },
-    mintAmountAtoms: 84_000_000n * 100_000_000n, guardianXOnly, recoveryKeyXOnly, recoveryProfile: MAINNET1,
+    mintAmountAtoms: 10_000n * 100_000_000n, guardianXOnly, recoveryKeyXOnly, recoveryProfile: MAINNET1,
     buyerInputs: [{ txid: "b".repeat(64), vout: 0, script: Buffer.from("0014" + "d".repeat(40), "hex"), valueSats: 1_000_000n }],
     buyerCarrierScript: Buffer.from("0014" + "e".repeat(40), "hex"),
     buyerChangeScript: Buffer.from("0014" + "e".repeat(40), "hex"),
     feeScript, minerFeeSats: 1_000n,
+    creatorScript: CREATOR_SCRIPT,
   });
   const view = new CoveChainView();
-  view.deploy({ tokenId, ticker: "FROG", policyVersion: 3, deployTxid: "a".repeat(64), tokenNonce: Buffer.alloc(32, 0xab) }, { txid: "a".repeat(64), vout: 1 }, deploy.s0);
+  view.deploy({ tokenId, ticker: "FROG", policyVersion: 3, deployTxid: "a".repeat(64), tokenNonce: Buffer.alloc(32, 0xab), creatorScript: CREATOR_SCRIPT }, { txid: "a".repeat(64), vout: 1 }, deploy.s0);
   return { psbt: mint.psbt, view, tokenId: tokenId.toString("hex") };
 }
 

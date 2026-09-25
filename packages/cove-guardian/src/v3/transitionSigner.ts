@@ -49,7 +49,9 @@ export interface TransitionSignRequest {
    * to the development default independently, so an unforwarded value makes the
    * two disagree and every transition is rejected.
    */
-  buyFeeFlatSatsAtTopStage?: bigint;
+  buyFeeFlatSats?: bigint;
+  /** Creator share of a mint, bps of the curve price. */
+  creatorFeeBps?: bigint;
   redeemFeeFlatSats?: bigint;
   /** Ticker the advisory crc-20 discovery envelope must carry, if present (§D1). */
   discoveryTicker?: string;

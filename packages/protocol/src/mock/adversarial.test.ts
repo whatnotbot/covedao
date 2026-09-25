@@ -50,7 +50,7 @@ function mintEnvelope(opts: {
       platformFeeSats: 999_999n, // claimed (must be ignored)
       minerFeeSats: 0n,
     },
-    inputs: [{ txid: "mock-utxo", vout: 0, address: opts.buyer ?? BUYER, amountSats: 1_000_000_000n }],
+    inputs: [{ txid: "mock-utxo", vout: 0, address: opts.buyer ?? BUYER, amountSats: 2_000_000_000n }],
     outputs: [
       { index: 0, address: opts.curveAddr ?? MOCK_RESERVE_ADDRESS, amountSats: opts.curveAmt, kind: "curve-reserve" },
       { index: 1, address: opts.platformAddr ?? MOCK_TREASURY_ADDRESS, amountSats: opts.platformAmt, kind: "platform-fee" },
@@ -81,8 +81,17 @@ function snapshot() {
   };
 }
 
-// For 2,000,000 tokens from supply 0: required curve = 1000 sats, platform = 10 sats.
-const VALID = { amount: 2_000_000n, curve: 1_000n, platform: 10n };
+// The whole curve raises about ten BTC plus the platform fee: more than the
+// mock faucet gives, so a wallet that mints out is topped up first.
+async function topUp(n: MockChainNode, address: string): Promise<void> {
+  await n.mutate((s) => {
+    const bal = s.balances[address] ?? { btcSats: 0n, tokens: {}, lockedTokens: {} };
+    s.balances[address] = { ...bal, btcSats: 20n * 100_000_000n };
+  });
+}
+
+// For 1,000 tokens from supply 0: required curve = 8,692 sats, platform = 87 sats.
+const VALID = { amount: 1_000n, curve: 8_692n, platform: 87n };
 
 describe("adversarial mint validation (tampered envelopes, no builder)", () => {
   beforeAll(async () => {
@@ -102,10 +111,10 @@ describe("adversarial mint validation (tampered envelopes, no builder)", () => {
     const r = await submit(mintEnvelope({ deploymentId: frogId, amount: VALID.amount, supplyBefore: 0n, curveAmt: VALID.curve, platformAmt: VALID.platform }), BUYER);
     expect(r.status).toBe("CONFIRMED");
     const after = snapshot();
-    expect(after.minted).toBe(2_000_000n);
-    expect(after.buyerTokens).toBe(2_000_000n);
-    expect(after.reserve).toBe(1_000n);
-    expect(after.platform).toBe(before.platform + 10n);
+    expect(after.minted).toBe(1_000n);
+    expect(after.buyerTokens).toBe(1_000n);
+    expect(after.reserve).toBe(8_692n);
+    expect(after.platform).toBe(before.platform + 87n);
     expect(after.invariants).toEqual([]);
   });
 
@@ -256,10 +265,11 @@ describe("adversarial marketplace + deploy validation (tampered envelopes)", () 
   beforeAll(async () => {
     // Mint the FROG token's REMAINING supply in one shot, then graduate it.
     const current = node.snapshot.tokens[frogId]!.confirmedMintedAtoms;
-    const remaining = 1_000_000_000n - current;
+    const remaining = 21_000_000n - current;
     const quote = quoteExactTokens({ desiredTokens: remaining, currentSupply: current });
     const fullCurve = quote.curveContributionSats;
     const fullPlatform = computePlatformFee(fullCurve, 100n);
+    await topUp(node, BUYER);
     const env = mintEnvelope({ deploymentId: frogId, amount: remaining, supplyBefore: current, curveAmt: fullCurve, platformAmt: fullPlatform });
     await submit(env, BUYER);
     await adapter.graduate(frogId);
@@ -424,9 +434,10 @@ describe("locked-token transfer (adversarial)", () => {
     tokId = (await a2.getTokenByTicker("LOCK"))!.deploymentId;
 
     // Mint full supply to SELLER (=BUYER) so the token can graduate.
-    const q = quoteExactTokens({ desiredTokens: 1_000_000_000n, currentSupply: 0n });
+    await topUp(n2, BUYER);
+    const q = quoteExactTokens({ desiredTokens: 21_000_000n, currentSupply: 0n });
     const plat = computePlatformFee(q.curveContributionSats, 100n);
-    const m = mintEnvelope({ deploymentId: tokId, ticker: "LOCK", amount: 1_000_000_000n, supplyBefore: 0n, curveAmt: q.curveContributionSats, platformAmt: plat });
+    const m = mintEnvelope({ deploymentId: tokId, ticker: "LOCK", amount: 21_000_000n, supplyBefore: 0n, curveAmt: q.curveContributionSats, platformAmt: plat });
     await a2.broadcast(sign(m, BUYER));
     await n2.mineBlock();
     await a2.graduate(tokId);
@@ -516,9 +527,9 @@ describe("exact output semantics (adversarial)", () => {
 
   it("mint: 1 sat over reserve → OVERPAYMENT", async () => {
     const before = n3.snapshot.tokens[liveId]!.confirmedMintedAtoms;
-    const env = rawMint(liveId, "EXAC", 2_000_000n, before, [
-      { address: n3.snapshot.config.reserveAddress, amountSats: 1_001n, kind: "curve-reserve" },
-      { address: MOCK_TREASURY_ADDRESS, amountSats: 10n, kind: "platform-fee" },
+    const env = rawMint(liveId, "EXAC", 1_000n, before, [
+      { address: n3.snapshot.config.reserveAddress, amountSats: 8_693n, kind: "curve-reserve" },
+      { address: MOCK_TREASURY_ADDRESS, amountSats: 87n, kind: "platform-fee" },
     ]);
     await a3.broadcast(sign(env, BUYER)); await n3.mineBlock();
     expect(n3.snapshot.txs[env.txid]!.rejectReason).toBe("OVERPAYMENT");
@@ -526,9 +537,9 @@ describe("exact output semantics (adversarial)", () => {
 
   it("mint: 1 sat over platform fee → OVERPAYMENT", async () => {
     const before = n3.snapshot.tokens[liveId]!.confirmedMintedAtoms;
-    const env = rawMint(liveId, "EXAC", 2_000_000n, before, [
-      { address: n3.snapshot.config.reserveAddress, amountSats: 1_000n, kind: "curve-reserve" },
-      { address: MOCK_TREASURY_ADDRESS, amountSats: 11n, kind: "platform-fee" },
+    const env = rawMint(liveId, "EXAC", 1_000n, before, [
+      { address: n3.snapshot.config.reserveAddress, amountSats: 8_692n, kind: "curve-reserve" },
+      { address: MOCK_TREASURY_ADDRESS, amountSats: 88n, kind: "platform-fee" },
     ]);
     await a3.broadcast(sign(env, BUYER)); await n3.mineBlock();
     expect(n3.snapshot.txs[env.txid]!.rejectReason).toBe("OVERPAYMENT");
@@ -536,9 +547,9 @@ describe("exact output semantics (adversarial)", () => {
 
   it("mint: reversed outputs → WRONG_OUTPUT_ADDRESS", async () => {
     const before = n3.snapshot.tokens[liveId]!.confirmedMintedAtoms;
-    const env = rawMint(liveId, "EXAC", 2_000_000n, before, [
-      { address: MOCK_TREASURY_ADDRESS, amountSats: 1_000n, kind: "curve-reserve" },
-      { address: n3.snapshot.config.reserveAddress, amountSats: 10n, kind: "platform-fee" },
+    const env = rawMint(liveId, "EXAC", 1_000n, before, [
+      { address: MOCK_TREASURY_ADDRESS, amountSats: 8_692n, kind: "curve-reserve" },
+      { address: n3.snapshot.config.reserveAddress, amountSats: 87n, kind: "platform-fee" },
     ]);
     await a3.broadcast(sign(env, BUYER)); await n3.mineBlock();
     expect(n3.snapshot.txs[env.txid]!.rejectReason).toBe("WRONG_OUTPUT_ADDRESS");
@@ -546,9 +557,9 @@ describe("exact output semantics (adversarial)", () => {
 
   it("mint: wrong kind → WRONG_OUTPUT_KIND", async () => {
     const before = n3.snapshot.tokens[liveId]!.confirmedMintedAtoms;
-    const env = rawMint(liveId, "EXAC", 2_000_000n, before, [
-      { address: n3.snapshot.config.reserveAddress, amountSats: 1_000n, kind: "platform-fee" },
-      { address: MOCK_TREASURY_ADDRESS, amountSats: 10n, kind: "curve-reserve" },
+    const env = rawMint(liveId, "EXAC", 1_000n, before, [
+      { address: n3.snapshot.config.reserveAddress, amountSats: 8_692n, kind: "platform-fee" },
+      { address: MOCK_TREASURY_ADDRESS, amountSats: 87n, kind: "curve-reserve" },
     ]);
     await a3.broadcast(sign(env, BUYER)); await n3.mineBlock();
     expect(n3.snapshot.txs[env.txid]!.rejectReason).toBe("WRONG_OUTPUT_KIND");
@@ -556,9 +567,9 @@ describe("exact output semantics (adversarial)", () => {
 
   it("mint: extra third output → INVALID_OUTPUT_LAYOUT", async () => {
     const before = n3.snapshot.tokens[liveId]!.confirmedMintedAtoms;
-    const env = rawMint(liveId, "EXAC", 2_000_000n, before, [
-      { address: n3.snapshot.config.reserveAddress, amountSats: 1_000n, kind: "curve-reserve" },
-      { address: MOCK_TREASURY_ADDRESS, amountSats: 10n, kind: "platform-fee" },
+    const env = rawMint(liveId, "EXAC", 1_000n, before, [
+      { address: n3.snapshot.config.reserveAddress, amountSats: 8_692n, kind: "curve-reserve" },
+      { address: MOCK_TREASURY_ADDRESS, amountSats: 87n, kind: "platform-fee" },
       { address: ATTACKER, amountSats: 1n, kind: "unknown" },
     ]);
     await a3.broadcast(sign(env, BUYER)); await n3.mineBlock();

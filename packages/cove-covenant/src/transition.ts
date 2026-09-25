@@ -29,7 +29,7 @@ export interface RedeemResult {
 /**
  * ONE canonical economic implementation (§1.2): all production transitions use
  * the shared R-delta functions from `@crclaunch/cove-economics`. No duplicate
- * geometric20 math, no `quoteExactTokens` path in production validation.
+ * stairs210 math, no `quoteExactTokens` path in production validation.
  */
 
 /**

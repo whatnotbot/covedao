@@ -1,4 +1,9 @@
 import type { DisplayTokens, Sats } from "@crclaunch/curve";
+import {
+  PUBLIC_SUPPLY_TOKENS,
+  STAGE_PRICES_SATS_PER_MILLION,
+  TOKENS_PER_STAGE as STAIR_TOKENS,
+} from "@crclaunch/curve";
 
 /**
  * Deterministic integer-only bonding-curve candidates for the Cove public
@@ -14,8 +19,8 @@ import type { DisplayTokens, Sats } from "@crclaunch/curve";
  * rounded UP to the nearest sat so a buyer can never under-pay.
  */
 
-export const PUBLIC_SUPPLY = 1_000_000_000n; // display tokens
-export const TOTAL_SUPPLY = 1_000_000_000n;
+export const PUBLIC_SUPPLY = PUBLIC_SUPPLY_TOKENS; // display tokens
+export const TOTAL_SUPPLY = PUBLIC_SUPPLY_TOKENS;
 /** Nothing is held back: the public curve sells the entire supply. */
 export const RESERVED = 0n;
 export const PRICE_UNIT = 1_000_000n; // tokens per price unit
@@ -45,42 +50,21 @@ function sumRange(a: bigint, b: bigint): bigint {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Curve 1: existing 20-stage geometric step curve
+// Curve 1: the live curve — 210 even stairs (see @crclaunch/curve)
 // ─────────────────────────────────────────────────────────────────────────────
-const STAGE_PRICES: readonly bigint[] = [
-  500n,
-  675n,
-  912n,
-  1_231n,
-  1_661n,
-  2_243n,
-  3_027n,
-  4_087n,
-  5_517n,
-  7_447n,
-  10_054n,
-  13_572n,
-  18_323n,
-  24_735n,
-  33_393n,
-  45_080n,
-  60_857n,
-  82_157n,
-  110_912n,
-  149_731n,
-];
-const TOKENS_PER_STAGE = 50_000_000n;
+const STAGE_PRICES: readonly bigint[] = STAGE_PRICES_SATS_PER_MILLION;
+const TOKENS_PER_STAGE = STAIR_TOKENS;
 
 function stageAt(supply: DisplayTokens): number {
   if (supply >= PUBLIC_SUPPLY) return STAGE_PRICES.length - 1;
   return Number(supply / TOKENS_PER_STAGE);
 }
 
-export const geometric20: Curve = {
-  id: "geometric20",
-  name: "20-stage geometric step (existing)",
+export const stairs210: Curve = {
+  id: "stairs210",
+  name: "210 even stairs of 100,000 tokens",
   complexity:
-    "20-entry constant lookup + conditional stage dispatch; per-chunk ceilDiv (multiply + divide)",
+    "stair index lookup + per-chunk ceilDiv (multiply + divide)",
   priceAt(supply) {
     return STAGE_PRICES[stageAt(supply)]!;
   },
@@ -93,6 +77,9 @@ export const geometric20: Curve = {
       const stageEnd = (BigInt(stage) + 1n) * TOKENS_PER_STAGE;
       const inStage = stageEnd - s;
       const chunk = remaining < inStage ? remaining : inStage;
+      // Past the last stair there is nothing left to buy; refuse instead of
+      // looping forever on a zero-sized chunk.
+      if (chunk <= 0n) throw new Error(`cannot price ${amount} tokens from ${supply}: beyond the public supply`);
       cost += ceilDiv(chunk * STAGE_PRICES[stage]!, PRICE_UNIT);
       s += chunk;
       remaining -= chunk;
@@ -201,6 +188,6 @@ export const twoSegmentLinear: Curve = {
   },
 };
 
-export const CURVES: Curve[] = [geometric20, linearRamp, quadratic, twoSegmentLinear];
+export const CURVES: Curve[] = [stairs210, linearRamp, quadratic, twoSegmentLinear];
 
 export { sumRange };

@@ -207,6 +207,7 @@ function TokenContent() {
     try {
       const amountAtoms = atoms ?? displayTokensToAtoms(amount);
       if (BigInt(amountAtoms) <= 0n) throw new Error(kind === "buy" ? "That amount does not mint any tokens." : "Enter how many tokens to redeem.");
+      if (BigInt(amountAtoms) % (1_000n * 100_000_000n) !== 0n) throw new Error("Tokens move in lots of 1,000 — use a multiple of 1,000.");
       const endpoint = kind === "buy" ? "buy" : "redeem";
       const qr = await fetch(`/api/v3/backing/${endpoint}/quote`, {
         method: "POST",
@@ -433,8 +434,8 @@ function TokenContent() {
           <div className="flex items-baseline justify-between text-label uppercase tracking-label text-bone-dim">
             <span>{pct.toFixed(1)}% minted</span>
             <span>
-              Stage {detail.curveStage} of 20
-              {!graduated ? ` · price rises at ${fmtTokens(BigInt(detail.curveStage) * 50_000_000n * 100_000_000n)}` : ""}
+              Stair {detail.curveStage} of 210
+              {!graduated ? ` · next stair at ${fmtTokens(BigInt(detail.curveStage) * 100_000n * 100_000_000n)}` : ""}
             </span>
           </div>
           <div className="mt-2 h-1.5 w-full bg-rule">
@@ -607,7 +608,7 @@ function TokenContent() {
             ) : tab === "redeem" ? (
               <div className="mt-5 space-y-4">
                 <label className="block">
-                  <span className="eyebrow">Redeem · {detail.ticker}</span>
+                  <span className="eyebrow">Redeem · {detail.ticker} · lots of 1,000</span>
                   <input
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
@@ -621,7 +622,8 @@ function TokenContent() {
                     {[25n, 50n, 100n].map((pctOf) => (
                       <button
                         key={pctOf.toString()}
-                        onClick={() => setAmount(((heldAtoms * pctOf) / 100n / 100_000_000n).toString())}
+                        // Whole lots of 1,000 only: that is all the vault takes back.
+                        onClick={() => setAmount((((heldAtoms * pctOf) / 100n / 100_000_000n / 1_000n) * 1_000n).toString())}
                         disabled={heldAtoms === 0n}
                         className="bg-ink-2 py-2 text-xs text-bone-2 hover:text-bone disabled:opacity-40"
                       >
@@ -724,6 +726,8 @@ interface Quote {
   expiresAtHeight: string;
   grossSats: string;
   feeSats: string;
+  /** Mint only: the creator's share, paid on top of the curve price. */
+  creatorFeeSats?: string;
   netSats?: string;
   supplyAfterAtoms: string;
 }
@@ -768,10 +772,11 @@ function TradeReview({
   const isBuy = review.kind === "buy";
   const gross = BigInt(review.quote.grossSats);
   const protocolFee = BigInt(review.quote.feeSats);
+  const creatorFee = isBuy ? BigInt(review.quote.creatorFeeSats ?? "0") : 0n;
   const minerFee = previewFeeSats(isBuy ? "BACKING_BUY" : "REDEEM") ?? 0n;
   // The buyer also funds the 1,000-sat output their tokens ride on; it stays in
   // their wallet, but it is BTC they spend on this screen.
-  const total = isBuy ? gross + protocolFee + 1_000n + minerFee : gross - protocolFee - minerFee;
+  const total = isBuy ? gross + protocolFee + creatorFee + 1_000n + minerFee : gross - protocolFee - minerFee;
 
   return (
     <div className="mt-5 space-y-4">
@@ -784,6 +789,7 @@ function TradeReview({
 
       <dl className="space-y-2 text-sm">
         <Line k="Curve price" v={fmtBtc(gross)} />
+        {isBuy ? <Line k="Creator (20%)" v={`+${fmtBtc(creatorFee)}`} /> : null}
         {isBuy ? <Line k="Token carrier" v={`+${fmtBtc(1_000n)}`} /> : null}
         <Line k="Protocol fee" v={`${isBuy ? "+" : "−"}${fmtBtc(protocolFee)}`} />
         <Line k="Network fee" v={`${isBuy ? "+" : "−"}\u2248${fmtBtc(minerFee)}`} />

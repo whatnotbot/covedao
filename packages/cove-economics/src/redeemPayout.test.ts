@@ -31,19 +31,19 @@ describe("checkRedeemPayout", () => {
     expect(checkRedeemPayout(2_830n, 2_500n, P2TR).isPayable).toBe(true);
   });
 
-  it("is the real floor on the live curve: small sales at stage 1 are refused", () => {
-    // 1,000,000 tokens at the opening stage is worth 500 sats — a fifth of the
-    // exit fee. This is the case that used to reach the PSBT builder and fail
-    // with a negative output value.
-    const gross = grossRedeem(50_000_000n, 1_000_000n);
+  it("on the live curve even a single lot at stair 1 clears the 7.5% exit fee", () => {
+    // One lot (1,000 tokens) at the opening stair is worth 8,692 sats; 7.5% of
+    // it leaves 8,040 — well above dust.
+    const gross = grossRedeem(100_000n, 1_000n);
     const fee = deterministicFee(gross, COVE_FEE_CONFIG.redeemFeeBps, COVE_FEE_CONFIG.redeemFeeFlatSats);
     const c = checkRedeemPayout(gross, fee, P2WPKH);
-    expect(c.netSats).toBeLessThan(0n);
-    expect(c.isPayable).toBe(false);
+    expect(gross).toBe(8_692n);
+    expect(c.netSats).toBe(8_040n);
+    expect(c.isPayable).toBe(true);
   });
 
   it("accepts a sale large enough to clear the fee", () => {
-    const gross = grossRedeem(50_000_000n, 20_000_000n);
+    const gross = grossRedeem(100_000n, 50_000n);
     const fee = deterministicFee(gross, COVE_FEE_CONFIG.redeemFeeBps, COVE_FEE_CONFIG.redeemFeeFlatSats);
     const c = checkRedeemPayout(gross, fee, P2WPKH);
     expect(c.isPayable).toBe(true);

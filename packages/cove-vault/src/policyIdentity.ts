@@ -45,7 +45,7 @@ export const COVE_POLICY_CMRS: Record<number, PolicyCmrs> = {
     redeem: "a15ac4cbc450ac2dd113b1a9de178450ccc893a5213d8a2f56471fcd9aa274b7",
   },
   [COVE_POLICY_V3]: {
-    mint: "ccdb02000fdb372bfa2e166b9fe0192715d555fc5720f8008ee741fe1a0d58ec",
+    mint: "7fb27adf2db5458882daf976ba9325815f111b2f3b16eedb72e75f96de4269b2",
     redeem: "37e681b3e70a34acc3b38680c06fbe4f1b2799bede2607c6c9ed7fcac8c95d56",
   },
 };

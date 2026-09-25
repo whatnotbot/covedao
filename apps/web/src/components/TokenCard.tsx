@@ -27,7 +27,7 @@ export function TokenCard({
   spark = [],
 }: {
   token: V3TokenCardData;
-  /** Recent closes, sats per 1M tokens. Empty when the token has not traded. */
+  /** Recent closes, sats per 1,000 tokens. Empty when the token has not traded. */
   spark?: number[];
 }) {
   const issued = BigInt(token.issuedSupplyAtoms);
@@ -60,7 +60,7 @@ export function TokenCard({
           real price of nothing. */}
       <div className="mt-4 flex items-end justify-between gap-3">
         <div>
-          <div className="text-label uppercase tracking-label text-bone-dim">Last · sats/1M</div>
+          <div className="text-label uppercase tracking-label text-bone-dim">Last · sats/1k</div>
           <div className="mt-1 text-lg tabular-nums text-bone">
             {spark.length > 0 ? fmtInt(Math.round(spark[spark.length - 1]!)) : "—"}
           </div>
@@ -82,7 +82,7 @@ export function TokenCard({
 
       <dl className="mt-4 space-y-1.5 text-xs">
         <Row label="Backing" value={fmtBtc(BigInt(token.backingSats))} />
-        <Row label="Stage" value={`${token.curveStage} / 20`} />
+        <Row label="Stage" value={`${token.curveStage} / 210`} />
         <Row label="Holders" value={String(token.holderCount)} />
         {token.bestAskSats ? <Row label="Best ask" value={fmtBtc(BigInt(token.bestAskSats))} /> : null}
       </dl>

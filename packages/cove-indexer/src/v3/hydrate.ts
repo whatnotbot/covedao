@@ -36,6 +36,7 @@ export async function hydrateState(db: Database, network: string, config: V3Inde
       deployTxid: t.deployTxid,
       deployHeight: t.deployHeight,
       deployBlockHash: t.deployBlockHash,
+      creatorScript: t.creatorScript,
     };
     state.tokens.set(t.tokenId, meta);
   }

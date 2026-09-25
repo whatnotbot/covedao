@@ -20,7 +20,7 @@
  */
 
 const ATOMS_PER_TOKEN = 100_000_000n;
-const PER = 1_000_000n; // quote unit: 1M tokens
+const PER = 1_000n; // quote unit: one lot of 1,000 tokens
 /** Scale before the divide so two decimal places survive as an integer. */
 const PRECISION = 100n;
 

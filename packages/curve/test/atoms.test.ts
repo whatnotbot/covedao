@@ -29,9 +29,9 @@ describe("Cove atom unit model (8 decimals)", () => {
     expect(1_000_000n * ATOMS_PER_TOKEN).toBe(100_000_000_000_000n);
   });
 
-  it("total supply is 1e17 atoms (fits uint64)", () => {
-    expect(TOTAL_SUPPLY_ATOMS).toBe(1_000_000_000n * ATOMS_PER_TOKEN);
-    expect(TOTAL_SUPPLY_ATOMS).toBe(100_000_000_000_000_000n);
+  it("total supply is 2.1e15 atoms (fits uint64)", () => {
+    expect(TOTAL_SUPPLY_ATOMS).toBe(21_000_000n * ATOMS_PER_TOKEN);
+    expect(TOTAL_SUPPLY_ATOMS).toBe(2_100_000_000_000_000n);
     expect(TOTAL_SUPPLY_ATOMS).toBeLessThan(2n ** 64n);
   });
 
@@ -43,25 +43,25 @@ describe("Cove atom unit model (8 decimals)", () => {
 });
 
 describe("Golden economics (unchanged by atom model)", () => {
-  it("1,000,000 display tokens at supply 0 → 500 sats", () => {
-    const q = quoteExactTokens({ desiredTokens: 1_000_000n, currentSupply: 0n });
-    expect(q.curveContributionSats).toBe(500n);
+  it("one lot (1,000 tokens) at supply 0 → 8,692 sats", () => {
+    const q = quoteExactTokens({ desiredTokens: 1_000n, currentSupply: 0n });
+    expect(q.curveContributionSats).toBe(8_692n);
   });
 
-  it("full public mint (840,000,000 display tokens) → 24,196,788 sats", () => {
-    expect(getTheoreticalFullRaise()).toBe(28_805_700n);
-    const q = quoteExactTokens({ desiredTokens: 1_000_000_000n, currentSupply: 0n });
-    expect(q.curveContributionSats).toBe(28_805_700n);
+  it("full public mint (21,000,000 tokens) → 1,003,275,000 sats", () => {
+    expect(getTheoreticalFullRaise()).toBe(1_003_275_000n);
+    const q = quoteExactTokens({ desiredTokens: 21_000_000n, currentSupply: 0n });
+    expect(q.curveContributionSats).toBe(1_003_275_000n);
   });
 
-  it("stage boundary crossing is preserved (50M/stage)", () => {
-    // Stage 1 is exactly 50,000,000 display tokens at 500 sats/1M = 25,000 sats.
-    const stage1 = quoteExactTokens({ desiredTokens: 50_000_000n, currentSupply: 0n });
-    expect(stage1.curveContributionSats).toBe(25_000n);
-    expect(stage1.endingStage).toBe(1);
-    // Next token starts stage 2 at 675 sats/1M.
-    const stage2 = quoteExactTokens({ desiredTokens: 1n, currentSupply: 50_000_000n });
-    expect(stage2.curveContributionSats).toBe(1n); // ceil(1*675/1M)
-    expect(stage2.startingStage).toBe(2);
+  it("stair boundary crossing is preserved (100k/stair)", () => {
+    // Stair 1 is exactly 100 lots at 8,692 sats = 869,200 sats.
+    const stair1 = quoteExactTokens({ desiredTokens: 100_000n, currentSupply: 0n });
+    expect(stair1.curveContributionSats).toBe(869_200n);
+    expect(stair1.endingStage).toBe(1);
+    // The next lot starts stair 2 at 9,066 sats.
+    const stair2 = quoteExactTokens({ desiredTokens: 1_000n, currentSupply: 100_000n });
+    expect(stair2.curveContributionSats).toBe(9_066n);
+    expect(stair2.startingStage).toBe(2);
   });
 });

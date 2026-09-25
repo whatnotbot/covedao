@@ -11,7 +11,6 @@ function xonlyOfPriv(byte: number): Buffer {
 }
 const GUARDIAN = xonlyOfPriv(0x42);
 const RECOVERY = xonlyOfPriv(0x43);
-const M = 1_000_000n;
 const ATOMS = 100_000_000n;
 
 function build(state = s0StateV2({ tokenId: "cd".repeat(32) })) {
@@ -28,7 +27,7 @@ describe("buildBackingVaultV3 (§6)", () => {
 
   it("current state mutation changes vault", () => {
     const s0 = s0StateV2({ tokenId: "cd".repeat(32) });
-    const s1 = applyMintV2(s0, 42n * M * ATOMS).nextState;
+    const s1 = applyMintV2(s0, 100_000n * ATOMS).nextState;
     expect(build(s1).outputKey.equals(build(s0).outputKey)).toBe(false);
   });
 
@@ -36,8 +35,8 @@ describe("buildBackingVaultV3 (§6)", () => {
     const s0 = s0StateV2({ tokenId: "cd".repeat(32) });
     const s2 = {
       ...s0,
-      issuedPublicSupplyAtoms: 42n * M * ATOMS,
-      backingSats: 21_000n,
+      issuedPublicSupplyAtoms: 100_000n * ATOMS,
+      backingSats: 869_200n,
       curveStage: 2,
     };
     expect(build(s2).outputKey.equals(build(s0).outputKey)).toBe(false);

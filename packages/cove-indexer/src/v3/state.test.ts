@@ -11,9 +11,12 @@ import {
   encodeRedeemV2,
   encodeTransferV2,
 } from "@crclaunch/cove-wire";
-import { deterministicFee, stageScaledFlatSats, COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, CREATOR_RECORD_SATS, creatorFeeSats, mintFeeSats } from "@crclaunch/cove-economics";
 import { RESERVE_ANCHOR_SATS } from "./constants.js";
 import { V3IndexerState } from "./state.js";
+
+/** Creator payout script recorded at DEPLOY (output 2). */
+const CREATOR_SCRIPT = Buffer.from("0014" + "9".repeat(40), "hex");
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 
@@ -22,7 +25,7 @@ const recoveryXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x43), tr
 const feeScript = Buffer.from("0014" + "f".repeat(40), "hex");
 const NONCE = Buffer.alloc(32, 0xab);
 const ATOMS = 100_000_000n;
-const MINT_AMOUNT = 84_000_000n * ATOMS;
+const MINT_AMOUNT = 10_000n * ATOMS;
 
 function config() {
   return {
@@ -77,7 +80,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
     const deployWire = encodeDeployV2({ policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
     const deployTxid = tx(
       [{ txid: "d0".repeat(32), vout: 0 }],
-      [ { script: opReturn(deployWire), value: 0n }, { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS } ],
+      [ { script: opReturn(deployWire), value: 0n }, { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS }, { script: CREATOR_SCRIPT, value: CREATOR_RECORD_SATS } ],
     );
     const deployHex = deployTxid;
     const deployTxidHex = bitcoin.Transaction.fromHex(deployTxid).getId();
@@ -88,7 +91,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
     // ── MINT 84M ──
     const minted = applyMintV2(s0, MINT_AMOUNT);
     const gross = minted.grossSats;
-    const fee = deterministicFee(gross, COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(0n, COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage));
+    const fee = mintFeeSats(gross, MINT_AMOUNT, COVE_FEE_CONFIG.buyFeeBps, COVE_FEE_CONFIG.buyFeeFlatSats);
     const mintWire = encodeMintV2({ tokenId, amount: MINT_AMOUNT, recipientVout: 2 });
     const carrierScript = Buffer.from("0014" + "a".repeat(40), "hex");
     const mintTxid = tx(
@@ -98,12 +101,13 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
         { script: vaultScript(minted.nextState), value: RESERVE_ANCHOR_SATS + minted.nextState.backingSats },
         { script: carrierScript, value: 1_000n },
         { script: feeScript, value: fee },
+      { script: CREATOR_SCRIPT, value: creatorFeeSats(minted.grossSats) },
       ],
     );
     const mintTxidHex = bitcoin.Transaction.fromHex(mintTxid).getId();
     state.applyBlock(block(2, [mintTxid]));
     expect(state.backing.get(tokenIdHex)!.state.issuedPublicSupplyAtoms).toBe(MINT_AMOUNT);
-    expect(state.backing.get(tokenIdHex)!.state.backingSats).toBe(47_950n);
+    expect(state.backing.get(tokenIdHex)!.state.backingSats).toBe(86_920n);
     expect(state.tokenUtxos.get(`${mintTxidHex}:2`)!.amountAtoms).toBe(MINT_AMOUNT);
 
     // ── TRANSFER full 84M to Bob ──
@@ -121,7 +125,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
     expect(state.tokenUtxos.has(`${mintTxidHex}:2`)).toBe(false);
     expect(state.tokenUtxos.get(`${transferTxidHex}:1`)!.amountAtoms).toBe(MINT_AMOUNT);
     // backing/supply unchanged
-    expect(state.backing.get(tokenIdHex)!.state.backingSats).toBe(47_950n);
+    expect(state.backing.get(tokenIdHex)!.state.backingSats).toBe(86_920n);
 
     // ── REDEEM full 84M (backing returns to S0) ──
     const redeemWire = encodeRedeemV2({ tokenId, redeemAmount: MINT_AMOUNT, changeAllocations: [] });
@@ -134,8 +138,8 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
       [
         { script: opReturn(redeemWire), value: 0n },
         { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS },
-        { script: payoutScript, value: 45_450n },
-        { script: feeScript, value: 2_500n },
+        { script: payoutScript, value: 80_401n },
+        { script: feeScript, value: 6_519n },
       ],
     );
     state.applyBlock(block(4, [redeemTxid]));
@@ -151,7 +155,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
 
     // ── roll back REDEEM, then MINT, and re-apply ──
     state.undoBlock(4n);
-    expect(state.backing.get(tokenIdHex)!.state.backingSats).toBe(47_950n);
+    expect(state.backing.get(tokenIdHex)!.state.backingSats).toBe(86_920n);
     expect(state.tokenUtxos.get(`${transferTxidHex}:1`)!.amountAtoms).toBe(MINT_AMOUNT);
     state.applyBlock(block(4, [redeemTxid]));
     expect(state.stateRoot()).toBe(root1);
@@ -187,7 +191,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
     const deployWire = encodeDeployV2({ policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
     const deployTx = tx(
       [{ txid: "d0".repeat(32), vout: 0 }],
-      [{ script: opReturn(deployWire), value: 0n }, { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS }],
+      [{ script: opReturn(deployWire), value: 0n }, { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS }, { script: CREATOR_SCRIPT, value: CREATOR_RECORD_SATS }],
     );
     state.applyBlock(block(1, [deployTx]));
 
@@ -217,7 +221,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
       [{ txid: "d0".repeat(32), vout: 0 }],
       [
         { script: opReturn(deployWire), value: 0n },
-        { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS },
+        { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS }, { script: CREATOR_SCRIPT, value: CREATOR_RECORD_SATS },
       ],
     );
     // Height 1 (< H=2) → ignored.
@@ -238,12 +242,12 @@ describe("V3IndexerState — carriers spent outside the protocol are burned", ()
       [{ txid: "d0".repeat(32), vout: 0 }],
       [
         { script: opReturn(encodeDeployV2({ policyVersion: 3, ticker: "FROG", tokenNonce: NONCE })), value: 0n },
-        { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS },
+        { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS }, { script: CREATOR_SCRIPT, value: CREATOR_RECORD_SATS },
       ],
     );
     state.applyBlock(block(1, [deployHex]));
     const minted = applyMintV2(s0, MINT_AMOUNT);
-    const fee = deterministicFee(minted.grossSats, COVE_FEE_CONFIG.buyFeeBps, stageScaledFlatSats(0n, COVE_FEE_CONFIG.buyFeeFlatSatsAtTopStage));
+    const fee = mintFeeSats(minted.grossSats, MINT_AMOUNT, COVE_FEE_CONFIG.buyFeeBps, COVE_FEE_CONFIG.buyFeeFlatSats);
     const mintHex = tx(
       [{ txid: bitcoin.Transaction.fromHex(deployHex).getId(), vout: 1 }],
       [
@@ -251,6 +255,7 @@ describe("V3IndexerState — carriers spent outside the protocol are burned", ()
         { script: vaultScript(minted.nextState), value: RESERVE_ANCHOR_SATS + minted.nextState.backingSats },
         { script: Buffer.from("0014" + "a".repeat(40), "hex"), value: 1_000n },
         { script: feeScript, value: fee },
+      { script: CREATOR_SCRIPT, value: creatorFeeSats(minted.grossSats) },
       ],
     );
     state.applyBlock(block(2, [mintHex]));

@@ -19,7 +19,7 @@ import { BUCKET_MS, type Interval, type OhlcCandle } from "./ohlc";
 
 export type Candle = OhlcCandle;
 
-/** Frozen stage prices, sats per 1,000,000 tokens (COVE geometric20). */
+/** Frozen stage prices, sats per 1,000,000 tokens (COVE stairs210). */
 const STAGE_PRICES = [
   500, 675, 911, 1_230, 1_661, 2_242, 3_027, 4_086, 5_516, 7_447,
   10_053, 13_572, 18_322, 24_735, 33_392, 45_079, 60_857, 82_157, 110_912, 149_731,

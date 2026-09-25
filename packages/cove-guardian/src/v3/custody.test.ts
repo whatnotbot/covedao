@@ -13,6 +13,9 @@ import {
 } from "./custody.js";
 import type { VaultRecoveryProfile } from "@crclaunch/cove-vault";
 
+/** Creator payout script recorded at DEPLOY (output 2). */
+const CREATOR_SCRIPT = Buffer.from("0014" + "9".repeat(40), "hex");
+
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
 const ECPair = ECPairFactory(ecc);
 
@@ -40,13 +43,14 @@ function mintPsbt(): { psbt: bitcoin.Psbt; mintLeaf: VaultLeafRef; controlBlock:
     deployerInputs: [{ txid: "a".repeat(64), vout: 0, script: Buffer.from("0014" + "c".repeat(40), "hex"), valueSats: 1_000_000n }],
     deployerChangeScript: Buffer.from("0014" + "c".repeat(40), "hex"),
     minerFeeSats: 1_000n,
+    creatorScript: CREATOR_SCRIPT,
   });
   const mint = buildMintPsbtV3({
     network: bitcoin.networks.regtest,
     tokenId,
     prevState: deploy.s0,
     prevBacking: { txid: "a".repeat(64), vout: 1, script: deploy.vault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS },
-    mintAmountAtoms: 84_000_000n * 100_000_000n,
+    mintAmountAtoms: 10_000n * 100_000_000n,
     guardianXOnly,
     recoveryKeyXOnly,
     recoveryProfile: MAINNET1,
@@ -55,6 +59,7 @@ function mintPsbt(): { psbt: bitcoin.Psbt; mintLeaf: VaultLeafRef; controlBlock:
     buyerChangeScript: Buffer.from("0014" + "e".repeat(40), "hex"),
     feeScript: Buffer.from("0014" + "f".repeat(40), "hex"),
     minerFeeSats: 1_000n,
+    creatorScript: CREATOR_SCRIPT,
   });
   return { psbt: mint.psbt, mintLeaf: mint.prevVault.mintLeaf, controlBlock: mint.prevVault.mintControlBlock };
 }

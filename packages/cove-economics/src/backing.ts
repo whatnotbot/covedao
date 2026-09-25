@@ -1,8 +1,9 @@
 import type { DisplayTokens, Sats } from "@crclaunch/curve";
-import { geometric20, PUBLIC_SUPPLY } from "./curve.js";
+import { ATOMS_PER_TOKEN } from "@crclaunch/curve";
+import { stairs210, PUBLIC_SUPPLY } from "./curve.js";
 import {
   deterministicFee,
-  stageScaledFlatSats,
+  mintFeeSats,
   COVE_FEE_CONFIG,
   type CoveFeeConfig,
 } from "./fee.js";
@@ -12,7 +13,7 @@ import {
  *
  *   R(s) = required BTC backing (in satoshis) for issued public supply `s`.
  *
- * R(s) is the SAME `geometric20` curve integral used for primary buys. Buy and
+ * R(s) is the SAME `stairs210` curve integral used for primary buys. Buy and
  * redemption are the forward and reverse movements through this ONE function:
  *
  *   grossBuy    = R(s + q) - R(s)
@@ -31,7 +32,7 @@ import {
 /** Required BTC backing (sats) for an issued public supply (display tokens). */
 export function requiredBackingSats(supply: DisplayTokens): Sats {
   assertSupplyInRange(supply);
-  return geometric20.costToBuy(0n, supply);
+  return stairs210.costToBuy(0n, supply);
 }
 
 export interface Quote {
@@ -110,12 +111,7 @@ export function quoteBuy(
   feeConfig: CoveFeeConfig = COVE_FEE_CONFIG,
 ): Quote {
   const gross = grossBuy(supply, amount);
-  // The flat component scales with the stage the buy starts from.
-  const fee = deterministicFee(
-    gross,
-    feeConfig.buyFeeBps,
-    stageScaledFlatSats(supply, feeConfig.buyFeeFlatSatsAtTopStage),
-  );
+  const fee = mintFeeSats(gross, amount * ATOMS_PER_TOKEN, feeConfig.buyFeeBps, feeConfig.buyFeeFlatSats, feeConfig.buyFeeLotSats);
   return { gross, fee, net: gross + fee };
 }
 

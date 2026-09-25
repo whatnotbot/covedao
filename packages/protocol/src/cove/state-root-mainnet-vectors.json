@@ -20,12 +20,12 @@
     {
       "id": "mint",
       "description": "DEPLOY + one MINT of 2,000,000 tokens (2e14 atoms) to 5120bb….",
-      "root": "8221471164363fcee70cfc6d98801ef7a57d6b3335aa24b79e1b86101201380e"
+      "root": "a0e295a166dad572179c8cfe0b087446189b19cbd4ffdefabdc14ffc7b093b7b"
     },
     {
       "id": "transfer",
       "description": "DEPLOY + MINT + TRANSFER of 500,000 tokens (5e13 atoms) to 0014cc….",
-      "root": "6b362f03973c0f22d7c3347fd3771bcbe4ed825f8dade4a65d40a8f94f4215ba"
+      "root": "21f15d6a329f5ed30152f0581824f17b1e8051651ced4babf3e96e21f6ab1973"
     }
   ]
 }

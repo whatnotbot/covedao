@@ -66,7 +66,7 @@ export function fmtTokens(atoms: string | bigint): string {
 }
 
 export function fmtPricePerMillion(sats: string | bigint | number): string {
-  return `${fmtInt(sats)} sats / 1M`;
+  return `${fmtInt(sats)} sats / 1k`;
 }
 
 function trim(n: bigint): string {

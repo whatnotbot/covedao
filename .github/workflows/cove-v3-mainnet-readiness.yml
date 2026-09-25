@@ -12,7 +12,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: crclaunch
+          POSTGRES_PASSWORD: crclaunch
+          POSTGRES_DB: crclaunch
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U crclaunch"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
+
     env:
+      DATABASE_URL: postgres://crclaunch:crclaunch@127.0.0.1:5432/crclaunch
       COVE_REGTEST_RPC_URL: http://127.0.0.1:18443
       COVE_REGTEST_RPC_USER: user
       COVE_REGTEST_RPC_PASSWORD: pass
@@ -106,15 +122,92 @@ jobs:
           echo "$OUT"
           echo "$OUT" | grep -q "READY_EXCEPT_FOR_OPERATOR_CEREMONY"
 
-      - name: Readiness --runtime (fixture + Core quorum + fixture Guardian → READY_FOR_CONTROLLED_MAINNET_CANARY)
+      # The readiness gate MUST fail closed when no Guardian is reachable. The
+      # COVE_V3_FIXTURE_GUARDIAN escape hatch was removed (audit §C9: one env
+      # var satisfied six gates), so this is now a real negative test.
+      - name: Readiness --runtime with NO Guardian → NOT_READY (fail-closed)
         run: |
+          set +e
           OUT=$(COVE_V3_MAINNET_PROFILE_PATH=test/fixtures/mainnet-profile.json \
             COVE_BITCOIN_RPC_URL=http://127.0.0.1:18443 \
             COVE_BITCOIN_RPC_URL_SECONDARY=http://127.0.0.1:18443 \
-            COVE_V3_FIXTURE_GUARDIAN=true \
+            pnpm cove:v3-mainnet-readiness --runtime)
+          CODE=$?
+          set -e
+          echo "$OUT"
+          echo "$OUT" | grep -q "NOT_READY"
+          test "$CODE" -ne 0
+
+      - name: Apply database migrations
+        run: pnpm --filter @crclaunch/db db:migrate
+
+      # The Guardian resolves COVE_V3_MAINNET_PROFILE_PATH against its own
+      # package cwd (pnpm --filter), so this must be absolute.
+      - name: Start the real Guardian service
+        run: |
+          COVE_DATABASE_URL="$DATABASE_URL" \
+          COVE_V3_MAINNET_PROFILE_PATH="$GITHUB_WORKSPACE/test/fixtures/mainnet-profile.json" \
+          GUARDIAN_AUTH_TOKEN=ci-readiness-token \
+          GUARDIAN_NETWORK=regtest \
+          GUARDIAN_TEST_KEY_HEX=$(printf '42%.0s' $(seq 1 32)) \
+          GUARDIAN_PORT=4391 \
+          nohup pnpm --filter @crclaunch/guardian start > /tmp/guardian.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fsS -H "Authorization: Bearer ci-readiness-token" \
+              http://127.0.0.1:4391/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS -H "Authorization: Bearer ci-readiness-token" http://127.0.0.1:4391/health
+
+      # The Guardian rejects an unauthenticated request. GUARDIAN_AUTH_TOKEN is
+      # mandatory at boot (audit §C2: auth previously failed OPEN when unset).
+      - name: Guardian rejects unauthenticated requests
+        run: |
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4391/health)
+          echo "unauthenticated /health -> $CODE"
+          test "$CODE" = "401"
+
+      # COVE_V3_MAINNET_PROFILE_HASH is the OUT-OF-BAND committed hash the
+      # Guardian's reported hash is compared against (audit §C9 — this check
+      # used to compare the computed hash to itself and could never fail).
+      - name: Readiness --runtime (fixture + Core quorum + REAL Guardian → READY_FOR_CONTROLLED_MAINNET_CANARY)
+        run: |
+          EXPECTED=$(COVE_V3_MAINNET_PROFILE_PATH=test/fixtures/mainnet-profile.json \
+            pnpm --silent cove:v3-mainnet-readiness --static | awk '/profile hash:/ {print $3}')
+          EXPECTED=${EXPECTED:-2a7e82114016a628c9e58958fc4014d2b09c2c41107dd212c44b03436db468e6}
+          echo "expected profile hash: $EXPECTED"
+          OUT=$(COVE_V3_MAINNET_PROFILE_PATH=test/fixtures/mainnet-profile.json \
+            COVE_V3_MAINNET_PROFILE_HASH="$EXPECTED" \
+            COVE_BITCOIN_RPC_URL=http://127.0.0.1:18443 \
+            COVE_BITCOIN_RPC_URL_SECONDARY=http://127.0.0.1:18443 \
+            COVE_GUARDIAN_ENDPOINT=http://127.0.0.1:4391 \
+            COVE_GUARDIAN_AUTH_TOKEN=ci-readiness-token \
+            COVE_V3_CANARY_ACTIVE=1 \
             pnpm cove:v3-mainnet-readiness --runtime)
           echo "$OUT"
           echo "$OUT" | grep -q "READY_FOR_CONTROLLED_MAINNET_CANARY"
+
+      # A wrong committed hash must fail closed — proves the check is real.
+      - name: Readiness rejects a mismatched committed profile hash
+        run: |
+          set +e
+          OUT=$(COVE_V3_MAINNET_PROFILE_PATH=test/fixtures/mainnet-profile.json \
+            COVE_V3_MAINNET_PROFILE_HASH=$(printf 'ab%.0s' $(seq 1 32)) \
+            COVE_BITCOIN_RPC_URL=http://127.0.0.1:18443 \
+            COVE_BITCOIN_RPC_URL_SECONDARY=http://127.0.0.1:18443 \
+            COVE_GUARDIAN_ENDPOINT=http://127.0.0.1:4391 \
+            COVE_GUARDIAN_AUTH_TOKEN=ci-readiness-token \
+            COVE_V3_CANARY_ACTIVE=1 \
+            pnpm cove:v3-mainnet-readiness --runtime)
+          CODE=$?
+          set -e
+          echo "$OUT"
+          echo "$OUT" | grep -q "NOT_READY"
+          test "$CODE" -ne 0
+
+      - name: Guardian log (on failure)
+        if: failure()
+        run: tail -100 /tmp/guardian.log || true
 
       - name: Build
         run: pnpm build

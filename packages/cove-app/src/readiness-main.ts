@@ -65,6 +65,13 @@ async function main(): Promise<void> {
 
   console.log("");
   console.log(state);
+
+  // A go/no-go tool must gate on its exit code, not only on stdout. NOT_READY
+  // previously exited 0, so any wrapper testing `$?` read a failed readiness
+  // check as success. Only the two affirmative states exit 0.
+  if (state !== "READY_FOR_CONTROLLED_MAINNET_CANARY" && state !== "READY_EXCEPT_FOR_OPERATOR_CEREMONY") {
+    process.exitCode = 1;
+  }
 }
 
 main().catch((e) => {

@@ -122,6 +122,12 @@ interface BackingRow {
   input: ResolvedInput;
 }
 
+/**
+ * Token carriers a single REDEEM may consume. Bounds transaction size; a holder
+ * whose balance is spread wider consolidates first with a self-transfer.
+ */
+const MAX_REDEEM_TOKEN_INPUTS = 4;
+
 export class V3AppService {
   readonly market: MarketService;
 
@@ -534,6 +540,8 @@ export class V3AppService {
     walletAddress: string | null;
     minerFeeSats: bigint;
     idempotencyKey: string;
+    /** Ordinary BTC utxos the seller offers to pay the miner fee. */
+    funding?: FundingCandidate[];
   }): Promise<{ sessionId: string; psbtBase64: string; intent: IntentV3 }> {
     this.assertMutating();
     await this.requireHealthy();
@@ -543,13 +551,46 @@ export class V3AppService {
     const mine = tokenUtxos.filter((u) => u.tokenId === params.tokenId);
     const total = mine.reduce((s, u) => s + u.amountAtoms, 0n);
     if (total < params.amountAtoms) throw new AppError("TOKEN_AMOUNT_INVALID", "insufficient token balance");
-    // deterministic token input selection: smallest sufficient first
-    const sorted = [...mine].sort((a, b) => (a.amountAtoms !== b.amountAtoms ? (a.amountAtoms < b.amountAtoms ? -1 : 1) : a.txid < b.txid ? -1 : 1));
-    const selected = sorted.filter((u) => u.amountAtoms >= 0n).slice(0, Math.min(sorted.length, 4));
+    // Deterministic token input selection: LARGEST first, taking only as many
+    // as the amount needs.
+    //
+    // This previously sorted ascending and then took the first four
+    // unconditionally, so the balance check above (which sums EVERY utxo)
+    // could pass while the four smallest carriers held less than the amount —
+    // the build then failed with "redeem exceeds token input". Largest-first
+    // reaches any redeemable amount in the fewest inputs.
+    const sorted = [...mine].sort((a, b) =>
+      a.amountAtoms !== b.amountAtoms ? (a.amountAtoms > b.amountAtoms ? -1 : 1) : a.txid < b.txid ? -1 : 1,
+    );
+    const selected: typeof sorted = [];
+    let running = 0n;
+    for (const u of sorted) {
+      if (running >= params.amountAtoms) break;
+      if (selected.length >= MAX_REDEEM_TOKEN_INPUTS) break;
+      selected.push(u);
+      running += u.amountAtoms;
+    }
+    if (running < params.amountAtoms) {
+      throw new AppError(
+        "TOKEN_AMOUNT_INVALID",
+        `balance is spread across too many outputs: the ${MAX_REDEEM_TOKEN_INPUTS} largest hold ` +
+          `${running} atoms, short of ${params.amountAtoms}. Consolidate with a transfer to yourself, ` +
+          `or redeem a smaller amount.`,
+      );
+    }
     const tokenInputs: ResolvedInput[] = selected.map((u) => ({ txid: u.txid, vout: u.vout, script: Buffer.from(u.scriptPubKey, "hex"), valueSats: TOKEN_CARRIER_SATS }));
     const tokenInputTotalAtoms = selected.reduce((s, u) => s + u.amountAtoms, 0n);
-    // REDEEM funding: the seller's token carriers + the backing vault cover the
-    // deterministic R-delta payout; the frozen builder has no separate funder.
+    // The vault covers the R-delta payout; the seller funds the miner fee from
+    // ordinary BTC so the backing never pays it and a single-carrier partial
+    // redeem is possible.
+    const funderInputs = params.funding?.length
+      ? await resolveFundingUtxos(this.provider, params.funding)
+      : [];
+    for (const f of funderInputs) {
+      if (f.script.toString("hex") !== params.walletScript) {
+        throw new AppError("FUNDING_INPUT_INVALID", "funding input script does not match wallet");
+      }
+    }
     const result = buildRedeemPsbtV3({
       network: btcNetwork(this.config.network),
       tokenId: Buffer.from(params.tokenId, "hex"),
@@ -565,6 +606,8 @@ export class V3AppService {
       sellerChangeScript: Buffer.from(params.walletScript, "hex"),
       feeScript: this.config.feeScript,
       minerFeeSats: params.minerFeeSats,
+      funderInputs,
+      funderChangeScript: Buffer.from(params.walletScript, "hex"),
       redeemFeeBps: this.config.redeemFeeBps,
     });
     const view = await this.loadView(params.tokenId, selected.map((u) => ({ txid: u.txid, vout: u.vout })));

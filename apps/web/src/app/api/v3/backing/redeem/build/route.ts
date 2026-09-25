@@ -16,6 +16,9 @@ export async function POST(req: Request) {
       walletScript: strField(body, "walletScript"),
       walletAddress: strField(body, "walletAddress") || null,
       minerFeeSats: bigintField(body, "minerFeeSats", 1000n),
+      // Optional: BTC utxos to pay the miner fee. Without them the fee can only
+      // come from token carriers, which caps it at ~1,000 sats each.
+      funding: Array.isArray(body.funding) ? (body.funding as { txid: string; vout: number }[]) : undefined,
       idempotencyKey: strField(body, "idempotencyKey") || `redeem-${Date.now()}`,
     });
     return ok(result);

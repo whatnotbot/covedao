@@ -338,6 +338,19 @@ export function buildRedeemPsbtV3(params: {
   sellerChangeScript: Buffer;
   feeScript: Buffer;
   minerFeeSats: Sats;
+  /**
+   * Ordinary BTC inputs funding the miner fee.
+   *
+   * Without these the miner fee can only come from the seller's token carriers,
+   * which are 1,000 sats each. That gave redeem a hard fee ceiling of roughly
+   * `carriers × 1000` and made a partial redeem from a single carrier
+   * arithmetically impossible (1000 − 1000 change carrier − fee < 0). The
+   * backing vault must never pay the miner fee, so the seller funds it like any
+   * other spender.
+   */
+  funderInputs?: ResolvedInput[];
+  /** Where BTC change goes; defaults to the seller's change script. */
+  funderChangeScript?: Buffer;
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   redeemFeeBps?: bigint;
 }): RedeemResult {
@@ -390,6 +403,15 @@ export function buildRedeemPsbtV3(params: {
       witnessUtxo: { script: input.script, value: Number(input.valueSats) },
     });
   }
+  // Funder inputs go last so every token-carrier index stays where the wire
+  // envelope and the validator expect it.
+  for (const input of params.funderInputs ?? []) {
+    psbt.addInput({
+      hash: input.txid,
+      index: input.vout,
+      witnessUtxo: { script: input.script, value: Number(input.valueSats) },
+    });
+  }
 
   psbt.addOutput({ script: Buffer.concat([Buffer.from([0x6a, wire.length]), wire]), value: 0 });
   psbt.addOutput({
@@ -402,14 +424,25 @@ export function buildRedeemPsbtV3(params: {
     psbt.addOutput({ script: params.sellerChangeScript, value: Number(TOKEN_CARRIER_SATS) });
   }
 
+  const funderTotal = (params.funderInputs ?? []).reduce((s, i) => s + i.valueSats, 0n);
   const totalIn =
-    params.prevBacking.valueSats + params.tokenInputs.reduce((s, i) => s + i.valueSats, 0n);
+    params.prevBacking.valueSats +
+    params.tokenInputs.reduce((s, i) => s + i.valueSats, 0n) +
+    funderTotal;
   const successorValue = RESERVE_ANCHOR_SATS + nextState.backingSats;
   const changeCarrierValue = changeAtoms > 0n ? TOKEN_CARRIER_SATS : 0n;
   const change = totalIn - successorValue - netSats - redeemFeeSats - changeCarrierValue - params.minerFeeSats;
-  if (change < 0n) throw new Error("insufficient redeem funds");
+  if (change < 0n) {
+    throw new Error(
+      `insufficient redeem funds: need ${-change} more sats; ` +
+        `add a BTC funding input (carriers alone cover only ${params.tokenInputs.length * 1000} sats)`,
+    );
+  }
   if (change >= 294n) {
-    psbt.addOutput({ script: params.sellerChangeScript, value: Number(change) });
+    psbt.addOutput({
+      script: params.funderChangeScript ?? params.sellerChangeScript,
+      value: Number(change),
+    });
   }
 
   return {

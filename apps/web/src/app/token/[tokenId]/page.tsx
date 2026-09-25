@@ -123,6 +123,10 @@ function TokenContent() {
       });
       const qj = await qr.json();
       if (!qj.ok) throw new Error(qj.error?.message ?? "quote failed");
+      // Offer BTC utxos for the miner fee. Token carriers are 1,000 sats each,
+      // so without these a partial redeem from a single carrier cannot pay a
+      // fee at all and larger redeems break above a few sat/vB.
+      const redeemFunding = await getUtxos();
       const br = await fetch("/api/v3/backing/redeem/build", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -133,6 +137,7 @@ function TokenContent() {
           walletScript: script,
           walletAddress: address,
           minerFeeSats: "1000",
+          funding: redeemFunding,
           idempotencyKey: `redeem-${tokenId}-${Date.now()}`,
         }),
       });

@@ -343,3 +343,103 @@ describe("crc-20 discovery envelope in the built PSBT (§D1)", () => {
     expect(discoveryAgreesWithBinary(payload, binary, "DOGE")).toBe(false);
   });
 });
+
+/**
+ * The miner fee used to come only from the seller's token carriers, which are
+ * 1,000 sats each. That made a partial redeem from a single carrier
+ * arithmetically impossible and capped the fee for every redeem at roughly
+ * `carriers × 1000` — so redemption stopped working above a few sat/vB.
+ */
+describe("REDEEM miner-fee funding", () => {
+  const SELLER = Buffer.from("0014" + "e".repeat(20), "hex");
+  const FEE = Buffer.from("0014" + "f".repeat(20), "hex");
+
+  function redeem(opts: {
+    redeemAmountAtoms: bigint;
+    carriers: number;
+    minerFeeSats: bigint;
+    funderSats?: bigint;
+  }) {
+    const d = deploy();
+    const mintAmountAtoms = 84_000_000n * 100_000_000n;
+    const minted = applyMintV2(d.s0, mintAmountAtoms);
+    const per = mintAmountAtoms / BigInt(opts.carriers);
+    return buildRedeemPsbtV3({
+      network: bitcoin.networks.regtest,
+      tokenId: d.tokenId,
+      prevState: minted.nextState,
+      prevBacking: {
+        txid: "e".repeat(64),
+        vout: 1,
+        script: buildBackingVaultV3({
+          state: minted.nextState,
+          guardianXOnly,
+          recoveryKeyXOnly: recoveryXOnly,
+        }).scriptPubKey,
+        valueSats: RESERVE_ANCHOR_SATS + minted.nextState.backingSats,
+      },
+      redeemAmountAtoms: opts.redeemAmountAtoms,
+      tokenInputs: Array.from({ length: opts.carriers }, (_, i) => ({
+        txid: String(i).repeat(64).slice(0, 64),
+        vout: 1,
+        script: SELLER,
+        valueSats: TOKEN_CARRIER_SATS,
+      })),
+      tokenInputTotalAtoms: per * BigInt(opts.carriers),
+      guardianXOnly,
+      recoveryKeyXOnly: recoveryXOnly,
+      sellerPayoutScript: SELLER,
+      sellerChangeScript: SELLER,
+      feeScript: FEE,
+      minerFeeSats: opts.minerFeeSats,
+      funderInputs: opts.funderSats
+        ? [{ txid: "b".repeat(64), vout: 0, script: SELLER, valueSats: opts.funderSats }]
+        : undefined,
+      funderChangeScript: SELLER,
+    });
+  }
+
+  const HALF = 42_000_000n * 100_000_000n;
+  const ALL = 84_000_000n * 100_000_000n;
+
+  it("still refuses a partial redeem from one carrier when nothing funds the fee", () => {
+    // 1,000 carrier − 1,000 change carrier − 1,000 fee = −1,000.
+    expect(() => redeem({ redeemAmountAtoms: HALF, carriers: 1, minerFeeSats: 1_000n })).toThrow(
+      /insufficient redeem funds/,
+    );
+  });
+
+  it("allows that same partial redeem once a BTC input funds the fee", () => {
+    const r = redeem({
+      redeemAmountAtoms: HALF,
+      carriers: 1,
+      minerFeeSats: 1_000n,
+      funderSats: 10_000n,
+    });
+    expect(r.changeAtoms).toBe(HALF);
+    expect(r.grossSats).toBeGreaterThan(0n);
+  });
+
+  it("names the shortfall instead of failing blankly", () => {
+    expect(() => redeem({ redeemAmountAtoms: HALF, carriers: 1, minerFeeSats: 1_000n })).toThrow(
+      /add a BTC funding input/,
+    );
+  });
+
+  it("supports a miner fee far above what carriers alone could pay", () => {
+    // ~30 sat/vB on a 400 vB redeem. Four carriers hold only 4,000 sats.
+    const r = redeem({
+      redeemAmountAtoms: ALL,
+      carriers: 4,
+      minerFeeSats: 12_000n,
+      funderSats: 50_000n,
+    });
+    expect(r.netSats).toBe(48_856n);
+  });
+
+  it("refuses that fee without a funder, as before", () => {
+    expect(() => redeem({ redeemAmountAtoms: ALL, carriers: 4, minerFeeSats: 12_000n })).toThrow(
+      /insufficient redeem funds/,
+    );
+  });
+});

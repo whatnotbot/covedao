@@ -1,4 +1,5 @@
-import "dotenv/config";
+import { config as loadEnv } from "dotenv";
+import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import { CoreRpcProvider } from "@crclaunch/bitcoin";
 import { createDb } from "@crclaunch/db";
@@ -16,6 +17,10 @@ import type { V3IndexerConfig } from "@crclaunch/cove-indexer/v3";
  * reconcile → app transaction-session reconcile, with a single-owner Postgres
  * advisory lock per network. No MockCRCAdapter, no block mining, no graduation.
  */
+
+// The repo-root .env, like the web app (not a .env in the worker's own cwd).
+// A deploy sets real env vars and has no file; existing vars are never overridden.
+loadEnv({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
 
 const DB_URL = process.env.COVE_DATABASE_URL ?? process.env.DATABASE_URL ?? "";
 

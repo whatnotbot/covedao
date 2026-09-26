@@ -4,6 +4,7 @@ import { DEMO_EVENTS } from "@/lib/demo-tokens";
 import { useSearchParams } from "next/navigation";
 
 import { Suspense, useEffect, useState } from "react";
+import { useIndexedHeight } from "@/lib/use-indexed-height";
 
 interface Event {
   txid: string;
@@ -19,6 +20,8 @@ function ActivityContent() {
   const demo = searchParams.get("demo") === "1";
   const [events, setEvents] = useState<Event[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // Refetch when a new block is indexed.
+  const height = useIndexedHeight();
 
   useEffect(() => {
     if (demo) {
@@ -33,7 +36,7 @@ function ActivityContent() {
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
-  }, []);
+  }, [height]);
 
   const label = (op: string | null) =>
     op === "DEPLOY" ? "Launch" : op === "MINT" ? "Backing buy" : op === "REDEEM" ? "Backing redeem" : op === "TRANSFER" ? "Transfer" : op ?? "—";

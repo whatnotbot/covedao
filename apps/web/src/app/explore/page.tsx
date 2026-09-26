@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useIndexedHeight } from "@/lib/use-indexed-height";
 import { useSearchParams } from "next/navigation";
 import type { V3TokenCardData } from "@/components/TokenCard";
 import { DEMO_TOKENS } from "@/lib/demo-tokens";
@@ -42,13 +43,17 @@ function ExploreContent() {
   const [sort, setSort] = useState<SortKey>("progress");
   const [filter, setFilter] = useState<Filter>("all");
 
+  // Refetch when a new block is indexed; only a new search shows the loading state.
+  const height = useIndexedHeight();
+  const shownSearch = useRef<string | null>(null);
   useEffect(() => {
     if (demo) {
       setTokens(DEMO_TOKENS);
       setLoaded(true);
       return;
     }
-    setLoaded(false);
+    if (shownSearch.current !== search) setLoaded(false);
+    shownSearch.current = search;
     setFailed(false);
     const q = search ? `?search=${encodeURIComponent(search)}` : "";
     void fetch(`/api/v3/tokens${q}`)
@@ -62,7 +67,7 @@ function ExploreContent() {
         setFailed(true);
         setLoaded(true);
       });
-  }, [search, demo]);
+  }, [search, demo, height]);
 
   const rows = useMemo(() => {
     const pct = (t: V3TokenCardData) => {

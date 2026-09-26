@@ -38,11 +38,14 @@ export function TokenActivity({
   ticker,
   explorerBase,
   demoRows,
+  refreshKey,
 }: {
   tokenId: string;
   ticker: string;
   explorerBase?: string;
   demoRows?: ActivityRow[];
+  /** Changes when a new block is indexed; the history refetches. */
+  refreshKey?: string;
 }) {
   const [rows, setRows] = useState<ActivityRow[] | null>(demoRows ?? null);
 
@@ -52,7 +55,7 @@ export function TokenActivity({
       .then((r) => r.json())
       .then((j) => setRows(j.ok ? (j.data as ActivityRow[]) : []))
       .catch(() => setRows([]));
-  }, [tokenId, demoRows]);
+  }, [tokenId, demoRows, refreshKey]);
 
   return (
     <section className="panel px-6 py-8 sm:px-10">

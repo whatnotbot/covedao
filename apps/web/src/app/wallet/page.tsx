@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 
 import { Suspense, useEffect, useState } from "react";
+import { useIndexedHeight } from "@/lib/use-indexed-height";
 import { useWallet } from "@/components/WalletProvider";
 import { fmtBtc, fmtTokens } from "@/lib/format";
 import { DEMO_PORTFOLIO } from "@/lib/demo-tokens";
@@ -33,6 +34,8 @@ function WalletContent() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  // Refetch when a new block is indexed: holdings change only then.
+  const height = useIndexedHeight();
 
   useEffect(() => {
     if (demo) {
@@ -42,7 +45,7 @@ function WalletContent() {
     }
     if (!connected || !address) return;
     void refresh();
-  }, [connected, address, demo]);
+  }, [connected, address, demo, height]);
 
   async function refresh() {
     if (!address) return;

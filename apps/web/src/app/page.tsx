@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useIndexedHeight } from "@/lib/use-indexed-height";
 import { TokenCard, type V3TokenCardData } from "@/components/TokenCard";
 import { Tile } from "@/components/Tile";
 import { useSparklines } from "@/lib/use-sparklines";
@@ -15,6 +16,8 @@ import { useSparklines } from "@/lib/use-sparklines";
 export default function HomePage() {
   const [tokens, setTokens] = useState<V3TokenCardData[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // Refetch when a new block is indexed.
+  const height = useIndexedHeight();
 
   useEffect(() => {
     void fetch("/api/v3/tokens?limit=9")
@@ -24,7 +27,7 @@ export default function HomePage() {
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
-  }, []);
+  }, [height]);
 
   const { series } = useSparklines(
     tokens.map((t) => ({ tokenId: t.tokenId, ticker: t.ticker, curveStage: t.curveStage })),

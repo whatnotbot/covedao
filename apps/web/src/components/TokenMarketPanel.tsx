@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TokenChart } from "./TokenChart";
 import { MarketStats, type MarketSummary } from "./MarketStats";
 import { SalesFeed, type Sale } from "./SalesFeed";
@@ -36,6 +36,7 @@ export function TokenMarketPanel({
   demo = false,
   asks = [],
   explorerBase,
+  refreshKey,
 }: {
   tokenId: string;
   ticker: string;
@@ -44,6 +45,8 @@ export function TokenMarketPanel({
   asks?: Ask[];
   /** Block-explorer root, so every sale links to the real transaction. */
   explorerBase?: string;
+  /** Changes when a new block is indexed; the panel refetches quietly. */
+  refreshKey?: string;
 }) {
   const [interval, setInterval] = useState<Interval>("1h");
   const [candles, setCandles] = useState<OhlcCandle[]>([]);
@@ -72,7 +75,7 @@ export function TokenMarketPanel({
     return () => {
       cancelled = true;
     };
-  }, [tokenId, demo, ticker, curveStage]);
+  }, [tokenId, demo, ticker, curveStage, refreshKey]);
 
   // Generated at the interval actually being shown, so a day candle covers a
   // real day instead of being rolled up from a four-day base.
@@ -81,6 +84,9 @@ export function TokenMarketPanel({
     [demo, ticker, curveStage, interval],
   );
 
+  // A new block refetches without the loading state, so the chart does not
+  // flicker; only a new token or interval shows it.
+  const shown = useRef("");
   useEffect(() => {
     if (demo) {
       setCandles(demoSeries);
@@ -88,7 +94,8 @@ export function TokenMarketPanel({
       return;
     }
     let cancelled = false;
-    setLoading(true);
+    if (shown.current !== `${tokenId}:${interval}`) setLoading(true);
+    shown.current = `${tokenId}:${interval}`;
     void fetch(`/api/v3/tokens/${tokenId}/candles?interval=${interval}`)
       .then((r) => r.json())
       .then((j) => {
@@ -105,7 +112,7 @@ export function TokenMarketPanel({
     return () => {
       cancelled = true;
     };
-  }, [tokenId, interval, demo, demoSeries]);
+  }, [tokenId, interval, demo, demoSeries, refreshKey]);
 
   const ladder = market?.asks ?? asks;
   const stats = summarize(candles);

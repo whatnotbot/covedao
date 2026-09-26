@@ -15,6 +15,7 @@ import { TokenActivity } from "@/components/TokenActivity";
 import { TokenImage } from "@/components/TokenImage";
 import { Tile } from "@/components/Tile";
 import { unitPriceSats } from "@/lib/ohlc";
+import { useIndexedHeight } from "@/lib/use-indexed-height";
 import { buyListing, errorText } from "@/lib/trade";
 
 /**
@@ -99,6 +100,9 @@ function TokenContent() {
   // What the user is about to commit to, held between "Review" and "Confirm".
   // Nothing is built, signed or broadcast until they have seen these numbers.
   const [review, setReview] = useState<Review | null>(null);
+  // Refetch everything below whenever a new block is indexed: that is the only
+  // time any of it changes (a mint shows up once its block is confirmed).
+  const height = useIndexedHeight();
 
   useEffect(() => {
     if (demo) {
@@ -130,7 +134,7 @@ function TokenContent() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [tokenId]);
+  }, [tokenId, height]);
 
   const graduatedNow = detail ? BigInt(detail.issuedSupplyAtoms) >= BigInt(detail.publicCapAtoms) : false;
   const tabs = graduatedNow ? TABS_GRADUATED : TABS_OPEN;
@@ -173,7 +177,7 @@ function TokenContent() {
   }, [demo, connected, ordinalsAddress, address, tokenId]);
   useEffect(() => {
     void refreshWallet();
-  }, [refreshWallet]);
+  }, [refreshWallet, height]);
 
   // Open asks for this token — only shown once it has graduated.
   useEffect(() => {
@@ -186,7 +190,7 @@ function TokenContent() {
         setOpenAsks(open);
       })
       .catch(() => setOpenAsks([]));
-  }, [demo, graduatedNow, tokenId, txid]);
+  }, [demo, graduatedNow, tokenId, txid, height]);
 
   /** Spend-everything for Mint: the wallet's BTC less a network fee and a margin. */
   function maxBudget(): bigint | null {
@@ -504,6 +508,7 @@ function TokenContent() {
         demo={demo}
         asks={asks}
         explorerBase={EXPLORER_URL}
+        refreshKey={height}
       />
 
       {/* ── History ──────────────────────────────────────────────────── */}
@@ -512,6 +517,7 @@ function TokenContent() {
         ticker={detail.ticker}
         explorerBase={EXPLORER_URL}
         demoRows={demo ? [] : undefined}
+        refreshKey={height}
       />
 
       {/* ── Actions ──────────────────────────────────────────────────── */}

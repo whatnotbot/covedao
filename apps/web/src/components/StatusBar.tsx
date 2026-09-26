@@ -1,36 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-interface Status {
-  network: string;
-  appEnabled: boolean;
-  core: { reachable: boolean; height: string; tip: string };
-  indexer: { health: string; indexedHeight: string; stateRoot: string; lag: string; rebuilding: boolean };
-  guardian: { configured: boolean };
-  market: { enabled: boolean };
-}
+import { useChainStatus } from "@/lib/use-indexed-height";
 
 export function StatusBar() {
-  const [status, setStatus] = useState<Status | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    const load = () => {
-      void fetch("/api/v3/status")
-        .then((r) => r.json())
-        .then((j) => {
-          if (active && j.ok) setStatus(j.data);
-        })
-        .catch(() => {});
-    };
-    load();
-    const t = setInterval(load, 5000);
-    return () => {
-      active = false;
-      clearInterval(t);
-    };
-  }, []);
+  const status = useChainStatus();
 
   if (!status) return null;
 

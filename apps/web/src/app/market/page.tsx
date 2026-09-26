@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { useIndexedHeight } from "@/lib/use-indexed-height";
 import Link from "next/link";
 import { DEMO_LISTINGS, DEMO_TOKENS } from "@/lib/demo-tokens";
 import { useWallet } from "@/components/WalletProvider";
@@ -34,6 +35,8 @@ function MarketContent() {
   const { connected, script, publicKey, ordinalsScript, connect, signPsbt, signBip322, getUtxos } = useWallet();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // Refetch when a new block is indexed.
+  const height = useIndexedHeight();
   const [buying, setBuying] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -57,7 +60,7 @@ function MarketContent() {
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
-  }, []);
+  }, [height]);
 
   async function buy(listing: Listing) {
     if (!connected) return;

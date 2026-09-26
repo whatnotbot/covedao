@@ -15,7 +15,7 @@ describe("loadV3AppConfig mainnet path (§15)", () => {
     expect(cfg.recoveryProfile?.recoveryThreshold).toBe(2);
     expect(cfg.recoveryProfile?.recoveryPubkeys).toHaveLength(3);
     expect(cfg.feeScript.toString("hex")).toBe("0014cc1b07838e387deacd0e5232e1e8b49f4c29e484");
-    expect(cfg.canaryAllowedTokenIds).toContain("4710488a0ab304fb2316e0174360a41937e1f0a81f2b26dee5a38ef79fb2d252");
+    expect(cfg.canaryAllowedTokenIds).toContain("fb960b7e43b92b0a9213cf8d0a4534fb8f5776728499af70bf1c3cc8e6d19469");
     expect(cfg.canaryAllowedWalletScripts).toHaveLength(2);
     // §P1-4: fees are wired from the committed profile, not COVE_FEE_CONFIG defaults.
     expect(cfg.buyFeeBps).toBe(100n);

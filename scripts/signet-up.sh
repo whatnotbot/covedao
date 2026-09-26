@@ -110,7 +110,9 @@ echo "building web for $MODE…"
 pnpm --filter @crclaunch/web build > $D/build.log 2>&1 || { tail -30 $D/build.log; exit 1; }
 nohup pnpm --filter @crclaunch/worker v3 > $D/worker.log 2>&1 &
 echo $! > $D/worker.pid
-nohup pnpm --filter @crclaunch/web start --port ${COVE_SIGNET_PORT:-3000} > $D/web.log 2>&1 &
+# Listen on this machine only; the default (all interfaces) exposes the app
+# and its signet keys' signer to everyone on the network.
+nohup pnpm --filter @crclaunch/web start --port ${COVE_SIGNET_PORT:-3000} --hostname 127.0.0.1 > $D/web.log 2>&1 &
 for i in $(seq 1 60); do
   curl -fsS http://127.0.0.1:${COVE_SIGNET_PORT:-3000}/api/v3/status >/dev/null 2>&1 && break
   sleep 1

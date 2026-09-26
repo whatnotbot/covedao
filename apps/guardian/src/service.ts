@@ -6,15 +6,18 @@ import {
   type MainnetProfile,
 } from "@crclaunch/cove-mainnet";
 import type { VaultRecoveryProfile } from "@crclaunch/cove-vault";
+import { CoreRpcProvider } from "@crclaunch/bitcoin";
 import {
   LocalGuardianTransitionSigner,
   custodySigningBackend,
   InProcessGuardianTransport,
+  chainFundingChecker,
+  ordAssetLookup,
   type GuardianCustodyBackend,
   type GuardianSigningBackend,
   type GuardianRiskPolicy,
 } from "@crclaunch/cove-guardian/v3";
-import { loadCanonicalViewSnapshotFromDb } from "@crclaunch/cove-indexer/v3";
+import { loadCanonicalViewSnapshotFromDb, getLiveTokenUtxosAtDb } from "@crclaunch/cove-indexer/v3";
 import { PostgresSigningJournal, PostgresGuardianAudit } from "@crclaunch/cove-app";
 import type { Database } from "@crclaunch/db";
 
@@ -30,6 +33,13 @@ export interface GuardianServiceConfig {
   databaseUrl: string;
   network: "regtest" | "signet" | "testnet" | "mainnet";
   custodyBackend: GuardianCustodyBackend;
+  /**
+   * The Guardian's OWN Bitcoin Core, used to refuse unconfirmed funding
+   * inputs. Never the app's: a compromised app could lie about confirmations.
+   */
+  coreRpc: { url: string; user?: string; password?: string };
+  /** ord server (with --index-runes) for inscriptions and runes. Required on mainnet. */
+  ordUrl?: string;
 }
 
 /** Fixed miner-fee cap (operational; not profile-driven — there is no canary fee cap). */
@@ -40,6 +50,8 @@ export interface BuiltGuardianService {
   profile: MainnetProfile;
   profileHash: string;
   guardianXOnly: string;
+  /** The Guardian's own node, for the startup chain check. */
+  core: CoreRpcProvider;
 }
 
 export function recoveryProfileFromMainnet(profile: MainnetProfile): VaultRecoveryProfile {
@@ -78,6 +90,9 @@ export function riskPolicyFromProfile(profile: MainnetProfile): GuardianRiskPoli
 }
 
 export function buildGuardianService(config: GuardianServiceConfig): BuiltGuardianService {
+  if (config.network === "mainnet" && !config.ordUrl) {
+    throw new Error("GUARDIAN_ORD_URL is required on mainnet: funding inputs must be checked for inscriptions and runes");
+  }
   const { profile, validation } = loadMainnetProfile(config.profilePath);
   if (!validation.ok) {
     throw new Error(`invalid mainnet profile: ${validation.errors.join("; ")}`);
@@ -93,6 +108,12 @@ export function buildGuardianService(config: GuardianServiceConfig): BuiltGuardi
   const riskPolicy = riskPolicyFromProfile(profile);
 
   const db: Database = createDb(config.databaseUrl);
+  const core = new CoreRpcProvider(config.coreRpc);
+  const fundingChecker = chainFundingChecker({
+    chain: core,
+    isCoveCarrier: async (o) => (await getLiveTokenUtxosAtDb(db, config.network, [o])).length > 0,
+    assets: config.ordUrl ? ordAssetLookup(config.ordUrl) : undefined,
+  });
   const signingBackend: GuardianSigningBackend = custodySigningBackend(config.custodyBackend);
   const signer = new LocalGuardianTransitionSigner(
     signingBackend,
@@ -115,7 +136,8 @@ export function buildGuardianService(config: GuardianServiceConfig): BuiltGuardi
     // §P1-4: the fee schedule is the COMMITTED profile's, not the dev defaults.
     buyFeeBps: BigInt(profile.buyFeeBps!),
     redeemFeeBps: BigInt(profile.redeemFeeBps!),
+    fundingChecker,
   });
 
-  return { transport, profile, profileHash, guardianXOnly };
+  return { transport, profile, profileHash, guardianXOnly, core };
 }

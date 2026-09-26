@@ -5,6 +5,7 @@ import { loadV3AppConfig } from "./config.js";
 import { LocalGuardianTransitionSigner, RemoteGuardianTransitionSigner } from "@crclaunch/cove-guardian/v3";
 
 const FIXTURE = resolve(process.cwd(), "../../test/fixtures/mainnet-profile.json");
+const ORD = "http://127.0.0.1:4000";
 
 describe("buildAppTransitionSigner (§C4)", () => {
   it("always returns a signer — local for non-mainnet, remote for mainnet (no null fallback)", () => {
@@ -12,7 +13,7 @@ describe("buildAppTransitionSigner (§C4)", () => {
     const local = buildAppTransitionSigner({} as never, regtest);
     expect(local).toBeInstanceOf(LocalGuardianTransitionSigner);
 
-    const mainnet = loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_V3_MAINNET_PROFILE_PATH: FIXTURE });
+    const mainnet = loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_ORD_URL: ORD, COVE_V3_MAINNET_PROFILE_PATH: FIXTURE });
     const remote = buildAppTransitionSigner({} as never, mainnet);
     expect(remote).toBeInstanceOf(RemoteGuardianTransitionSigner);
   });

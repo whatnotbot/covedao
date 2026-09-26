@@ -7,6 +7,7 @@ import { validateMintTransitionV3, validateRedeemTransitionV3 } from "./validate
 import { unsignedTxDigest, decodeCoveOpReturn } from "./resolve.js";
 import { verifyVaultExecutionSignature } from "./signer.js";
 import type { GuardianSigningBackend } from "./custody.js";
+import type { FundingInputChecker } from "./funding.js";
 import type { SigningJournalStore } from "./journal.js";
 import type { GuardianTransport, GuardianSignRequestWire } from "./guardianApi.js";
 import { parseBigint } from "./guardianApi.js";
@@ -55,6 +56,11 @@ export interface TransitionSignRequest {
   redeemFeeFlatSats?: bigint;
   /** Ticker the advisory crc-20 discovery envelope must carry, if present (§D1). */
   discoveryTicker?: string;
+  /**
+   * Funding-input checks (confirmed, no tokens). The local signer uses this;
+   * the remote Guardian ignores it and runs its own from its own Core and DB.
+   */
+  fundingChecker: FundingInputChecker;
 }
 
 export type TransitionSignOutcome =

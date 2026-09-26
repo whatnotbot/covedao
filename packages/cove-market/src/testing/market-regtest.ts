@@ -17,6 +17,7 @@ import {
   validateFinalizedTransferTransaction,
   RESERVE_ANCHOR_SATS,
   type ValidatedCoveTransaction,
+  chainFundingChecker,
 } from "@crclaunch/cove-guardian/v3";
 import { V3Store } from "@crclaunch/cove-indexer/v3";
 import { hydrateState } from "@crclaunch/cove-indexer/v3";
@@ -115,6 +116,8 @@ async function main() {
   await rpc.generate(101, mineAddr);
 
   let state = await hydrateState(db, "regtest", cfg);
+  // Funding inputs must be confirmed and hold no Cove tokens, checked against the real node.
+  const fundingChecker = chainFundingChecker({ chain: provider, isCoveCarrier: async (o) => state.getTokenUtxo(o) !== null });
   const sync = async () => { await persistentWorker({ db, store, state, provider, config: cfg }); };
   const mine = async () => { await rpc.generate(1, mineAddr); await sync(); };
   const broadcast = async (v: ValidatedCoveTransaction) => (await broadcastValidatedCoveTransaction({ validated: v, network: "regtest", provider })).txid;
@@ -164,7 +167,7 @@ async function main() {
     buyerInputs: [aliceUtxo], buyerCarrierScript: p2wpkh(alice), buyerChangeScript: p2wpkh(alice), feeScript, minerFeeSats: REGTEST_MINER_FEE,
     creatorScript: CREATOR_SCRIPT,
   });
-  const mintSign = await validateAndSignMintTransition({ signer, psbt: mint.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const mintSign = await validateAndSignMintTransition({ fundingChecker, signer, psbt: mint.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!mintSign.ok) throw new Error(`guardian refused MINT: ${mintSign.reason}`);
   mint.psbt.signInput(1, alice);
   mint.psbt.finalizeInput(1);

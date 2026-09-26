@@ -49,6 +49,7 @@ import {
   validateFinalizedRedeemTransaction,
   validateFinalizedTransferTransaction,
   type ValidatedCoveTransaction,
+  chainFundingChecker,
 } from "./v3/index.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
@@ -225,6 +226,8 @@ async function main(): Promise<void> {
 
   // Deterministic in-memory chain view (§4) driven from ACTUAL tx outpoints.
   const view = new CoveChainView();
+  // Funding inputs must be confirmed and hold no Cove tokens, checked against the real node.
+  const fundingChecker = chainFundingChecker({ chain: provider, isCoveCarrier: async (o) => view.getTokenUtxo(o) !== null });
   // Ordered raw hex for the reorg/replay proof.
   const rawTxs: string[] = [];
   const results: { op: string; txid: string; height: number }[] = [];
@@ -328,7 +331,7 @@ async function main(): Promise<void> {
     minerFeeSats: MINER_FEE,
     creatorScript: CREATOR_SCRIPT,
   });
-  const mintSign = await validateAndSignMintTransition({
+  const mintSign = await validateAndSignMintTransition({ fundingChecker,
     signer,
     psbt: mint1.psbt,
     view,
@@ -435,7 +438,7 @@ async function main(): Promise<void> {
     feeScript,
     minerFeeSats: MINER_FEE,
   });
-  const redeemSign = await validateAndSignRedeemTransition({
+  const redeemSign = await validateAndSignRedeemTransition({ fundingChecker,
     signer,
     psbt: redeem.psbt,
     view,
@@ -509,7 +512,7 @@ async function main(): Promise<void> {
     minerFeeSats: MINER_FEE,
     creatorScript: CREATOR_SCRIPT,
   });
-  const rebuySign = await validateAndSignMintTransition({
+  const rebuySign = await validateAndSignMintTransition({ fundingChecker,
     signer,
     psbt: mint2.psbt,
     view,

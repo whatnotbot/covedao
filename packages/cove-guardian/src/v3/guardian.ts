@@ -7,6 +7,7 @@ import { unsignedTxDigest } from "./resolve.js";
 import type { GuardianV3Signer } from "./signer.js";
 import { validateMintTransitionV3, validateRedeemTransitionV3 } from "./validate.js";
 import { type AuditSink } from "./audit.js";
+import type { FundingInputChecker } from "./funding.js";
 import {
   type AuditRecord,
   type CoveCanonicalView,
@@ -37,6 +38,8 @@ export interface SignTransitionParams {
   buyFeeBps?: bigint;
   redeemFeeBps?: bigint;
   auditSink?: AuditSink;
+  /** Funding-input checks (confirmed, no tokens); see funding.ts. */
+  fundingChecker: FundingInputChecker;
 }
 
 export type SignTransitionOutcome =
@@ -111,6 +114,7 @@ export async function validateAndSignMintTransition(
     maxMinerFeeSats: params.maxMinerFeeSats,
     buyFeeBps: params.buyFeeBps,
     redeemFeeBps: params.redeemFeeBps,
+    fundingChecker: params.fundingChecker,
   });
 
   const analysis = v.ok ? (v.analysis as MintAnalysis) : null;
@@ -179,6 +183,7 @@ export async function validateAndSignRedeemTransition(
     maxMinerFeeSats: params.maxMinerFeeSats,
     buyFeeBps: params.buyFeeBps,
     redeemFeeBps: params.redeemFeeBps,
+    fundingChecker: params.fundingChecker,
   });
 
   const analysis = v.ok ? (v.analysis as RedeemAnalysis) : null;

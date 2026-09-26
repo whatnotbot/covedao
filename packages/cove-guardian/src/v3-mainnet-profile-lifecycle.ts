@@ -24,6 +24,7 @@ import {
   type GuardianAuditDigestFields,
   type GuardianRiskPolicy,
   type ValidatedCoveTransaction,
+  chainFundingChecker,
 } from "./v3/index.js";
 
 /** Creator payout script recorded at DEPLOY (output 2). */
@@ -194,6 +195,8 @@ async function main(): Promise<void> {
   const transitionSigner = new LocalGuardianTransitionSigner(localSigningBackend(signer), journal, audit, riskPolicy);
 
   const view = new CoveChainView();
+  // Funding inputs must be confirmed and hold no Cove tokens, checked against the real node.
+  const fundingChecker = chainFundingChecker({ chain: provider, isCoveCarrier: async (o) => view.getTokenUtxo(o) !== null });
 
   const broadcastValidated = async (validated: ValidatedCoveTransaction): Promise<string> =>
     (await broadcastValidatedCoveTransaction({ validated, network: "regtest", provider })).txid;
@@ -252,7 +255,7 @@ async function main(): Promise<void> {
     minerFeeSats: MINER_FEE,
     creatorScript: CREATOR_SCRIPT,
   });
-  const mintSign = await transitionSigner.signMint({
+  const mintSign = await transitionSigner.signMint({ fundingChecker,
     psbt: mint1.psbt, view, network: "regtest", recoveryKeyXOnly,
     recoveryProfile: MAINNET1_PROFILE, feeScript, maxMinerFeeSats: MINER_FEE,
   });
@@ -305,7 +308,7 @@ async function main(): Promise<void> {
     feeScript,
     minerFeeSats: MINER_FEE,
   });
-  const redeemSign = await transitionSigner.signRedeem({
+  const redeemSign = await transitionSigner.signRedeem({ fundingChecker,
     psbt: redeem.psbt, view, network: "regtest", recoveryKeyXOnly,
     recoveryProfile: MAINNET1_PROFILE, feeScript, maxMinerFeeSats: MINER_FEE,
   });
@@ -352,7 +355,7 @@ async function main(): Promise<void> {
     minerFeeSats: MINER_FEE,
     creatorScript: CREATOR_SCRIPT,
   });
-  const rebuySign = await transitionSigner.signMint({
+  const rebuySign = await transitionSigner.signMint({ fundingChecker,
     psbt: mint2.psbt, view, network: "regtest", recoveryKeyXOnly,
     recoveryProfile: MAINNET1_PROFILE, feeScript, maxMinerFeeSats: MINER_FEE,
   });

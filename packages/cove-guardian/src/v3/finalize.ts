@@ -80,6 +80,8 @@ function btcNetwork(network: GuardianV3Network): bitcoin.networks.Network {
   switch (network) {
     case "regtest":
       return bitcoin.networks.regtest;
+    case "mainnet":
+      return bitcoin.networks.bitcoin;
     case "testnet":
     case "signet":
       return bitcoin.networks.testnet;

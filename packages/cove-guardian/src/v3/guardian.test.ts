@@ -1,3 +1,4 @@
+import { CONFIRMED_FUNDING_FOR_TESTS } from "./testFunding.js";
 import { describe, expect, it } from "vitest";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
@@ -20,6 +21,7 @@ import { validateAndSignMintTransition, validateAndSignRedeemTransition } from "
 import { LocalGuardianTransitionSigner, type GuardianRiskPolicy } from "./transitionSigner.js";
 import { InMemorySigningJournal } from "./journal.js";
 import type { AuditRecord } from "./types.js";
+import type { FundingInputChecker } from "./funding.js";
 
 /** Creator payout script recorded at DEPLOY (output 2). */
 const CREATOR_SCRIPT = Buffer.from("0014" + "9".repeat(40), "hex");
@@ -107,8 +109,8 @@ function mintSetup(overrides: Partial<Parameters<typeof buildMintPsbtV3>[0]> = {
   return { deploy, view, mint, alice };
 }
 
-function signMint(psbt: bitcoin.Psbt, view: CoveChainView) {
-  return validateAndSignMintTransition({
+function signMint(psbt: bitcoin.Psbt, view: CoveChainView, fundingChecker: FundingInputChecker = CONFIRMED_FUNDING_FOR_TESTS) {
+  return validateAndSignMintTransition({ fundingChecker,
     signer,
     psbt,
     view,
@@ -119,6 +121,48 @@ function signMint(psbt: bitcoin.Psbt, view: CoveChainView) {
 }
 
 describe("Production Guardian V3 — validateAndSignMintTransition", async () => {
+  it("unconfirmed funding input → refused, zero signatures", async () => {
+    const { view, mint } = mintSetup();
+    const seen: string[] = [];
+    const unconfirmed: FundingInputChecker = {
+      async check(o) {
+        seen.push(`${o.txid}:${o.vout}`);
+        return { ok: false, code: "FUNDING_UNCONFIRMED", detail: "in the mempool" };
+      },
+    };
+    const r = await signMint(mint.psbt, view, unconfirmed);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("FUNDING_UNCONFIRMED");
+    expect(seen).toEqual([`${"ee".repeat(32)}:0`]); // the buyer's input, never the vault
+    expect(input0HasSignature(mint.psbt)).toBe(false);
+  });
+
+  it("funding input that is a carrier of this token → refused without asking the chain", async () => {
+    const { view, mint, deploy, alice } = mintSetup();
+    view.tokenUtxos.set(`${"ee".repeat(32)}:0`, {
+      outpoint: { txid: "ee".repeat(32), vout: 0 },
+      tokenId: deploy.tokenId,
+      amountAtoms: MINT_AMOUNT,
+      scriptPubKey: p2wpkh(alice),
+    });
+    const r = await signMint(mint.psbt, view);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("FUNDING_HOLDS_TOKEN");
+    expect(input0HasSignature(mint.psbt)).toBe(false);
+  });
+
+  it("funding input holding another token or an inscription → refused", async () => {
+    const { view, mint } = mintSetup();
+    const inscribed: FundingInputChecker = {
+      async check() {
+        return { ok: false, code: "FUNDING_HOLDS_TOKEN", detail: "holds 1 inscription(s)" };
+      },
+    };
+    const r = await signMint(mint.psbt, view, inscribed);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("FUNDING_HOLDS_TOKEN");
+  });
+
   it.skipIf(!isSimplicityAvailable())("valid MINT: Simplicity PASS + reference PASS + signs", async () => {
     const { view, mint } = mintSetup();
     const r = await signMint(mint.psbt, view);
@@ -239,7 +283,7 @@ describe("Production Guardian V3 — validateAndSignMintTransition", async () =>
       async writeAfterSign() {},
     };
     const local = new LocalGuardianTransitionSigner(backend, journal, audit, policy);
-    const out = await local.signMint({ psbt: mint.psbt, view, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+    const out = await local.signMint({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS, psbt: mint.psbt, view, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.reason).toBe("SIGNING_FAILED");
     // Reservation released → the backing outpoint is not bricked.
@@ -254,9 +298,9 @@ describe("Production Guardian V3 — validateAndSignMintTransition", async () =>
     expect(input0HasSignature(mint.psbt)).toBe(false);
   });
 
-  it("mainnet → refused (MAINNET_DISABLED), zero signatures", async () => {
+  it("mainnet without the MAINNET1 recovery profile → refused, zero signatures", async () => {
     const { view, mint } = mintSetup();
-    const r = await validateAndSignMintTransition({
+    const r = await validateAndSignMintTransition({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS,
       signer,
       psbt: mint.psbt,
       view,
@@ -265,6 +309,7 @@ describe("Production Guardian V3 — validateAndSignMintTransition", async () =>
       feeScript,
     });
     expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("MAINNET_PROFILE_REQUIRED");
     expect(input0HasSignature(mint.psbt)).toBe(false);
   });
 });
@@ -309,7 +354,7 @@ describe("Production Guardian V3 — validateAndSignRedeemTransition", async () 
 
   it.skipIf(!isSimplicityAvailable())("valid REDEEM: Simplicity PASS + reference PASS + signs", async () => {
     const { view, redeem } = redeemSetup();
-    const r = await validateAndSignRedeemTransition({
+    const r = await validateAndSignRedeemTransition({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS,
       signer,
       psbt: redeem.psbt,
       view,
@@ -328,7 +373,7 @@ describe("Production Guardian V3 — validateAndSignRedeemTransition", async () 
   it("seller payout +1 sat → refused, zero signatures", async () => {
     const { view, redeem } = redeemSetup();
     setOutputValue(redeem.psbt, 2, Number(47_470n + 1n));
-    const r = await validateAndSignRedeemTransition({
+    const r = await validateAndSignRedeemTransition({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS,
       signer,
       psbt: redeem.psbt,
       view,
@@ -368,7 +413,7 @@ describe("Production Guardian V3 — validateAndSignRedeemTransition", async () 
       feeScript,
       minerFeeSats: 1_000n,
     });
-    const r = await validateAndSignRedeemTransition({
+    const r = await validateAndSignRedeemTransition({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS,
       signer,
       psbt: forged.psbt,
       view,

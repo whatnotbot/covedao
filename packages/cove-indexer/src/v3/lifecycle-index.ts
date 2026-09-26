@@ -20,6 +20,7 @@ import {
   validateFinalizedTransferTransaction,
   RESERVE_ANCHOR_SATS,
   type ValidatedCoveTransaction,
+  chainFundingChecker,
 } from "@crclaunch/cove-guardian/v3";
 import { V3IndexerState } from "./state.js";
 import { V3Store } from "./store.js";
@@ -90,6 +91,8 @@ async function main() {
   const feeScript = REGTEST_FEE_SCRIPT;
   const config = regtestConfig();
   const state = new V3IndexerState(config);
+  // Funding inputs must be confirmed and hold no Cove tokens, checked against the real node.
+  const fundingChecker = chainFundingChecker({ chain: provider, isCoveCarrier: async (o) => state.getTokenUtxo(o) !== null });
   const dbUrl = process.env.COVE_DATABASE_URL ?? process.env.DATABASE_URL;
   const db = dbUrl ? createDb(dbUrl) : null;
   const store = db ? new V3Store("regtest") : null;
@@ -156,7 +159,7 @@ async function main() {
     buyerInputs: [aliceUtxo], buyerCarrierScript: p2wpkh(alice), buyerChangeScript: p2wpkh(alice), feeScript, minerFeeSats: MINER_FEE,
     creatorScript: CREATOR_SCRIPT,
   });
-  const mintSign = await validateAndSignMintTransition({ signer, psbt: mint1.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const mintSign = await validateAndSignMintTransition({ fundingChecker, signer, psbt: mint1.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!mintSign.ok) throw new Error(`guardian refused MINT: ${mintSign.reason}`);
   mint1.psbt.signInput(1, alice);
   mint1.psbt.finalizeInput(1);
@@ -194,7 +197,7 @@ async function main() {
     tokenInputTotalAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     sellerPayoutScript: p2wpkh(bob), sellerChangeScript: p2wpkh(bob), feeScript, minerFeeSats: MINER_FEE,
   });
-  const redeemSign = await validateAndSignRedeemTransition({ signer, psbt: redeem.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const redeemSign = await validateAndSignRedeemTransition({ fundingChecker, signer, psbt: redeem.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!redeemSign.ok) throw new Error(`guardian refused REDEEM: ${redeemSign.reason}`);
   redeem.psbt.signInput(1, bob);
   redeem.psbt.finalizeInput(1);

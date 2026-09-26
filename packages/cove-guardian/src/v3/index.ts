@@ -16,6 +16,7 @@ export {
   localSigningBackend,
   custodySigningBackend,
   TestGuardianCustodyBackend,
+  FileGuardianCustodyBackend,
   UnconfiguredGuardianCustodyBackend,
   type GuardianCustodyBackend,
   type GuardianSigningBackend,
@@ -26,6 +27,15 @@ export {
   type SignTransitionParams,
   type SignTransitionOutcome,
 } from "./guardian.js";
+export {
+  chainFundingChecker,
+  ordAssetLookup,
+  type FundingInputChecker,
+  type FundingInputVerdict,
+  type FundingInputCode,
+  type AssetLookup,
+  type TxOutReader,
+} from "./funding.js";
 export {
   validateMintTransitionV3,
   validateRedeemTransitionV3,

@@ -12,6 +12,7 @@ import {
 import { buildCanonicalMintWitness, buildCanonicalRedeemWitness } from "./witness.js";
 import { readPsbtOutputs, decodeCoveOpReturn } from "./resolve.js";
 import { checkDiscoveryOutput } from "./discoveryOutput.js";
+import type { FundingInputChecker } from "./funding.js";
 import {
   type CoveCanonicalView,
   type GuardianV3Network,
@@ -81,6 +82,29 @@ export interface ValidateParams {
    * re-derivation, never merely plausible.
    */
   discoveryTicker?: string;
+  /**
+   * Checks every BTC funding input is confirmed and holds no tokens of any
+   * kind (see funding.ts). Required: there is no unchecked path.
+   */
+  fundingChecker: FundingInputChecker;
+}
+
+/**
+ * Refuse unconfirmed funding inputs and funding inputs that hold tokens. The
+ * view catches carriers of the token being traded without a lookup; the
+ * checker covers other Cove tokens, inscriptions, runes and confirmation.
+ */
+async function checkFundingInputs(params: ValidateParams, indices: number[]): Promise<ValidationResult | null> {
+  for (const i of indices) {
+    const txIn = params.psbt.txInputs[i]!;
+    const outpoint = { txid: Buffer.from(txIn.hash).reverse().toString("hex"), vout: txIn.index };
+    if (params.view.getTokenUtxo(outpoint)) {
+      return reject("FUNDING_HOLDS_TOKEN", `funding input ${outpoint.txid}:${outpoint.vout} holds Cove tokens`);
+    }
+    const verdict = await params.fundingChecker.check(outpoint);
+    if (!verdict.ok) return reject(verdict.code, verdict.detail);
+  }
+  return null;
 }
 
 export async function validateMintTransitionV3(params: ValidateParams): Promise<ValidationResult> {
@@ -217,6 +241,10 @@ export async function validateMintTransitionV3(params: ValidateParams): Promise<
   if (analysis.minerFeeSats > maxMinerFee) {
     return reject("MINER_FEE_EXCEEDED", `miner fee ${analysis.minerFeeSats} > ${maxMinerFee}`);
   }
+
+  // ── funding inputs: confirmed, and holding no tokens of any kind ──
+  const fundingRejection = await checkFundingInputs(params, analysis.buyerInputIndices);
+  if (fundingRejection) return fundingRejection;
 
   // ── canonical Simplicity witness (recomputed; caller values cross-checked) ──
   const w = buildCanonicalMintWitness({
@@ -414,6 +442,12 @@ export async function validateRedeemTransitionV3(params: ValidateParams): Promis
   if (analysis.minerFeeSats > maxMinerFee) {
     return reject("MINER_FEE_EXCEEDED", `miner fee ${analysis.minerFeeSats} > ${maxMinerFee}`);
   }
+
+  // ── funding inputs: everything except the vault and the token carriers ──
+  const tokenInputs = new Set(analysis.tokenInputIndices);
+  const fundingIndices = params.psbt.txInputs.map((_, i) => i).filter((i) => i !== 0 && !tokenInputs.has(i));
+  const fundingRejection = await checkFundingInputs(params, fundingIndices);
+  if (fundingRejection) return fundingRejection;
 
   // ── canonical Simplicity witness ──
   const w = buildCanonicalRedeemWitness({

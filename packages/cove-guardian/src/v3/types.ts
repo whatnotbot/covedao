@@ -5,10 +5,11 @@ import type { SimplicityExecutionResult } from "@crclaunch/cove-simplicity";
  * Production Guardian V3 shared types (§6/§7).
  */
 
-/** Mainnet is DISABLED this phase — the signer will never produce a mainnet signature. */
+/**
+ * Networks the Guardian signs for. Mainnet additionally requires the MAINNET1
+ * recovery profile (validate.ts) and is signed only by the Guardian service.
+ */
 export type GuardianV3Network = "regtest" | "signet" | "testnet" | "mainnet";
-
-export const MAINNET_DISABLED = true as const;
 
 /**
  * Minimal canonical view interface the Guardian resolves against. It lives in
@@ -61,7 +62,10 @@ export type ValidationFailureCode =
   | "MIXED_TOKEN_INPUT"
   | "FORGED_TOKEN_INPUT"
   | "TOKEN_CHANGE_MISMATCH"
-  | "PROTOCOL_FEE_DUST";
+  | "PROTOCOL_FEE_DUST"
+  | "FUNDING_UNCONFIRMED"
+  | "FUNDING_HOLDS_TOKEN"
+  | "FUNDING_CHECK_UNAVAILABLE";
 
 export interface ValidationRejection {
   ok: false;

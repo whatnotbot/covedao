@@ -22,6 +22,10 @@ import {
   type TransitionSignRequest,
   validateMintTransitionV3,
   validateRedeemTransitionV3,
+  chainFundingChecker,
+  ordAssetLookup,
+  type AssetLookup,
+  type FundingInputChecker,
 } from "@crclaunch/cove-guardian/v3";
 import { loadCanonicalViewSnapshotFromDb, computeHealth, getTokenUtxosByScriptDb, getLiveTokenUtxosAtDb } from "@crclaunch/cove-indexer/v3";
 import { grossBuy, grossRedeem, deterministicFee, mintFeeSats, redeemFeeSats, creatorFeeSats, CREATOR_RECORD_SATS, checkRedeemPayout } from "@crclaunch/cove-economics";
@@ -221,6 +225,13 @@ function assertRedeemPayoutIsPayable(params: {
 
 export class V3AppService {
   readonly market: MarketService;
+  /**
+   * Funding inputs must be confirmed and hold no tokens of any kind: Core for
+   * confirmation, the Cove index for carriers of every token, and ord (when
+   * configured; required on mainnet) for inscriptions and runes.
+   */
+  readonly fundingChecker: FundingInputChecker;
+  private readonly assets: AssetLookup | null;
   private feeRatesCache: { at: number; rates: FeeRates } | null = null;
 
   constructor(
@@ -230,6 +241,12 @@ export class V3AppService {
     readonly transitionSigner: GuardianTransitionSigner,
     readonly secondaryProvider: CoreRpcProvider | null = null,
   ) {
+    this.assets = config.ordUrl ? ordAssetLookup(config.ordUrl) : null;
+    this.fundingChecker = chainFundingChecker({
+      chain: provider,
+      isCoveCarrier: async (o) => (await getLiveTokenUtxosAtDb(db, config.network, [o])).length > 0,
+      assets: this.assets ?? undefined,
+    });
     this.market = new MarketService(
       db,
       provider,
@@ -246,12 +263,12 @@ export class V3AppService {
   }
 
   private assertNetwork(): V3Network {
-    // §P0-5: the network gate MUST come from the server-side config, never from
-    // request-body input. A mainnet node is read-only until it is explicitly
-    // activated, and that decision is made at boot, not per request.
-    if (this.config.network === "mainnet") {
-      throw new AppError("MAINNET_DISABLED", "mainnet mutation is disabled (Phase 8)");
-    }
+    // §P0-5: the network comes from the server-side config, never from
+    // request-body input. Mainnet is decided at boot: loadV3AppConfig refuses
+    // to start it without a valid committed profile, with any local private
+    // key, or without an ord server; signing goes only to the remote Guardian,
+    // which checks the same profile hash and key; and the profile's canary
+    // allowlists and caps still apply to every mutation.
     return this.config.network;
   }
 
@@ -526,6 +543,16 @@ export class V3AppService {
    * miner fee. It may be negative when other inputs (token carriers) already
    * bring in more sats than the outputs consume.
    */
+  /** What a coin holds besides BTC, per ord; null when nothing or no ord is configured. */
+  private async assetsAt(o: { txid: string; vout: number }): Promise<string | null> {
+    if (!this.assets) return null;
+    try {
+      return await this.assets.describeAssets(o);
+    } catch (e) {
+      throw new AppError("FUNDING_CHECK_UNAVAILABLE", `could not check ${o.txid}:${o.vout} for inscriptions and runes: ${(e as Error).message}`);
+    }
+  }
+
   private async resolveFundingAndFee(params: {
     op: CoveOperation;
     wallet: ResolvedWalletIdentity;
@@ -597,10 +624,18 @@ export class V3AppService {
       return { vsize: fee.vsize, minerFeeSats: fee.minerFeeSats, satPerVb: fee.effectiveSatPerVb };
     };
 
+    // A vault transition (mint, redeem) may not be funded by an unconfirmed
+    // coin: its owner could double-spend it and drop every transition chained
+    // after it. The Guardian refuses such an input; skip it here so the user
+    // gets a build instead of a refusal.
+    const vaultOp = params.op === "BACKING_BUY" || params.op === "REDEEM";
+    const pending = vaultOp ? resolved.filter((f) => f.confirmations < 1) : [];
+    const usable = vaultOp ? resolved.filter((f) => f.confirmations >= 1) : resolved;
+
     // Largest-first: reaches the target in the fewest inputs, which is also the
     // cheapest transaction. Ties break on txid/vout so the choice is
     // deterministic and a rebuild produces the same PSBT.
-    const sorted = [...resolved].sort((a, b) => {
+    let sorted = [...usable].sort((a, b) => {
       if (a.valueSats !== b.valueSats) return a.valueSats > b.valueSats ? -1 : 1;
       if (a.txid !== b.txid) return a.txid < b.txid ? -1 : 1;
       return a.vout - b.vout;
@@ -623,26 +658,48 @@ export class V3AppService {
       return { inputs: [], ...noFunding };
     }
 
-    const chosen: ResolvedFunding[] = [];
+    // Coins holding inscriptions or runes are skipped, never spent: spent as
+    // plain BTC, what they hold is destroyed. Only the coins actually picked
+    // are asked about, and a skipped coin means picking again without it.
+    const skippedAssets: string[] = [];
+    let chosen: ResolvedFunding[] = [];
     let sum = 0n;
-    for (const utxo of sorted) {
-      chosen.push(utxo);
-      sum += utxo.valueSats;
-      const priced = priceAt(chosen.length);
-      if (sum >= params.targetSats + priced.minerFeeSats) {
-        return { inputs: chosen.map(toInput), ...priced };
+    pick: for (;;) {
+      chosen = [];
+      sum = 0n;
+      for (const utxo of sorted) {
+        chosen.push(utxo);
+        sum += utxo.valueSats;
+        const priced = priceAt(chosen.length);
+        if (sum >= params.targetSats + priced.minerFeeSats) {
+          for (const f of chosen) {
+            const held = await this.assetsAt(f);
+            if (held) {
+              skippedAssets.push(`${f.txid}:${f.vout} (${held})`);
+              sorted = sorted.filter((u) => u !== f);
+              continue pick;
+            }
+          }
+          return { inputs: chosen.map(toInput), ...priced };
+        }
       }
+      break;
     }
     const shortfall = priceAt(Math.max(1, chosen.length));
     const need = params.targetSats + shortfall.minerFeeSats;
     // Two-address wallets are the usual way to land here: coins sent to the
     // token (taproot) address are never spent for trades.
     const twoAddress = params.wallet.payments.script !== params.wallet.ordinals.script;
+    const pendingSats = pending.reduce((a, f) => a + f.valueSats, 0n);
     throw new AppError(
       "INSUFFICIENT_BTC",
-      `Your payment address has ${sum} sats; this needs ${need} ` +
+      `Your payment address has ${sum} usable sats; this needs ${need} ` +
         `(${params.targetSats} for the trade, ${shortfall.minerFeeSats} network fee at ` +
         `${shortfall.satPerVb} sat/vB).` +
+        (pending.length > 0
+          ? ` Another ${pendingSats} sats are still unconfirmed; mints and sales use only confirmed BTC, so wait for your last transaction to confirm.`
+          : "") +
+        (skippedAssets.length > 0 ? ` Skipped coins holding inscriptions or runes: ${skippedAssets.join(", ")}.` : "") +
         (twoAddress
           ? " Cove pays only from your wallet's payment (BTC) address, not its token (taproot) address — send BTC there first."
           : ""),
@@ -964,7 +1021,7 @@ export class V3AppService {
     const req: TransitionSignRequest = { psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
       recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, buyFeeBps: this.config.buyFeeBps,
       buyFeeFlatSats: this.config.buyFeeFlatSats,
-      discoveryTicker };
+      discoveryTicker, fundingChecker: this.fundingChecker };
     // Validate now so a bad build fails before the wallet is asked, but do NOT
     // sign: a Guardian signature reserves the vault outpoint, and reserving it
     // for a build that is never submitted let anyone freeze a token's trading
@@ -1032,7 +1089,7 @@ export class V3AppService {
     const signed = await this.transitionSigner.signMint({ psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
       recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, buyFeeBps: this.config.buyFeeBps,
       buyFeeFlatSats: this.config.buyFeeFlatSats,
-      discoveryTicker });
+      discoveryTicker, fundingChecker: this.fundingChecker });
     if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
     for (let i = 1; i < psbt.data.inputs.length; i++) psbt.finalizeInput(i);
     const rawTxHex = psbt.extractTransaction().toHex();
@@ -1203,7 +1260,7 @@ export class V3AppService {
     );
     const req: TransitionSignRequest = { psbt: result.psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
       recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, redeemFeeBps: this.config.redeemFeeBps,
-      redeemFeeFlatSats: this.config.redeemFeeFlatSats };
+      redeemFeeFlatSats: this.config.redeemFeeFlatSats, fundingChecker: this.fundingChecker };
     // Validate only; the Guardian signs at submit (see buildBackingBuy).
     const checked = await validateRedeemTransitionV3({ ...req, guardianXOnly: this.config.guardianXOnly });
     if (!checked.ok) throw new AppError("GUARDIAN_REJECTED", `${checked.reason}: ${checked.detail}`);
@@ -1261,7 +1318,7 @@ export class V3AppService {
     );
     const signed = await this.transitionSigner.signRedeem({ psbt, view, network: this.config.network, recoveryKeyXOnly: this.config.recoveryKeyXOnly,
       recoveryProfile: this.config.recoveryProfile, feeScript: this.config.feeScript, maxMinerFeeSats: this.config.maxMinerFeeSats, redeemFeeBps: this.config.redeemFeeBps,
-      redeemFeeFlatSats: this.config.redeemFeeFlatSats });
+      redeemFeeFlatSats: this.config.redeemFeeFlatSats, fundingChecker: this.fundingChecker });
     if (!signed.ok) throw new AppError("GUARDIAN_REJECTED", `${signed.reason}: ${signed.detail}`);
     for (let i = 1; i < psbt.data.inputs.length; i++) psbt.finalizeInput(i);
     const rawTxHex = psbt.extractTransaction().toHex();

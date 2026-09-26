@@ -4,9 +4,10 @@ import { loadV3AppConfig } from "./config.js";
 import type { GuardianTransitionSigner } from "@crclaunch/cove-guardian/v3";
 
 /**
- * P0-5: never trust `network` from the request body. The mutation gate must
- * come from the server-side `config.network` (fixed at boot), so a client
- * cannot flip a node into a permissive network by editing its JSON body.
+ * P0-5: never trust `network` from the request body. The mutation gate comes
+ * from the server-side config (fixed at boot): a disabled app refuses every
+ * mutation whatever the request says. Mainnet itself is gated at boot by
+ * loadV3AppConfig (profile, no local keys, ord) — see config.test.ts.
  */
 
 const dummySigner = {
@@ -15,17 +16,17 @@ const dummySigner = {
   health: async () => ({ reachable: true }),
 } as GuardianTransitionSigner;
 
-function mainnetService(): V3AppService {
+function disabledService(): V3AppService {
   const base = loadV3AppConfig({}); // regtest defaults (all key material present)
-  const config = { ...base, network: "mainnet" as const, enabled: true };
+  const config = { ...base, enabled: false };
   return new V3AppService({} as never, {} as never, config, dummySigner);
 }
 
 const WS = "0014" + "22".repeat(20);
 
 describe("P0-5 mutation network gate is config-driven", () => {
-  it("rejects buildLaunch on a mainnet config", async () => {
-    const app = mainnetService();
+  it("rejects buildLaunch on a disabled config", async () => {
+    const app = disabledService();
     await expect(
       app.buildLaunch({
         ticker: "TST",
@@ -37,11 +38,11 @@ describe("P0-5 mutation network gate is config-driven", () => {
         metadata: { displayName: "T", description: "D" },
         idempotencyKey: "k",
       }),
-    ).rejects.toThrow(/MAINNET_DISABLED/);
+    ).rejects.toThrow(/APP_DISABLED/);
   });
 
-  it("rejects buildBackingBuy on a mainnet config", async () => {
-    const app = mainnetService();
+  it("rejects buildBackingBuy on a disabled config", async () => {
+    const app = disabledService();
     await expect(
       app.buildBackingBuy({
         tokenId: "ab".repeat(32),
@@ -53,11 +54,11 @@ describe("P0-5 mutation network gate is config-driven", () => {
         minerFeeSats: 1000n,
         idempotencyKey: "k",
       }),
-    ).rejects.toThrow(/MAINNET_DISABLED/);
+    ).rejects.toThrow(/APP_DISABLED/);
   });
 
-  it("rejects buildRedeem on a mainnet config", async () => {
-    const app = mainnetService();
+  it("rejects buildRedeem on a disabled config", async () => {
+    const app = disabledService();
     await expect(
       app.buildRedeem({
         tokenId: "ab".repeat(32),
@@ -67,11 +68,11 @@ describe("P0-5 mutation network gate is config-driven", () => {
         minerFeeSats: 1000n,
         idempotencyKey: "k",
       }),
-    ).rejects.toThrow(/MAINNET_DISABLED/);
+    ).rejects.toThrow(/APP_DISABLED/);
   });
 
-  it("rejects buildTransfer on a mainnet config", async () => {
-    const app = mainnetService();
+  it("rejects buildTransfer on a disabled config", async () => {
+    const app = disabledService();
     await expect(
       app.buildTransfer({
         tokenId: "ab".repeat(32),
@@ -83,6 +84,6 @@ describe("P0-5 mutation network gate is config-driven", () => {
         minerFeeSats: 1000n,
         idempotencyKey: "k",
       }),
-    ).rejects.toThrow(/MAINNET_DISABLED/);
+    ).rejects.toThrow(/APP_DISABLED/);
   });
 });

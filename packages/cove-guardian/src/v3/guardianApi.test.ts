@@ -1,3 +1,4 @@
+import { CONFIRMED_FUNDING_FOR_TESTS } from "./testFunding.js";
 import { describe, expect, it } from "vitest";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
@@ -71,7 +72,7 @@ function mintFixture(): { psbt: bitcoin.Psbt; view: CoveChainView; tokenId: stri
 function transportFor(view: CoveChainView): InProcessGuardianTransport {
   const signer = GuardianV3Signer.fromPrivateKey(Buffer.alloc(32, 0x42));
   const service = new LocalGuardianTransitionSigner(localSigningBackend(signer), new InMemorySigningJournal(), memoryAudit, riskPolicy);
-  return new InProcessGuardianTransport({
+  return new InProcessGuardianTransport({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS,
     signer: service,
     profileHash: PROFILE_HASH,
     guardianXOnly: guardianXOnlyHex,
@@ -89,7 +90,7 @@ describe("remote Guardian client (§24)", () => {
   it.skipIf(!isSimplicityAvailable())("signs a MINT through the in-process transport and independently verifies", async () => {
     const { psbt, view, tokenId } = mintFixture();
     const remote = new RemoteGuardianTransitionSigner(transportFor(view), PROFILE_HASH, guardianXOnlyHex);
-    const out = await remote.signMint({ psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile: MAINNET1, feeScript, maxMinerFeeSats: 1_000n });
+    const out = await remote.signMint({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS, psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile: MAINNET1, feeScript, maxMinerFeeSats: 1_000n });
     expect(out.ok).toBe(true);
     if (out.ok) {
       expect(out.tokenId).toBe(tokenId);
@@ -113,7 +114,7 @@ describe("remote Guardian client (§24)", () => {
       },
     };
     const remote = new RemoteGuardianTransitionSigner(spoof, PROFILE_HASH, guardianXOnlyHex);
-    const out = await remote.signMint({ psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile: MAINNET1, feeScript, maxMinerFeeSats: 1_000n });
+    const out = await remote.signMint({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS, psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile: MAINNET1, feeScript, maxMinerFeeSats: 1_000n });
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.reason).toBe("SIGNATURE_VERIFICATION_FAILED");
   });
@@ -125,7 +126,7 @@ describe("remote Guardian client (§24)", () => {
       sign: async () => ({ ok: false, reason: "RISK_POLICY_REJECTED", detail: "gross exceeds cap" }),
     };
     const remote = new RemoteGuardianTransitionSigner(rejecting, PROFILE_HASH, guardianXOnlyHex);
-    const out = await remote.signMint({ psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile: MAINNET1, feeScript });
+    const out = await remote.signMint({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS, psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile: MAINNET1, feeScript });
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.reason).toBe("RISK_POLICY_REJECTED");
   });
@@ -139,7 +140,7 @@ describe("remote Guardian client (§24)", () => {
     };
     const signer = GuardianV3Signer.fromPrivateKey(Buffer.alloc(32, 0x42));
     const local = new LocalGuardianTransitionSigner(localSigningBackend(signer), journal, failingAfter, riskPolicy);
-    const out = await local.signMint({ psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile: MAINNET1, feeScript, maxMinerFeeSats: 1_000n });
+    const out = await local.signMint({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS, psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile: MAINNET1, feeScript, maxMinerFeeSats: 1_000n });
     expect(out.ok).toBe(true);
     if (out.ok) {
       expect(out.auditFinalizationError).not.toBeNull();
@@ -160,7 +161,7 @@ describe("remote Guardian client (§24)", () => {
       signMint: async (req: { network: string }) => { receivedNetwork = req.network; return { ok: false as const, reason: "x", detail: "x" }; },
       signRedeem: async () => ({ ok: false as const, reason: "x", detail: "x" }),
     };
-    const transport = new InProcessGuardianTransport({
+    const transport = new InProcessGuardianTransport({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS,
       signer,
       profileHash: PROFILE_HASH,
       guardianXOnly: guardianXOnlyHex,

@@ -1,3 +1,4 @@
+import { CONFIRMED_FUNDING_FOR_TESTS } from "./testFunding.js";
 import { describe, expect, it } from "vitest";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
@@ -80,7 +81,7 @@ describe("production-profile MINT path (§137) — MAINNET1 vault through the Gu
     );
 
     const signer = GuardianV3Signer.fromPrivateKey(Buffer.alloc(32, 0x42));
-    const out = await validateAndSignMintTransition({
+    const out = await validateAndSignMintTransition({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS,
       signer,
       psbt: mint.psbt,
       view,

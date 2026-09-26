@@ -20,6 +20,7 @@ import {
   validateFinalizedTransferTransaction,
   RESERVE_ANCHOR_SATS,
   type ValidatedCoveTransaction,
+  chainFundingChecker,
 } from "@crclaunch/cove-guardian/v3";
 import { V3Store } from "./store.js";
 import { hydrateState } from "./hydrate.js";
@@ -97,6 +98,8 @@ async function main() {
 
   // start from a clean persisted state
   const state = await hydrateState(db, "regtest", cfg);
+  // Funding inputs must be confirmed and hold no Cove tokens, checked against the real node.
+  const fundingChecker = chainFundingChecker({ chain: provider, isCoveCarrier: async (o) => state.getTokenUtxo(o) !== null });
 
   async function sync(): Promise<void> {
     await persistentWorker({ db, store, state, provider, config: cfg });
@@ -164,7 +167,7 @@ async function main() {
     buyerInputs: [aliceUtxo], buyerCarrierScript: p2wpkh(alice), buyerChangeScript: p2wpkh(alice), feeScript, minerFeeSats: REGTEST_MINER_FEE,
     creatorScript: CREATOR_SCRIPT,
   });
-  const mintSign = await validateAndSignMintTransition({ signer, psbt: mint1.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const mintSign = await validateAndSignMintTransition({ fundingChecker, signer, psbt: mint1.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!mintSign.ok) throw new Error(`guardian refused MINT: ${mintSign.reason}`);
   mint1.psbt.signInput(1, alice);
   mint1.psbt.finalizeInput(1);
@@ -210,7 +213,7 @@ async function main() {
     tokenInputTotalAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly: recoveryXOnly,
     sellerPayoutScript: p2wpkh(bob), sellerChangeScript: p2wpkh(bob), feeScript, minerFeeSats: REGTEST_MINER_FEE,
   });
-  const redeemSign = await validateAndSignRedeemTransition({ signer, psbt: redeem.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const redeemSign = await validateAndSignRedeemTransition({ fundingChecker, signer, psbt: redeem.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!redeemSign.ok) throw new Error(`guardian refused REDEEM: ${redeemSign.reason}`);
   redeem.psbt.signInput(1, bob);
   redeem.psbt.finalizeInput(1);
@@ -233,7 +236,7 @@ async function main() {
     buyerInputs: [aliceRebuy], buyerCarrierScript: p2wpkh(alice), buyerChangeScript: p2wpkh(alice), feeScript, minerFeeSats: REGTEST_MINER_FEE,
     creatorScript: CREATOR_SCRIPT,
   });
-  const rebuySign = await validateAndSignMintTransition({ signer, psbt: mint2.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const rebuySign = await validateAndSignMintTransition({ fundingChecker, signer, psbt: mint2.psbt, view: state, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!rebuySign.ok) throw new Error(`guardian refused RE-BUY: ${rebuySign.reason}`);
   mint2.psbt.signInput(1, alice);
   mint2.psbt.finalizeInput(1);
@@ -298,7 +301,7 @@ async function main() {
     buyerInputs: [newBuyerFund], buyerCarrierScript: p2wpkh(newBuyer), buyerChangeScript: p2wpkh(newBuyer), feeScript, minerFeeSats: REGTEST_MINER_FEE,
     creatorScript: CREATOR_SCRIPT,
   });
-  const snapSign = await validateAndSignMintTransition({ signer, psbt: mint3.psbt, view: snapshot, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
+  const snapSign = await validateAndSignMintTransition({ fundingChecker, signer, psbt: mint3.psbt, view: snapshot, network: "regtest", recoveryKeyXOnly: recoveryXOnly, feeScript });
   if (!snapSign.ok) throw new Error(`snapshot-driven Guardian refused: ${snapSign.reason}`);
   console.log(`✓ DB snapshot → Guardian signed (Simplicity PASS, CMR ${snapSign.actualCmr.slice(0, 8)}…)`);
 

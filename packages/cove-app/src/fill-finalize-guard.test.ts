@@ -5,8 +5,8 @@ import type { GuardianTransitionSigner } from "@crclaunch/cove-guardian/v3";
 
 /**
  * P0-6: `finalizeAndBroadcastFill` was the only mutation with no server-side
- * guard. It must fail closed on disabled / mainnet configs before touching any
- * DB or provider state.
+ * guard. It must fail closed on a disabled config before touching any DB or
+ * provider state.
  */
 
 const dummySigner = {
@@ -25,10 +25,5 @@ describe("P0-6 finalizeAndBroadcastFill guards", () => {
   it("rejects on a disabled config", async () => {
     const app = serviceWith({ enabled: false });
     await expect(app.finalizeAndBroadcastFill("cd".repeat(16))).rejects.toThrow(/APP_DISABLED/);
-  });
-
-  it("rejects on a mainnet config", async () => {
-    const app = serviceWith({ enabled: true, network: "mainnet" });
-    await expect(app.finalizeAndBroadcastFill("cd".repeat(16))).rejects.toThrow(/MAINNET_DISABLED/);
   });
 });

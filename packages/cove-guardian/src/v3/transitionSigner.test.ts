@@ -1,3 +1,4 @@
+import { CONFIRMED_FUNDING_FOR_TESTS } from "./testFunding.js";
 import { describe, expect, it } from "vitest";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
@@ -58,7 +59,7 @@ describe("Guardian transition signer boundary (§12-§17, §80, §81)", () => {
     const signer = GuardianV3Signer.fromPrivateKey(Buffer.alloc(32, 0x42));
     const local = new LocalGuardianTransitionSigner(localSigningBackend(signer), new InMemorySigningJournal(), failingAudit(), riskPolicy);
     const empty = new bitcoin.Psbt({ network: bitcoin.networks.regtest });
-    const out = await local.signMint({ psbt: empty, view: {} as never, network: "regtest", recoveryKeyXOnly: Buffer.alloc(32), feeScript: Buffer.alloc(22) });
+    const out = await local.signMint({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS, psbt: empty, view: {} as never, network: "regtest", recoveryKeyXOnly: Buffer.alloc(32), feeScript: Buffer.alloc(22) });
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.reason).toBeTruthy();
   });
@@ -80,7 +81,7 @@ describe("Guardian transition signer boundary (§12-§17, §80, §81)", () => {
     const empty = new bitcoin.Psbt({ network: bitcoin.networks.regtest });
     // invalid PSBT fails at validation before audit; to exercise the audit path we
     // simply assert the sink is only invoked on validated transitions.
-    await local.signMint({ psbt: empty, view: {} as never, network: "regtest", recoveryKeyXOnly: Buffer.alloc(32), feeScript: Buffer.alloc(22) });
+    await local.signMint({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS, psbt: empty, view: {} as never, network: "regtest", recoveryKeyXOnly: Buffer.alloc(32), feeScript: Buffer.alloc(22) });
     expect(called).toBe(false); // invalid → no audit write at all
   });
 });

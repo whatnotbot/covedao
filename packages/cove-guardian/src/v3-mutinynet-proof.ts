@@ -51,6 +51,7 @@ import {
   validateFinalizedMintTransaction,
   validateFinalizedTransferTransaction,
   type ValidatedCoveTransaction,
+  chainFundingChecker,
 } from "./v3/index.js";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
@@ -235,6 +236,21 @@ async function main(): Promise<void> {
   Buffer.from(ticker, "ascii").copy(tokenNonce, 4);
 
   const view = new CoveChainView();
+  // Funding inputs must be confirmed and hold no Cove tokens (Esplora-backed).
+  const fundingChecker = chainFundingChecker({
+    chain: {
+      getTxout: async (txid, vout) => {
+        const [tx, spend, tip] = await Promise.all([
+          esploraJson<{ status?: { confirmed?: boolean; block_height?: number } }>(`/tx/${txid}`),
+          esploraJson<{ spent?: boolean }>(`/tx/${txid}/outspend/${vout}`),
+          esploraText("/blocks/tip/height"),
+        ]);
+        if (spend.spent) return null;
+        return { confirmations: tx.status?.confirmed ? Number(tip) - tx.status.block_height! + 1 : 0 };
+      },
+    },
+    isCoveCarrier: async (o) => view.getTokenUtxo(o) !== null,
+  });
   const manifest: V2ProofManifest = {
     protocol: "cove",
     wireVersion: 2,
@@ -335,7 +351,7 @@ async function main(): Promise<void> {
     creatorScript: CREATOR_SCRIPT,
   });
 
-  const mintSign = await validateAndSignMintTransition({
+  const mintSign = await validateAndSignMintTransition({ fundingChecker,
     signer,
     psbt: mint.psbt,
     view,

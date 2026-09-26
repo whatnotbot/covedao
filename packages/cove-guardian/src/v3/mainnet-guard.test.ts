@@ -1,3 +1,4 @@
+import { CONFIRMED_FUNDING_FOR_TESTS } from "./testFunding.js";
 import { describe, expect, it } from "vitest";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
@@ -28,7 +29,7 @@ describe("mainnet fail-closed guard (§36)", async () => {
   it("rejects a mainnet MINT without any recovery profile", async () => {
     const psbt = new bitcoin.Psbt({ network: bitcoin.networks.bitcoin });
     const view = new CoveChainView();
-    const r = await validateMintTransitionV3({ psbt, view, network: "mainnet", guardianXOnly, recoveryKeyXOnly, feeScript });
+    const r = await validateMintTransitionV3({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS, psbt, view, network: "mainnet", guardianXOnly, recoveryKeyXOnly, feeScript });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("MAINNET_PROFILE_REQUIRED");
   });
@@ -36,7 +37,7 @@ describe("mainnet fail-closed guard (§36)", async () => {
   it("rejects a mainnet MINT with the DEV1 single-key profile", async () => {
     const psbt = new bitcoin.Psbt({ network: bitcoin.networks.bitcoin });
     const view = new CoveChainView();
-    const r = await validateMintTransitionV3({
+    const r = await validateMintTransitionV3({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS,
       psbt, view, network: "mainnet", guardianXOnly, recoveryKeyXOnly,
       recoveryProfile: dev1RecoveryProfile(recoveryKeyXOnly), feeScript,
     });
@@ -47,7 +48,7 @@ describe("mainnet fail-closed guard (§36)", async () => {
   it("rejects a mainnet REDEEM without the MAINNET1 profile", async () => {
     const psbt = new bitcoin.Psbt({ network: bitcoin.networks.bitcoin });
     const view = new CoveChainView();
-    const r = await validateRedeemTransitionV3({ psbt, view, network: "mainnet", guardianXOnly, recoveryKeyXOnly, feeScript });
+    const r = await validateRedeemTransitionV3({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS, psbt, view, network: "mainnet", guardianXOnly, recoveryKeyXOnly, feeScript });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("MAINNET_PROFILE_REQUIRED");
   });
@@ -55,7 +56,7 @@ describe("mainnet fail-closed guard (§36)", async () => {
   it("passes the profile guard for a MAINNET1 mainnet request (fails later on structure, not the guard)", async () => {
     const psbt = new bitcoin.Psbt({ network: bitcoin.networks.bitcoin });
     const view = new CoveChainView();
-    const r = await validateMintTransitionV3({
+    const r = await validateMintTransitionV3({ fundingChecker: CONFIRMED_FUNDING_FOR_TESTS,
       psbt, view, network: "mainnet", guardianXOnly, recoveryKeyXOnly,
       recoveryProfile: MAINNET1, feeScript,
     });

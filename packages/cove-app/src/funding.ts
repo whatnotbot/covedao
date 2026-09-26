@@ -18,12 +18,20 @@ export interface ResolvedFunding {
   vout: number;
   script: Buffer;
   valueSats: bigint;
+  /** 0 while in the mempool. */
+  confirmations: number;
 }
 
 export async function resolveFundingUtxo(provider: CoreRpcProvider, c: FundingCandidate): Promise<ResolvedFunding> {
   const txout = await provider.getTxout(c.txid, c.vout);
   if (!txout) throw new AppError("FUNDING_INPUT_SPENT", `input ${c.txid}:${c.vout} is spent or unknown`);
-  return { txid: c.txid, vout: c.vout, script: Buffer.from(txout.scriptPubKeyHex, "hex"), valueSats: txout.valueSats };
+  return {
+    txid: c.txid,
+    vout: c.vout,
+    script: Buffer.from(txout.scriptPubKeyHex, "hex"),
+    valueSats: txout.valueSats,
+    confirmations: txout.confirmations,
+  };
 }
 
 export async function resolveFundingUtxos(provider: CoreRpcProvider, candidates: FundingCandidate[]): Promise<ResolvedFunding[]> {

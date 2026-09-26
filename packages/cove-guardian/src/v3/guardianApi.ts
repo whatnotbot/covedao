@@ -2,6 +2,7 @@ import type * as bitcoin from "bitcoinjs-lib";
 import type { CoveCanonicalView } from "@crclaunch/cove-covenant";
 import type { VaultRecoveryProfile } from "@crclaunch/cove-vault";
 import type { SignedTransitionResult, GuardianV3Network } from "./types.js";
+import type { FundingInputChecker } from "./funding.js";
 
 /**
  * Guardian SERVICE protocol + transport abstraction (Phase 8.1 §19-§20, §24).
@@ -72,6 +73,7 @@ export interface GuardianSignServiceRequest {
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
   redeemFeeBps?: bigint;
+  fundingChecker: FundingInputChecker;
 }
 export type GuardianSignServiceOutcome = SignedTransitionResult | { ok: false; reason: string; detail: string };
 export interface GuardianSigningService {
@@ -121,6 +123,8 @@ export interface InProcessGuardianTransportOptions {
   /** Protocol fee schedule (bps). Defaults to the development COVE_FEE_CONFIG. */
   buyFeeBps?: bigint;
   redeemFeeBps?: bigint;
+  /** The SERVICE's own funding-input checks, from its own Core and DB. */
+  fundingChecker: FundingInputChecker;
 }
 
 /** In-process transport (tests/fixtures): calls the signing service directly. */
@@ -152,6 +156,7 @@ export class InProcessGuardianTransport implements GuardianTransport {
       maxMinerFeeSats: this.opts.maxMinerFeeSats,
       buyFeeBps: this.opts.buyFeeBps,
       redeemFeeBps: this.opts.redeemFeeBps,
+      fundingChecker: this.opts.fundingChecker,
     };
     const outcome = req.operation === "MINT"
       ? await this.opts.signer.signMint({ psbt, view, ...base })

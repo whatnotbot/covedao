@@ -20,7 +20,11 @@ pnpm cove:ceremony-keys --out /Volumes/ceremony/keys
 
 ## Storage checklist
 
-- [ ] `guardian.key` → hardware signer / KMS (never on the app/Guardian host).
+- [ ] `guardian.key` → the Guardian service's own machine ONLY (encrypted
+      disk, mode 0600, set as `GUARDIAN_KEY_FILE`). It is a hot key: the
+      Guardian signs every mint and redeem automatically. Never on the app/web
+      host. The service refuses to start if the key does not match the
+      profile's `guardianXOnly`.
 - [ ] `recovery-1.key` → offline signer 1 (separate physical location).
 - [ ] `recovery-2.key` → offline signer 2 (separate physical location).
 - [ ] `recovery-3.key` → offline signer 3 (separate physical location).

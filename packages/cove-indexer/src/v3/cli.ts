@@ -6,7 +6,7 @@ import type { V3IndexerConfig } from "./types.js";
 
 /**
  * V3 indexer CLI (§20-§22): `reindex`, `verify [--full]`, `status`.
- * Network is always explicit; mainnet is refused.
+ * Network is always explicit (from the config).
  */
 
 export interface CliEnv {

@@ -1,3 +1,4 @@
+import { readFileSync, statSync } from "node:fs";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { ECPairFactory, type ECPairInterface } from "ecpair";
@@ -36,6 +37,50 @@ export class TestGuardianCustodyBackend implements GuardianCustodyBackend {
     this.key = ECPair.fromPrivateKey(priv);
     this.xOnly = Buffer.from(this.key.publicKey.subarray(1));
   }
+  async xOnlyPubkey(): Promise<Buffer> {
+    return Buffer.from(this.xOnly);
+  }
+  async signTaprootScriptPath(params: { sighash: Buffer; leafTapleafHash: Buffer }): Promise<Buffer> {
+    return Buffer.from(ecc.signSchnorr(params.sighash, this.key.privateKey!));
+  }
+}
+
+/**
+ * Production custody from a key FILE: the `guardian.key` the offline ceremony
+ * writes (64 hex characters, mode 0600). The Guardian signs every mint and
+ * redeem automatically, so this is a hot key: keep the file only on the
+ * Guardian's own machine, on an encrypted disk, readable by its user alone.
+ *
+ * Loading refuses a file that group or others can read, a malformed key, and
+ * (when `expectedXOnlyHex` is given) a key that is not the one the committed
+ * profile names — so a wrong file cannot sign for the wrong vaults.
+ */
+export class FileGuardianCustodyBackend implements GuardianCustodyBackend {
+  private readonly key: ECPairInterface;
+  private readonly xOnly: Buffer;
+  private constructor(priv: Buffer) {
+    const ECPair = ECPairFactory(ecc);
+    this.key = ECPair.fromPrivateKey(priv);
+    this.xOnly = Buffer.from(this.key.publicKey.subarray(1));
+  }
+
+  static load(path: string, expectedXOnlyHex?: string): FileGuardianCustodyBackend {
+    const mode = statSync(path).mode & 0o777;
+    if ((mode & 0o077) !== 0) {
+      throw new Error(`GUARDIAN_KEY_FILE ${path} is readable by group or others (mode ${mode.toString(8)}); chmod 600 it`);
+    }
+    const hex = readFileSync(path, "utf8").trim();
+    if (!/^[0-9a-f]{64}$/i.test(hex)) throw new Error("GUARDIAN_KEY_FILE must hold exactly 64 hex characters");
+    const priv = Buffer.from(hex, "hex");
+    if (!ecc.isPrivate(priv)) throw new Error("GUARDIAN_KEY_FILE is not a valid secp256k1 private key");
+    // ECPair keeps this buffer as the key, so it is not wiped here.
+    const backend = new FileGuardianCustodyBackend(priv);
+    if (expectedXOnlyHex !== undefined && backend.xOnly.toString("hex") !== expectedXOnlyHex.toLowerCase()) {
+      throw new Error("GUARDIAN_KEY_FILE does not match the profile's guardianXOnly; refusing to sign for other vaults");
+    }
+    return backend;
+  }
+
   async xOnlyPubkey(): Promise<Buffer> {
     return Buffer.from(this.xOnly);
   }

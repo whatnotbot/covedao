@@ -28,6 +28,7 @@ import {
   type AuditRecord,
   type GuardianRiskPolicy,
   type ValidatedCoveTransaction,
+  chainFundingChecker,
 } from "./v3/index.js";
 
 /** Creator payout script recorded at DEPLOY (output 2). */
@@ -164,7 +165,9 @@ async function main(): Promise<void> {
     riskPolicy,
   );
   const view = new CoveChainView();
-  const transport = new InProcessGuardianTransport({
+  // Funding inputs must be confirmed and hold no Cove tokens, checked against the real node.
+  const fundingChecker = chainFundingChecker({ chain: provider, isCoveCarrier: async (o) => view.getTokenUtxo(o) !== null });
+  const transport = new InProcessGuardianTransport({ fundingChecker,
     signer: service,
     profileHash,
     guardianXOnly: profile.guardianXOnly,
@@ -219,7 +222,7 @@ async function main(): Promise<void> {
     buyerInputs: [aliceUtxo], buyerCarrierScript: p2wpkhScript(alice), buyerChangeScript: p2wpkhScript(alice), feeScript, minerFeeSats: MINER_FEE,
     creatorScript: CREATOR_SCRIPT,
   });
-  const mintSign = await remoteSigner.signMint({ psbt: mint1.psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile, feeScript, maxMinerFeeSats: MINER_FEE });
+  const mintSign = await remoteSigner.signMint({ fundingChecker, psbt: mint1.psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile, feeScript, maxMinerFeeSats: MINER_FEE });
   if (!mintSign.ok) throw new Error(`remote Guardian refused MINT: ${mintSign.reason}: ${(mintSign as { detail?: string }).detail}`);
   mint1.psbt.signInput(1, alice);
   mint1.psbt.finalizeInput(1);
@@ -261,7 +264,7 @@ async function main(): Promise<void> {
     tokenInputTotalAtoms: MINT_AMOUNT, guardianXOnly, recoveryKeyXOnly, recoveryProfile,
     sellerPayoutScript: p2wpkhScript(bob), sellerChangeScript: p2wpkhScript(bob), feeScript, minerFeeSats: MINER_FEE,
   });
-  const redeemSign = await remoteSigner.signRedeem({ psbt: redeem.psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile, feeScript, maxMinerFeeSats: MINER_FEE });
+  const redeemSign = await remoteSigner.signRedeem({ fundingChecker, psbt: redeem.psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile, feeScript, maxMinerFeeSats: MINER_FEE });
   if (!redeemSign.ok) throw new Error(`remote Guardian refused REDEEM: ${redeemSign.reason}`);
   redeem.psbt.signInput(1, bob);
   redeem.psbt.finalizeInput(1);
@@ -283,7 +286,7 @@ async function main(): Promise<void> {
     buyerInputs: [aliceRebuy], buyerCarrierScript: p2wpkhScript(alice), buyerChangeScript: p2wpkhScript(alice), feeScript, minerFeeSats: MINER_FEE,
     creatorScript: CREATOR_SCRIPT,
   });
-  const rebuySign = await remoteSigner.signMint({ psbt: mint2.psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile, feeScript, maxMinerFeeSats: MINER_FEE });
+  const rebuySign = await remoteSigner.signMint({ fundingChecker, psbt: mint2.psbt, view, network: "regtest", recoveryKeyXOnly, recoveryProfile, feeScript, maxMinerFeeSats: MINER_FEE });
   if (!rebuySign.ok) throw new Error(`remote Guardian refused RE-BUY: ${rebuySign.reason}`);
   mint2.psbt.signInput(1, alice);
   mint2.psbt.finalizeInput(1);

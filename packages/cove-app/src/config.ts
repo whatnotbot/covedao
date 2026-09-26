@@ -68,6 +68,11 @@ export interface V3AppConfig {
   guardianEndpoint?: string;
   /** Remote Guardian service bearer token (mainnet). */
   guardianAuthToken?: string;
+  /**
+   * An ord server (with --index-runes) used to refuse funding inputs that hold
+   * inscriptions or runes. Required on mainnet.
+   */
+  ordUrl?: string;
 }
 
 const PUBLIC_SUPPLY_ATOMS_CAP = PUBLIC_SUPPLY_ATOMS;
@@ -163,6 +168,9 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
     if (env.COVE_GUARDIAN_PRIVATE_KEY_HEX || env.COVE_RECOVERY_PRIVATE_KEY_HEX || env.COVE_FEE_PRIVATE_KEY_HEX) {
       throw new AppError("MAINNET_DISABLED", "mainnet must not load local Guardian/recovery/fee private keys");
     }
+    if (!env.COVE_ORD_URL) {
+      throw new AppError("MAINNET_DISABLED", "COVE_ORD_URL is required on mainnet: funding inputs must be checked for inscriptions and runes");
+    }
     const profile = loadMainnetConfig(env);
     const recoveryProfile = recoveryProfileFromMainnetProfile(profile);
     return {
@@ -199,6 +207,7 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
       mainnetProfileHash: hashMainnetProfile(profile),
       guardianEndpoint: env.COVE_GUARDIAN_ENDPOINT,
       guardianAuthToken: env.COVE_GUARDIAN_AUTH_TOKEN,
+      ordUrl: env.COVE_ORD_URL,
     };
   }
 
@@ -240,6 +249,7 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
     maxMinerFeeSats: 20_000n,
     maxListingBlocks: 21_000n,
     reservationTtlSeconds: 90,
+    ordUrl: env.COVE_ORD_URL || undefined,
     // Regtest only: the end-to-end suite mints a whole curve, which at the
     // real 200,000-sat limit would take about 5,000 mints.
     ...(network === "regtest" && env.COVE_REGTEST_MAX_MINT_GROSS_SATS

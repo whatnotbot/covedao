@@ -114,6 +114,10 @@ with the public test keys, so the standalone Guardian (`pnpm dev:guardian`) is
 not needed for manual testing. Stop with `pnpm dev:infra:down`; wipe the chain
 and database with `pnpm dev:infra:reset`.
 
+Browser wallets do not support regtest, so locally **Connect** lists the
+built-in test wallets (alice, bob, carol) with their BTC. They sign on the
+server with the public fixture keys; disconnect and connect again to switch.
+
 `COVE_NETWORK` is required by every service; nothing defaults to regtest.
 Everything that is not a secret or a per-deploy endpoint is committed:
 per-network settings in `packages/config/src/cove-networks.ts`, the mainnet

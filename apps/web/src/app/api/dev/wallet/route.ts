@@ -65,6 +65,30 @@ function identity(name: string) {
   return { privHex, address: payment.address!, script: payment.output!.toString("hex") };
 }
 
+/**
+ * Plain-BTC UTXOs of fixture identities, in one scan. scantxoutset sees the
+ * whole UTXO set; listunspent only sees the node's own wallet, which does not
+ * track these identities. Core runs one scan at a time, so never call it in
+ * parallel. Token carriers are exactly 1000 sats and must not be spent as fee
+ * input.
+ */
+async function spendableUtxos(
+  ids: { address: string; script: string }[],
+): Promise<{ txid: string; vout: number; sats: number; script: string }[]> {
+  const { provider } = getV3Services();
+  const res = await (
+    provider as unknown as {
+      call<T>(m: string, p: unknown[]): Promise<T>;
+    }
+  ).call<{ unspents: { txid: string; vout: number; amount: number; scriptPubKey: string }[] }>(
+    "scantxoutset",
+    ["start", ids.map((id) => ({ desc: `addr(${id.address})` }))],
+  );
+  return (res.unspents ?? [])
+    .map((u) => ({ txid: u.txid, vout: u.vout, sats: Math.round(u.amount * 1e8), script: u.scriptPubKey }))
+    .filter((u) => u.sats > 1000);
+}
+
 export async function GET(req: Request) {
   try {
     const limited = checkRateLimit(req, "dev-wallet");
@@ -72,7 +96,19 @@ export async function GET(req: Request) {
     const allowed = assertDevWalletAllowed();
     if (!allowed.ok) return fail("DEV_WALLET_DISABLED", allowed.reason, 403);
 
-    const name = new URL(req.url).searchParams.get("identity") ?? "alice";
+    const name = new URL(req.url).searchParams.get("identity");
+    if (name === null) {
+      // Every identity with its spendable BTC, for the wallet picker.
+      const ids = Object.keys(IDENTITIES).map((n) => ({ name: n, ...identity(n) }));
+      const utxos = await spendableUtxos(ids);
+      const identities = ids.map((id) => ({
+        identity: id.name,
+        address: id.address,
+        script: id.script,
+        balanceSats: utxos.filter((u) => u.script === id.script).reduce((sum, u) => sum + u.sats, 0),
+      }));
+      return ok({ identities, network: "regtest" });
+    }
     if (!IDENTITIES[name]) return fail("UNKNOWN_IDENTITY", `unknown identity "${name}"`, 400);
     const id = identity(name);
     return ok({ identity: name, address: id.address, script: id.script, network: "regtest" });
@@ -101,21 +137,7 @@ export async function POST(req: Request) {
       return ok({ signatureB64: signBip322WithKey(strField(body, "message"), id.privHex) });
     }
     if (action === "getUtxos") {
-      // scantxoutset sees the whole UTXO set; listunspent only sees the node's
-      // own wallet, which does not track these fixture identities. Token
-      // carriers are exactly 1000 sats and must not be spent as fee input.
-      const { provider } = getV3Services();
-      const res = await (
-        provider as unknown as {
-          call<T>(m: string, p: unknown[]): Promise<T>;
-        }
-      ).call<{ unspents: { txid: string; vout: number; amount: number }[] }>("scantxoutset", [
-        "start",
-        [{ desc: `addr(${id.address})` }],
-      ]);
-      const utxos = (res.unspents ?? [])
-        .filter((u) => Math.round(u.amount * 1e8) > 1000)
-        .map((u) => ({ txid: u.txid, vout: u.vout }));
+      const utxos = (await spendableUtxos([id])).map((u) => ({ txid: u.txid, vout: u.vout }));
       return ok({ utxos });
     }
     return fail("UNKNOWN_ACTION", `unknown action "${action}"`, 400);

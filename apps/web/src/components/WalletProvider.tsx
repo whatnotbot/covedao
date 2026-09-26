@@ -5,6 +5,13 @@ import { NETWORK as COVE_NETWORK } from "@/lib/network";
 import type { WalletCapabilities } from "@crclaunch/wallets";
 import { adapterFor, inputsOwnedBy } from "@/lib/wallets/adapters";
 import { WalletError, type CoveNetwork, type WalletId } from "@/lib/wallets/types";
+import {
+  DEV_WALLET_ID,
+  DEV_WALLET_STORAGE_KEY,
+  fetchDevIdentity,
+  installDevWallet,
+  removeDevWallet,
+} from "@/lib/wallets/dev";
 
 /**
  * The connected wallet.
@@ -32,6 +39,10 @@ interface WalletState {
   capabilities: WalletCapabilities | null;
   /** Open the picker, or connect a named wallet directly. */
   connect: (walletId?: WalletId) => Promise<void>;
+  /** Connect a built-in regtest wallet (alice, bob, carol). */
+  connectDev: (identity: string) => Promise<void>;
+  /** The connected built-in regtest wallet's name, or "" for any other wallet. */
+  devIdentity: string;
   disconnect: () => void;
   signPsbt: (psbtBase64: string, operation: string) => Promise<string>;
   signBip322: (message: string) => Promise<string>;
@@ -97,6 +108,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [conn, setConn] = useState<Connected | null>(null);
   const [capabilities, setCapabilities] = useState<WalletCapabilities | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [devIdentity, setDevIdentity] = useState("");
 
   const connectTestWallet = useCallback(async (wallet: TestWallet) => {
     const c = await wallet.connect();
@@ -116,10 +128,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const connect = useCallback(
     async (walletId?: WalletId) => {
-      // The test signer wins when present: it is only there on a regtest
-      // harness, where no browser wallet can connect anyway.
+      // A harness-injected test signer wins when present: it is only there on
+      // a regtest harness, where no browser wallet can connect anyway. The
+      // built-in dev wallets are picked in the picker instead, so they can be
+      // switched.
       const test = getTestWallet();
-      if (test) {
+      if (test && test.id !== DEV_WALLET_ID) {
         await connectTestWallet(test);
         return;
       }
@@ -146,15 +160,36 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [connectTestWallet],
   );
 
+  const connectDev = useCallback(
+    async (identity: string) => {
+      const id = await fetchDevIdentity(identity);
+      installDevWallet(id);
+      const test = getTestWallet();
+      if (!test) throw new WalletError("FAILED", "dev wallet did not install");
+      await connectTestWallet(test);
+      setDevIdentity(id.identity);
+      setPickerOpen(false);
+      try {
+        window.localStorage.setItem(DEV_WALLET_STORAGE_KEY, id.identity);
+      } catch {
+        // A blocked localStorage costs a reconnect, nothing more.
+      }
+    },
+    [connectTestWallet],
+  );
+
   const disconnect = useCallback(() => {
+    if (conn?.walletId === DEV_WALLET_ID) removeDevWallet();
     setConn(null);
     setCapabilities(null);
+    setDevIdentity("");
     try {
       window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(DEV_WALLET_STORAGE_KEY);
     } catch {
       // ignored
     }
-  }, []);
+  }, [conn]);
 
   // Reconnect silently to the wallet last used, but only if it is still
   // installed and still willing. A failure here is not an error the user needs
@@ -273,6 +308,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       network: NETWORK,
       capabilities,
       connect,
+      connectDev,
+      devIdentity,
       disconnect,
       signPsbt,
       signBip322,
@@ -282,7 +319,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       openPicker: () => setPickerOpen(true),
       closePicker: () => setPickerOpen(false),
     }),
-    [conn, capabilities, connect, disconnect, signPsbt, signBip322, getUtxos, walletFields, pickerOpen],
+    [conn, capabilities, connect, connectDev, devIdentity, disconnect, signPsbt, signBip322, getUtxos, walletFields, pickerOpen],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

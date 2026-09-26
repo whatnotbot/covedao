@@ -279,4 +279,29 @@ test("E2E-009 mint-out: the page switches to Buy / Sell / Redeem, and the market
   const bobPf = await fetch(`${BASE}/api/v3/wallet/${IDENTITIES.bob.address}/portfolio`).then((r) => r.json());
   const h = bobPf.data.holdings.find((x: { tokenId: string }) => x.tokenId === fullId);
   expect(BigInt(h.amountAtoms)).toBe(1_000n * T);
+
+  // Carol lists from her Wallet page: the form shows the floor and the vault
+  // price, and the listing appears under My listings.
+  await carol.reload();
+  await carol.getByRole("button", { name: /connect wallet/i }).click();
+  const card = carol.locator("div.border", { has: carol.locator(`a[href="/token/${fullId}"]`) }).first();
+  await card.getByRole("button", { name: "List", exact: true }).click();
+  await expect(card.getByText(/vault buys back at/i)).toBeVisible();
+  await card.getByLabel("List amount").fill("2000");
+  await card.getByLabel("Price per 1,000 tokens").fill("60000");
+  await expect(card.getByText("120,000 sats")).toBeVisible();
+  await card.getByRole("button", { name: "List", exact: true }).click();
+  await expect(carol.getByText(/^listed 2,000 tokens for 120,000 sats/i)).toBeVisible({ timeout: 60_000 });
+  const listings = await fetch(`${BASE}/api/v3/market/listings?tokenId=${fullId}`).then((r) => r.json());
+  expect(listings.data.some((l: { status: string; amountAtoms: string; totalPriceSats: string }) =>
+    l.status === "ACTIVE" && BigInt(l.amountAtoms) === 2_000n * T && l.totalPriceSats === "120000")).toBe(true);
+});
+
+test("E2E-010 wallet: no List before mint-out, and it says why", async ({ browser }) => {
+  const page = await walletPage(browser, IDENTITIES.alice);
+  await page.goto(`${BASE}/wallet`);
+  await page.getByRole("button", { name: /connect wallet/i }).click();
+  const card = page.locator("div.border", { has: page.locator(`a[href="/token/${aliceTokenId}"]`) }).first();
+  await expect(card.getByText(/listing opens when .* mints out/i)).toBeVisible({ timeout: 30_000 });
+  await expect(card.getByRole("button", { name: "List", exact: true })).toHaveCount(0);
 });

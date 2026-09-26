@@ -16,7 +16,7 @@ import { TokenImage } from "@/components/TokenImage";
 import { Tile } from "@/components/Tile";
 import { unitPriceSats } from "@/lib/ohlc";
 import { useIndexedBlock } from "@/lib/use-indexed-block";
-import { buyListing, errorText } from "@/lib/trade";
+import { createListing, buyListing, errorText } from "@/lib/trade";
 
 /**
  * What a token page lets you do depends on where the token is.
@@ -314,45 +314,16 @@ function TokenContent() {
     setErr("");
     setBusy(true);
     try {
-      // list from the wallet's first token UTXO for this token (simple single-UTXO path)
-      // Tokens live on the ordinals address, which in most wallets is not the
-      // one holding BTC.
-      const pf = await fetch(`/api/v3/wallet/${ordinalsAddress || address}/portfolio`).then((r) => r.json());
-      // One listing sells from one carrier: take the smallest that covers the
-      // amount, so a large holding is not tied up by a small ask.
-      const listAtoms = BigInt(displayTokensToAtoms(amount));
-      const utxo = (pf.data?.tokenUtxos ?? [])
-        .filter((u: { tokenId: string; amountAtoms: string }) => u.tokenId === tokenId && BigInt(u.amountAtoms) >= listAtoms)
-        .sort((a: { amountAtoms: string }, b: { amountAtoms: string }) => (BigInt(a.amountAtoms) < BigInt(b.amountAtoms) ? -1 : 1))[0];
-      if (!utxo) throw new Error("No single token balance of yours covers that amount");
-      const pr = await fetch("/api/v3/market/listings/prepare", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          tokenId,
-          sourceTxid: utxo.txid,
-          sourceVout: String(utxo.vout),
-          amountAtoms: listAtoms.toString(),
-          totalPriceSats: price,
-          expiryBlocks: listingBlocks,
-          ...walletFields(),
-        }),
+      const listingId = await createListing({
+        tokenId,
+        amountAtoms: BigInt(displayTokensToAtoms(amount)),
+        totalPriceSats: price,
+        expiryBlocks: listingBlocks,
+        tokenAddress: ordinalsAddress || address!,
+        walletFields: walletFields(),
+        signBip322,
       });
-      const pj = await pr.json();
-      if (!pj.ok) throw new Error(errorText(pj));
-      const sig = await signBip322(pj.data.message);
-      const cr = await fetch("/api/v3/market/listings", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          listing: pj.data.listing,
-          signatureB64: sig,
-          sellerTokenPublicKey: walletFields().ordinalsPublicKey,
-        }),
-      });
-      const cj = await cr.json();
-      if (!cj.ok) throw new Error(errorText(cj));
-      setMsg(`Listing created ${cj.data.listingId.slice(0, 16)}…`);
+      setMsg(`Listing created ${listingId.slice(0, 16)}…`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {

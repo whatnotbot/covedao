@@ -21,6 +21,33 @@ export const dynamic = "force-dynamic";
  */
 const TOKEN_CARRIER_SATS = 1_000;
 
+type Unspent = { txid: string; vout: number; amount: number };
+type RpcCaller = { call<T>(m: string, p: unknown[]): Promise<T> };
+
+/**
+ * Bitcoin Core runs one `scantxoutset` at a time and refuses a second with
+ * "Scan already in progress". Pages refresh on every block, so two lookups
+ * overlap easily: queue this process's scans, and retry briefly when another
+ * client holds the scanner.
+ */
+let scanQueue: Promise<unknown> = Promise.resolve();
+function scanAddress(rpc: RpcCaller, address: string): Promise<Unspent[]> {
+  const run = async (): Promise<Unspent[]> => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const res = await rpc.call<{ unspents?: Unspent[] }>("scantxoutset", ["start", [{ desc: `addr(${address})` }]]);
+        return res.unspents ?? [];
+      } catch (e) {
+        if (attempt >= 40 || !/scan already in progress/i.test((e as Error).message)) throw e;
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    }
+  };
+  const next = scanQueue.then(run, run);
+  scanQueue = next.catch(() => undefined);
+  return next;
+}
+
 export async function GET(req: Request) {
   try {
     const limited = checkRateLimit(req, "read-utxos");
@@ -37,13 +64,8 @@ export async function GET(req: Request) {
     if (config.network === "regtest") {
       // A regtest chain is small enough to scan outright, and there is no
       // Esplora for it.
-      const res = await (
-        provider as unknown as { call<T>(m: string, p: unknown[]): Promise<T> }
-      ).call<{ unspents: { txid: string; vout: number; amount: number }[] }>("scantxoutset", [
-        "start",
-        [{ desc: `addr(${address})` }],
-      ]);
-      const utxos = (res.unspents ?? [])
+      const unspents = await scanAddress(provider as unknown as RpcCaller, address);
+      const utxos = unspents
         .filter((u) => Math.round(u.amount * 1e8) > TOKEN_CARRIER_SATS)
         .map((u) => ({ txid: u.txid, vout: u.vout, valueSats: String(Math.round(u.amount * 1e8)) }));
       return ok({ address, utxos, source: "core" });

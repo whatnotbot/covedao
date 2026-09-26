@@ -103,3 +103,44 @@ export async function sendTokens(params: {
   const sent = await post("/api/v3/transfer/submit", { sessionId: built.sessionId, signedPsbtBase64: signed });
   return sent.txid;
 }
+
+/**
+ * List tokens for sale. One listing sells from one token carrier, so this
+ * picks the smallest carrier that covers the amount (a large holding is not
+ * tied up by a small ask), has the seller sign the listing (BIP-322) and
+ * posts it. Returns the listing id.
+ */
+export async function createListing(params: {
+  tokenId: string;
+  amountAtoms: bigint;
+  totalPriceSats: string;
+  expiryBlocks: string;
+  /** The address holding the tokens (ordinals address, or the only one). */
+  tokenAddress: string;
+  walletFields: Record<string, string | undefined>;
+  signBip322: WalletOps["signBip322"];
+}): Promise<string> {
+  if (params.amountAtoms <= 0n) throw new Error("Enter how many tokens to list");
+  if (!/^\d+$/.test(params.totalPriceSats) || BigInt(params.totalPriceSats) <= 0n) throw new Error("Enter a price in sats");
+  const pf = await fetch(`/api/v3/wallet/${params.tokenAddress}/portfolio`).then((r) => r.json());
+  const utxo = ((pf.data?.tokenUtxos ?? []) as { txid: string; vout: number; tokenId: string; amountAtoms: string }[])
+    .filter((u) => u.tokenId === params.tokenId && BigInt(u.amountAtoms) >= params.amountAtoms)
+    .sort((a, b) => (BigInt(a.amountAtoms) < BigInt(b.amountAtoms) ? -1 : 1))[0];
+  if (!utxo) throw new Error("No single token coin of yours holds that many; list a smaller amount");
+  const prep = await post("/api/v3/market/listings/prepare", {
+    tokenId: params.tokenId,
+    sourceTxid: utxo.txid,
+    sourceVout: String(utxo.vout),
+    amountAtoms: params.amountAtoms.toString(),
+    totalPriceSats: params.totalPriceSats,
+    expiryBlocks: params.expiryBlocks,
+    ...params.walletFields,
+  });
+  const signatureB64 = await params.signBip322(prep.message);
+  const created = await post("/api/v3/market/listings", {
+    listing: prep.listing,
+    signatureB64,
+    sellerTokenPublicKey: params.walletFields.ordinalsPublicKey,
+  });
+  return created.listingId as string;
+}

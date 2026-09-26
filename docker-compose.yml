@@ -1,24 +1,101 @@
+# Local infra for manual testing on regtest: Postgres + Bitcoin Core.
+#
+#   pnpm dev:infra         start everything, wait until healthy, push the DB schema
+#   pnpm dev               run web (http://localhost:3000) + worker
+#   pnpm dev:infra:down    stop (keeps the chain and the database)
+#   pnpm dev:infra:reset   stop and delete the chain and the database
+#
+# Credentials match .env.example. Every port binds to 127.0.0.1 only.
+# bitcoind-setup mines 101 blocks and funds the dev wallet identities
+# (alice 5 BTC, bob 5 BTC, carol 15 BTC) on a fresh chain; miner then mines one
+# block every MINE_INTERVAL seconds so transactions confirm on their own.
+# Mine by hand with:
+#   docker compose exec bitcoind bitcoin-cli -regtest -rpcuser=user -rpcpassword=pass -rpcwallet=dev -generate 1
+
+x-bitcoin-cli: &bitcoin-cli
+  image: bitcoin/bitcoin:30.0
+  depends_on:
+    bitcoind: { condition: service_healthy }
+  entrypoint: ["/bin/sh", "-c"]
+  environment:
+    CLI: bitcoin-cli -regtest -rpcconnect=bitcoind -rpcport=18443 -rpcuser=user -rpcpassword=pass
+
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: crclaunch
-      POSTGRES_PASSWORD: crclaunch
-      POSTGRES_DB: crclaunch
+      POSTGRES_USER: cove
+      POSTGRES_PASSWORD: cove
+      POSTGRES_DB: cove
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U crclaunch"]
+      test: ["CMD-SHELL", "pg_isready -U cove"]
       interval: 3s
       timeout: 3s
       retries: 10
 
+  bitcoind:
+    image: bitcoin/bitcoin:30.0
+    command:
+      - -regtest=1
+      - -txindex=1
+      - -server=1
+      - -printtoconsole
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=user
+      - -rpcpassword=pass
+      - -fallbackfee=0.0002
+    ports:
+      - "127.0.0.1:18443:18443"
+    volumes:
+      - bitcoin-data:/home/bitcoin/.bitcoin
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-regtest", "-rpcuser=user", "-rpcpassword=pass", "getblockchaininfo"]
+      interval: 2s
+      retries: 60
+
+  bitcoind-setup:
+    <<: *bitcoin-cli
+    restart: "no"
+    command:
+      - |
+        set -e
+        $$CLI loadwallet dev >/dev/null 2>&1 || $$CLI createwallet dev >/dev/null 2>&1 || true
+        if [ "$$($$CLI getblockcount)" -lt 101 ]; then
+          $$CLI -rpcwallet=dev -generate 101 >/dev/null
+          # Dev wallet identities (apps/web/src/app/api/dev/wallet/route.ts).
+          $$CLI -rpcwallet=dev sendtoaddress bcrt1qhkfq3zahaqkkzx5mjnamwjsfpq2jk7z08wrkyk 5 >/dev/null
+          $$CLI -rpcwallet=dev sendtoaddress bcrt1qcchvzytl5qctjack88c7zp24eklw58dug0ztl2 5 >/dev/null
+          $$CLI -rpcwallet=dev sendtoaddress bcrt1q4fwnx4k9x3nhwn7t9k5zacycpzepyf608r5sw8 15 >/dev/null
+          $$CLI -rpcwallet=dev -generate 1 >/dev/null
+          echo "funded alice, bob and carol"
+        fi
+        echo "chain height $$($$CLI getblockcount)"
+
+  miner:
+    <<: *bitcoin-cli
+    depends_on:
+      bitcoind-setup: { condition: service_completed_successfully }
+    restart: unless-stopped
+    command:
+      - |
+        $$CLI loadwallet dev >/dev/null 2>&1 || true
+        while true; do
+          sleep $${MINE_INTERVAL:-10}
+          $$CLI -rpcwallet=dev -generate 1 >/dev/null || $$CLI loadwallet dev >/dev/null 2>&1
+        done
+
+  # Legacy V1 mock worker only (apps/worker dev:v1, reindex, demo:reset):
+  #   docker compose --profile legacy up -d redis
   redis:
     image: redis:7-alpine
+    profiles: [legacy]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
@@ -27,3 +104,4 @@ services:
 
 volumes:
   pgdata:
+  bitcoin-data:

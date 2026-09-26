@@ -5,7 +5,7 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "postgres://crclaunch:crclaunch@localhost:5432/crclaunch",
+    url: process.env.DATABASE_URL ?? "postgres://cove:cove@localhost:5432/cove",
   },
   verbose: true,
   strict: true,

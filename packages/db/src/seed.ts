@@ -7,7 +7,7 @@ import { featureFlags } from "./schema.js";
  * not seeded here.
  */
 async function main() {
-  const url = process.env.DATABASE_URL ?? "postgres://crclaunch:crclaunch@localhost:5432/crclaunch";
+  const url = process.env.DATABASE_URL ?? "postgres://cove:cove@localhost:5432/cove";
   const db = createDb(url);
   const flags = [
     { id: "pause_new_launches", enabled: false, description: "Pause new launches" },

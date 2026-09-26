@@ -94,17 +94,25 @@ suite. New work targets the Cove V3 packages above.
 
 ## Getting started
 
-Requires Node 22, pnpm 10, Postgres 16, and Rust (for the Simplicity binary).
+Requires Node 22, pnpm 10, Docker, and Rust (for the Simplicity binary).
 
 ```bash
 pnpm install
 cp .env.example .env          # local regtest; sets COVE_NETWORK=regtest
+(cd packages/cove-simplicity/rust && cargo build --release)
 
-docker compose up -d postgres
-pnpm db:migrate
+pnpm dev:infra                # Postgres + bitcoind regtest in Docker, DB schema pushed
+pnpm dev                      # web (http://localhost:3000) + V3 worker
 
 pnpm typecheck && pnpm lint && pnpm test
 ```
+
+`pnpm dev:infra` mines 101 blocks and funds the dev wallet identities (alice,
+bob, carol) on a fresh chain, then a miner container mines a block every 10 s
+(`MINE_INTERVAL`). On regtest the web app runs the Guardian policy in-process
+with the public test keys, so the standalone Guardian (`pnpm dev:guardian`) is
+not needed for manual testing. Stop with `pnpm dev:infra:down`; wipe the chain
+and database with `pnpm dev:infra:reset`.
 
 `COVE_NETWORK` is required by every service; nothing defaults to regtest.
 Everything that is not a secret or a per-deploy endpoint is committed:

@@ -104,13 +104,30 @@ function TokenContent() {
       setLoaded(true);
       return;
     }
-    void fetch(`/api/v3/tokens/${tokenId}`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.ok) setDetail(j.data);
-        setLoaded(true);
-      })
-      .catch(() => setLoaded(true));
+    // A token exists only once its DEPLOY is in a block, so right after a launch
+    // this 404s for a while. Keep asking until the indexer has it.
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = () => {
+      void fetch(`/api/v3/tokens/${tokenId}`)
+        .then((r) => r.json())
+        .then((j) => {
+          if (cancelled) return;
+          if (j.ok) setDetail(j.data);
+          else timer = setTimeout(load, 5_000);
+          setLoaded(true);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          timer = setTimeout(load, 5_000);
+          setLoaded(true);
+        });
+    };
+    load();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [tokenId]);
 
   const graduatedNow = detail ? BigInt(detail.issuedSupplyAtoms) >= BigInt(detail.publicCapAtoms) : false;
@@ -341,11 +358,12 @@ function TokenContent() {
   if (!detail) {
     return (
       <section className="panel px-6 py-16 text-center sm:px-10">
-        <span className="chip chip-rejected">Not found</span>
-        <div className="mt-4 text-bone">No such token</div>
+        <span className="chip chip-pending">Pending</span>
+        <div className="mt-4 text-bone">This token is still being created</div>
         <p className="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-bone-dim">
-          Nothing with this tokenId has confirmed on Bitcoin. A token appears here once its DEPLOY
-          transaction is in a block.
+          A token appears once its launch transaction is confirmed in a Bitcoin block, which can
+          take a few minutes. This page checks again every few seconds and opens the token as soon
+          as it is ready. If you did not just launch it, check the link.
         </p>
         <Link href="/explore" className="btn-ghost mt-5">Back to explore</Link>
       </section>

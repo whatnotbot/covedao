@@ -240,7 +240,7 @@ test("E2E-009 mint-out: the page switches to Buy / Sell / Redeem, and the market
   for (let i = 0; i < 40; i++) {
     const d = await fetch(`${BASE}/api/v3/tokens/${fullId}`).then((r) => r.json());
     if (BigInt(d.data.issuedSupplyAtoms) >= 21_000_000n * T) break;
-    await carol.getByLabel(/Spend . sats/i).fill("70000000");
+    await carol.getByLabel(/Spend . sats/i).fill("150000000");
     await expect(carol.getByText(/most one mint can take|last tokens on the curve/i)).toBeVisible({ timeout: 30_000 });
     await carol.getByRole("button", { name: /review mint/i }).click();
     await carol.getByRole("button", { name: /confirm . sign/i }).click();

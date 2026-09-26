@@ -148,7 +148,7 @@ export default function LaunchPage() {
           <Row k="Held back for the team" v="0 tokens" />
           <Row k="Sold on the curve" v={`${fmtInt(BigInt(prepared.publicSupplyAtoms) / 100_000_000n)} tokens`} />
           <Row k="Price" v="210 even stairs, lots of 1,000" />
-          <Row k="You earn" v="20% of the curve price of every mint" />
+          <Row k="You earn" v="50% of the curve price of every mint" />
           <Row k="Vault anchor" v={`${fmtInt(prepared.vaultAnchorSats)} sats`} />
           <div className="mt-5">
             <FeePicker

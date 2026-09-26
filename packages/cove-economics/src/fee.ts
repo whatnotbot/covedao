@@ -67,7 +67,7 @@ export const COVE_FEE_CONFIG: CoveFeeConfig = {
   buyFeeLotSats: 10n, // per 1,000-token lot
   // The creator is paid as the token sells, not by taking the backing: the
   // vault still holds the full curve price, so redemption is never short.
-  creatorFeeBps: 2_000n, // 20% of the curve price
+  creatorFeeBps: 5_000n, // 50% of the curve price
   // Redemption: 7.5% of what the vault pays out. A redemption small enough
   // that 7.5% would be dust is refused by the quote as too small to make.
   redeemFeeBps: 750n, // 7.50%
@@ -133,7 +133,7 @@ export const CREATOR_RECORD_SATS: Sats = 1_000n;
 /**
  * Smallest creator payment: at or above the dust limit of every address type
  * a creator can have (P2SH is the highest, 540). Early lots cost a few sats,
- * so a bare 20% would be an output Bitcoin refuses to relay.
+ * so a bare percentage of one would be an output Bitcoin refuses to relay.
  */
 export const CREATOR_MIN_SATS: Sats = 546n;
 

@@ -98,8 +98,8 @@ describe("V3 builders (offline)", () => {
     });
     const expected = applyMintV2(d.s0, 1_000_000n * 100_000_000n);
     expect(mint.nextState.backingSats).toBe(expected.nextState.backingSats);
-    expect(mint.grossSats).toBe(181_500n);
-    expect(mint.buyFeeSats).toBe(28_613n);
+    expect(mint.grossSats).toBe(148_500n);
+    expect(mint.buyFeeSats).toBe(26_138n);
     // State input spends the PREV vault (MINT leaf).
     expect(mint.psbt.data.inputs[0]!.tapMerkleRoot!.equals(mint.prevVault.merkleRoot)).toBe(true);
     // Successor output is the NEXT vault.
@@ -209,9 +209,9 @@ describe("V3 builders (offline)", () => {
     const expected = applyRedeemV2(minted.nextState, mintAmountAtoms);
     expect(r.nextState.backingSats).toBe(expected.nextState.backingSats);
     expect(r.nextState.issuedPublicSupplyAtoms).toBe(0n);
-    expect(r.grossSats).toBe(181_500n);
-    expect(r.redeemFeeSats).toBe(13_613n);
-    expect(r.netSats).toBe(167_887n);
+    expect(r.grossSats).toBe(148_500n);
+    expect(r.redeemFeeSats).toBe(11_138n);
+    expect(r.netSats).toBe(137_362n);
     expect(r.changeAtoms).toBe(0n);
     // State input spends the PREV vault via the REDEEM leaf.
     expect(r.psbt.data.inputs[0]!.tapMerkleRoot!.equals(r.prevVault.merkleRoot)).toBe(true);
@@ -220,7 +220,7 @@ describe("V3 builders (offline)", () => {
     ).toBe(true);
     // [0] OP_RETURN, [1] successor vault, [2] payout, [3] fee (no change carrier, no BTC change).
     expect(r.psbt.txOutputs[1]!.script.equals(r.nextVault.scriptPubKey)).toBe(true);
-    expect(r.psbt.txOutputs[2]!.value).toBe(167_887);
+    expect(r.psbt.txOutputs[2]!.value).toBe(137_362);
     const env = decodeV2(r.psbt.txOutputs[0]!.script.subarray(2));
     expect(env.op).toBe(4); // REDEEM
     expect((env as { redeemAmount: bigint }).redeemAmount).toBe(mintAmountAtoms);
@@ -248,7 +248,7 @@ describe("V3 builders (offline)", () => {
       creatorScript: Buffer.from("0014" + "c".repeat(40), "hex"),
     });
     expect(mint.buyFeeSats).toBe(mintFeeSats(gross, mintAmountAtoms, 50n, 7n));
-    expect(mint.buyFeeSats).not.toBe(28_613n); // the dev default (stage-scaled flat + 750 bps)
+    expect(mint.buyFeeSats).not.toBe(26_138n); // the dev default (stage-scaled flat + 750 bps)
   });
 
   it("REDEEM: protocol fee schedule is parameterized (profile-driven), not the dev default", () => {
@@ -274,7 +274,7 @@ describe("V3 builders (offline)", () => {
     });
     // 0.5% + 7 is 915 here, under the 1,000-sat floor every sell-back pays.
     expect(r.redeemFeeSats).toBe(redeemFeeSats(gross, 50n, 7n));
-    expect(r.redeemFeeSats).not.toBe(13_613n); // the dev default (7.5%)
+    expect(r.redeemFeeSats).not.toBe(11_138n); // the dev default (7.5%)
   });
 });
 
@@ -440,7 +440,7 @@ describe("REDEEM miner-fee funding", () => {
       minerFeeSats: 12_000n,
       funderSats: 50_000n,
     });
-    expect(r.netSats).toBe(167_887n);
+    expect(r.netSats).toBe(137_362n);
   });
 
   it("refuses that fee without a funder, as before", () => {

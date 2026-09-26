@@ -91,8 +91,8 @@ async function topUp(n: MockChainNode, address: string): Promise<void> {
 }
 
 // For 1,000 tokens from supply 0: required curve = 8,692 sats, platform = 87 sats.
-// Half a stair: 50,000 tokens at 33 sats a lot, above the 1,000-sat minimum and still on stair 1.
-const VALID = { amount: 50_000n, curve: 1_650n, platform: 17n };
+// Half a stair: 50,000 tokens at 27 sats a lot, above the 1,000-sat minimum and still on stair 1.
+const VALID = { amount: 50_000n, curve: 1_350n, platform: 14n };
 
 describe("adversarial mint validation (tampered envelopes, no builder)", () => {
   beforeAll(async () => {
@@ -114,8 +114,8 @@ describe("adversarial mint validation (tampered envelopes, no builder)", () => {
     const after = snapshot();
     expect(after.minted).toBe(50_000n);
     expect(after.buyerTokens).toBe(50_000n);
-    expect(after.reserve).toBe(1_650n);
-    expect(after.platform).toBe(before.platform + 17n);
+    expect(after.reserve).toBe(1_350n);
+    expect(after.platform).toBe(before.platform + 14n);
     expect(after.invariants).toEqual([]);
   });
 

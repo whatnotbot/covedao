@@ -36,9 +36,9 @@ export const TOKENS_PER_STAGE: DisplayTokens = 100_000n;
 /** Mints and redemptions move whole lots. */
 export const LOT_TOKENS: DisplayTokens = 1_000n;
 /** Price of one lot on the first stair, in sats. */
-export const LOT_BASE_SATS: Sats = 33n;
+export const LOT_BASE_SATS: Sats = 27n;
 /** How much dearer a lot is on each stair than on the one below. */
-export const LOT_STEP_SATS: Sats = 33n;
+export const LOT_STEP_SATS: Sats = 27n;
 
 /** Satoshis per 1,000,000 display tokens. */
 export const PRICE_UNIT_TOKENS: DisplayTokens = 1_000_000n;

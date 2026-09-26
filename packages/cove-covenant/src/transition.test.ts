@@ -16,9 +16,9 @@ const MINT_50M = 100_000n * 100_000_000n;
 describe("MINT transition (S0 → S1)", () => {
   it("computes the correct successor state and curve payment", () => {
     const r = applyMint(S0, MINT_50M);
-    expect(r.curveContributionSats).toBe(3_300n); // 100 lots x 33 sats
+    expect(r.curveContributionSats).toBe(2_700n); // 100 lots x 27 sats
     expect(r.nextState.publicSupplyAtoms).toBe(MINT_50M);
-    expect(r.nextState.reserveSats).toBe(3_300n);
+    expect(r.nextState.reserveSats).toBe(2_700n);
     expect(r.nextState.curveStage).toBe(2);
     expect(r.nextState.phase).toBe("PUBLIC_MINT");
   });
@@ -38,7 +38,7 @@ describe("MINT transition (S0 → S1)", () => {
   it("accepts a mint that lands exactly at 21M", () => {
     const r = applyMint(S0, 21_000_000n * 100_000_000n);
     expect(r.nextState.publicSupplyAtoms).toBe(21_000_000n * 100_000_000n);
-    expect(r.curveContributionSats).toBe(73_111_500n); // full raise
+    expect(r.curveContributionSats).toBe(59_818_500n); // full raise
   });
 
   it("recognizes the correct successor and rejects a manipulated one", () => {

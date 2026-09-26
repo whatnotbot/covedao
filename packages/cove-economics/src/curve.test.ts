@@ -43,21 +43,21 @@ describe("curve properties (all candidates)", () => {
 
 describe("FROZEN curve: stairs210 (210 even stairs of 100k tokens)", () => {
   it("priceAt golden (sats per 1M tokens = lot price × 1,000)", () => {
-    expect(stairs210.priceAt(0n)).toBe(33_000n);
-    expect(stairs210.priceAt(10_500_000n)).toBe(3_498_000n); // start of stair 106
-    expect(stairs210.priceAt(PUBLIC_SUPPLY)).toBe(6_930_000n);
+    expect(stairs210.priceAt(0n)).toBe(27_000n);
+    expect(stairs210.priceAt(10_500_000n)).toBe(2_862_000n); // start of stair 106
+    expect(stairs210.priceAt(PUBLIC_SUPPLY)).toBe(5_670_000n);
   });
 
-  it("costToBuy golden: one stair (100k tokens) from supply 0 = 3,300 sats", () => {
-    expect(stairs210.costToBuy(0n, 100_000n)).toBe(3_300n);
+  it("costToBuy golden: one stair (100k tokens) from supply 0 = 2,700 sats", () => {
+    expect(stairs210.costToBuy(0n, 100_000n)).toBe(2_700n);
   });
 
-  it("final reserve == 73,111,500 sats (0.731 BTC)", () => {
-    expect(stairs210.costToBuy(0n, PUBLIC_SUPPLY)).toBe(73_111_500n);
+  it("final reserve == 59,818,500 sats (0.598 BTC)", () => {
+    expect(stairs210.costToBuy(0n, PUBLIC_SUPPLY)).toBe(59_818_500n);
   });
 
-  it("marginal price at 100% == 6,930 sats a lot", () => {
-    expect(stairs210.priceAt(PUBLIC_SUPPLY)).toBe(6_930_000n);
+  it("marginal price at 100% == 5,670 sats a lot", () => {
+    expect(stairs210.priceAt(PUBLIC_SUPPLY)).toBe(5_670_000n);
   });
 
   it("asking for more than the supply is refused, not looped on", () => {

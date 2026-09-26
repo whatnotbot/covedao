@@ -196,8 +196,8 @@ describe("mock chain end-to-end", () => {
     for (let i = 0; i < 3; i++) {
       const mint = await adapter.buildMint({
         deploymentId: token.deploymentId, ticker: "RORG", buyerAddress: buyer, treasuryAddress: TREASURY,
-        // 50,000 tokens a mint: stair 1, stair 1, then stair 2 (33 then 66 sats a lot).
-        tokenAmountAtoms: 50_000n, curveContributionSats: [1_650n, 1_650n, 3_300n][i]!, platformFeeSats: [17n, 17n, 33n][i]!,
+        // 50,000 tokens a mint: stair 1, stair 1, then stair 2 (27 then 54 sats a lot).
+        tokenAmountAtoms: 50_000n, curveContributionSats: [1_350n, 1_350n, 2_700n][i]!, platformFeeSats: [14n, 14n, 27n][i]!,
         minerFeeSats: 450n, currentSupplyAtoms: BigInt(i * 50_000), stateHash: await node.getStateHash(),
       });
       await signAndSubmit(adapter, mint, buyer);

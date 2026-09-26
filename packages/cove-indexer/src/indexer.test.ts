@@ -37,14 +37,14 @@ describe("CoveIndexer (binary envelope, classification, tx index)", () => {
     idx.processBlock(CFG.genesisHeight + 1, [
       tx(encodeCoveMint("FROG", 10_000_000_000_000n, 0n), [
         { index: 1, scriptPubKeyHex: RECIPIENT, valueSats: 330n },
-        { index: 2, scriptPubKeyHex: CFG.settlementScript, valueSats: 3_333n },
+        { index: 2, scriptPubKeyHex: CFG.settlementScript, valueSats: 2_727n },
       ], "e".repeat(64)),
     ]);
     const stats = idx.getStats();
     expect(stats.validOps).toBe(2);
     expect(stats.tokens).toBe(1);
-    expect(stats.reserveSats).toBe(3_300n);
-    expect(stats.treasurySats).toBe(10_033n);
+    expect(stats.reserveSats).toBe(2_700n);
+    expect(stats.treasurySats).toBe(10_027n);
     expect(stats.stateRoot).toMatch(/^[0-9a-f]{64}$/);
   });
 
@@ -110,7 +110,7 @@ describe("CoveIndexer (binary envelope, classification, tx index)", () => {
       idx.processBlock(CFG.genesisHeight + 1, [
         tx(encodeCoveMint("FROG", mintAmount, 0n), [
           { index: 1, scriptPubKeyHex: RECIPIENT, valueSats: 330n },
-          { index: 2, scriptPubKeyHex: CFG.settlementScript, valueSats: 3_333n },
+          { index: 2, scriptPubKeyHex: CFG.settlementScript, valueSats: 2_727n },
         ], "e".repeat(64)),
       ]);      return idx;
     };
@@ -129,7 +129,7 @@ describe("CoveIndexer (binary envelope, classification, tx index)", () => {
     idx.processBlock(CFG.genesisHeight + 1, [
       tx(encodeCoveMint("FROG", 10_000_000_000_000n, 0n), [
         { index: 1, scriptPubKeyHex: RECIPIENT, valueSats: 330n },
-        { index: 2, scriptPubKeyHex: CFG.settlementScript, valueSats: 3_333n },
+        { index: 2, scriptPubKeyHex: CFG.settlementScript, valueSats: 2_727n },
       ], "e".repeat(64)),
     ]);
     // Transfer WITHOUT continuation output (only recipient) → invalid.
@@ -197,7 +197,7 @@ describe("CoveIndexer (binary envelope, classification, tx index)", () => {
     const deploy = tx(encodeCoveDeploy("FROG"), [{ index: 1, scriptPubKeyHex: CFG.treasuryScript, valueSats: 10_000n }], "d".repeat(64));
     const mint = tx(encodeCoveMint("FROG", 10_000_000_000_000n, 0n), [
       { index: 1, scriptPubKeyHex: RECIPIENT, valueSats: 330n },
-      { index: 2, scriptPubKeyHex: CFG.settlementScript, valueSats: 3_333n },
+      { index: 2, scriptPubKeyHex: CFG.settlementScript, valueSats: 2_727n },
     ], "e".repeat(64));
     const transfer = tx(encodeCoveTransfer("FROG", 50_000_000_000n), [
       { index: 1, scriptPubKeyHex: "0014" + "cc".repeat(20), valueSats: 294n },

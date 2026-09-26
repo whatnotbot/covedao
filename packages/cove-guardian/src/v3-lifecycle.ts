@@ -360,8 +360,8 @@ async function main(): Promise<void> {
   const mint1Txid = await broadcastValidated(validatedOrThrow(mint1Fin, "MINT"));
   rawTxs.push(mint1Hex);
   await confirm(mint1Txid, "MINT");
-  assert(mint1.grossSats === 181_500n, `mint gross ${mint1.grossSats}`);
-  assert(mint1.buyFeeSats === 28_613n, `mint fee ${mint1.buyFeeSats}`);
+  assert(mint1.grossSats === 148_500n, `mint gross ${mint1.grossSats}`);
+  assert(mint1.buyFeeSats === 26_138n, `mint fee ${mint1.buyFeeSats}`);
   const aliceCarrier: OutPoint = { txid: mint1Txid, vout: 2 };
   view.mint({
     tokenId,
@@ -467,9 +467,9 @@ async function main(): Promise<void> {
   const redeemTxid = await broadcastValidated(validatedOrThrow(redeemFin, "REDEEM"));
   rawTxs.push(redeemHex);
   await confirm(redeemTxid, "REDEEM");
-  assert(redeem.grossSats === 181_500n, `redeem gross ${redeem.grossSats}`);
-  assert(redeem.redeemFeeSats === 13_613n, `redeem fee ${redeem.redeemFeeSats}`);
-  assert(redeem.netSats === 167_887n, `redeem net ${redeem.netSats}`);
+  assert(redeem.grossSats === 148_500n, `redeem gross ${redeem.grossSats}`);
+  assert(redeem.redeemFeeSats === 11_138n, `redeem fee ${redeem.redeemFeeSats}`);
+  assert(redeem.netSats === 137_362n, `redeem net ${redeem.netSats}`);
   assert(redeem.changeAtoms === 0n, "full redeem must have zero token change");
   view.redeem({
     tokenId,

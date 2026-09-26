@@ -11,24 +11,24 @@ import {
 const M = 1_000_000n;
 
 describe("quoteExactTokens (EXACT_TOKENS)", () => {
-  it("CURVE-003: exactly 100k tokens fills stair 1 (3,300 sats)", () => {
+  it("CURVE-003: exactly 100k tokens fills stair 1 (2,700 sats)", () => {
     const q = quoteExactTokens({ desiredTokens: 100_000n, currentSupply: 0n });
-    expect(q.curveContributionSats).toBe(3_300n);
+    expect(q.curveContributionSats).toBe(2_700n);
     expect(q.startingStage).toBe(1);
     expect(q.endingStage).toBe(1);
     expect(q.supplyAfter).toBe(100_000n);
   });
 
-  it("CURVE-004: 101k from zero crosses into stair 2 (3,366 sats)", () => {
+  it("CURVE-004: 101k from zero crosses into stair 2 (2,754 sats)", () => {
     const q = quoteExactTokens({ desiredTokens: 101_000n, currentSupply: 0n });
-    expect(q.curveContributionSats).toBe(3_366n);
+    expect(q.curveContributionSats).toBe(2_754n);
     expect(q.startingStage).toBe(1);
     expect(q.endingStage).toBe(2);
   });
 
-  it("CURVE-005: 21M full mint costs 73,111,500 sats", () => {
+  it("CURVE-005: 21M full mint costs 59,818,500 sats", () => {
     const q = quoteExactTokens({ desiredTokens: 21_000_000n, currentSupply: 0n });
-    expect(q.curveContributionSats).toBe(73_111_500n);
+    expect(q.curveContributionSats).toBe(59_818_500n);
     expect(q.startingStage).toBe(1);
     expect(q.endingStage).toBe(210);
   });
@@ -38,13 +38,13 @@ describe("quoteExactTokens (EXACT_TOKENS)", () => {
     const q = quoteExactTokens({ desiredTokens: 1_001n, currentSupply: 99_999n });
     expect(q.startingStage).toBe(1);
     expect(q.endingStage).toBe(2);
-    // ceil(1 × 33,000 / 1M) = 1; 1,000 tokens @ 66 a lot = 66.
-    expect(q.curveContributionSats).toBe(1n + 66n);
+    // ceil(1 × 27,000 / 1M) = 1; 1,000 tokens @ 54 a lot = 54.
+    expect(q.curveContributionSats).toBe(1n + 54n);
   });
 
   it("CURVE-007: quote crossing five stairs is exact", () => {
     const q = quoteExactTokens({ desiredTokens: 5n * 100_000n + 1n, currentSupply: 0n });
-    const fullStairs = 100n * (33n + 66n + 99n + 132n + 165n);
+    const fullStairs = 100n * (27n + 54n + 81n + 108n + 135n);
     const oneTokenStair6 = 1n; // ceil(1 * 198,000 / 1M)
     expect(q.curveContributionSats).toBe(fullStairs + oneTokenStair6);
     expect(q.startingStage).toBe(1);
@@ -92,7 +92,7 @@ describe("quoteExactTokens (EXACT_TOKENS)", () => {
     ).toThrow(CurveError); // rejected for exceeding supply, not overflow
     // A valid full-range quote must still be exact.
     const q = quoteExactTokens({ desiredTokens: 21_000_000n, currentSupply: 0n });
-    expect(q.curveContributionSats).toBe(73_111_500n);
+    expect(q.curveContributionSats).toBe(59_818_500n);
   });
 
   it("CURVE-016: EXACT_TOKENS returns deterministic result", () => {
@@ -114,29 +114,29 @@ describe("quoteExactTokens (EXACT_TOKENS)", () => {
 
 describe("quoteExactSats (EXACT_SATS)", () => {
   it("CURVE-015: never exceeds supplied sats", () => {
-    const cases = [1n, 32n, 33n, 500n, 3_366n, 21_000n, 1_234_567n, 73_111_500n];
+    const cases = [1n, 32n, 33n, 500n, 2_754n, 21_000n, 1_234_567n, 59_818_500n];
     for (const sats of cases) {
       const q = quoteExactSats({ availableSats: sats, currentSupply: 0n });
       expect(q.curveContributionSats).toBeLessThanOrEqual(sats);
     }
   });
 
-  it("33 sats buys exactly one lot (1,000 tokens) from zero", () => {
-    const q = quoteExactSats({ availableSats: 33n, currentSupply: 0n });
+  it("27 sats buys exactly one lot (1,000 tokens) from zero", () => {
+    const q = quoteExactSats({ availableSats: 27n, currentSupply: 0n });
     expect(q.tokens).toBe(1_000n);
-    expect(q.curveContributionSats).toBe(33n);
+    expect(q.curveContributionSats).toBe(27n);
   });
 
-  it("full supply is purchasable at exactly 73,111,500 sats", () => {
-    const q = quoteExactSats({ availableSats: 73_111_500n, currentSupply: 0n });
+  it("full supply is purchasable at exactly 59,818,500 sats", () => {
+    const q = quoteExactSats({ availableSats: 59_818_500n, currentSupply: 0n });
     expect(q.tokens).toBe(PUBLIC_SUPPLY_TOKENS);
-    expect(q.curveContributionSats).toBe(73_111_500n);
+    expect(q.curveContributionSats).toBe(59_818_500n);
   });
 
   it("remainder stays in wallet (never overspends)", () => {
-    const q = quoteExactSats({ availableSats: 73_111_500n + 500n, currentSupply: 0n });
+    const q = quoteExactSats({ availableSats: 59_818_500n + 500n, currentSupply: 0n });
     expect(q.tokens).toBe(PUBLIC_SUPPLY_TOKENS);
-    expect(q.curveContributionSats).toBe(73_111_500n); // 500 sats remainder stays in wallet
+    expect(q.curveContributionSats).toBe(59_818_500n); // 500 sats remainder stays in wallet
   });
 
   it("zero sats rejected", () => {
@@ -158,11 +158,11 @@ describe("quoteExactSats (EXACT_SATS)", () => {
   it("EXACT_SATS with huge sats never overspends and caps at public supply", () => {
     const q = quoteExactSats({ availableSats: 2n ** 64n, currentSupply: 0n });
     expect(q.tokens).toBe(PUBLIC_SUPPLY_TOKENS);
-    expect(q.curveContributionSats).toBe(73_111_500n);
+    expect(q.curveContributionSats).toBe(59_818_500n);
   });
 
   it("stops, rather than spinning, when fewer sats are left than one token costs", () => {
-    // On the last stair one token costs ceil(6,930,000 / 1M) = 7 sats, so 5 sats buy nothing.
+    // On the last stair one token costs ceil(5,670,000 / 1M) = 6 sats, so 5 sats buy nothing.
     const q = quoteExactSats({ availableSats: 5n, currentSupply: 20_999_000n });
     expect(q.tokens).toBe(0n);
     expect(q.curveContributionSats).toBe(0n);

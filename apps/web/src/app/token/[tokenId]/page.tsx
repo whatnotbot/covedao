@@ -789,7 +789,7 @@ function TradeReview({
 
       <dl className="space-y-2 text-sm">
         <Line k="Curve price" v={fmtBtc(gross)} />
-        {isBuy ? <Line k="Creator (20%)" v={`+${fmtBtc(creatorFee)}`} /> : null}
+        {isBuy ? <Line k="Creator (50%)" v={`+${fmtBtc(creatorFee)}`} /> : null}
         {isBuy ? <Line k="Token carrier" v={`+${fmtBtc(1_000n)}`} /> : null}
         <Line k="Protocol fee" v={`${isBuy ? "+" : "−"}${fmtBtc(protocolFee)}`} />
         <Line k="Network fee" v={`${isBuy ? "+" : "−"}\u2248${fmtBtc(minerFee)}`} />

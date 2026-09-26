@@ -32,19 +32,19 @@ describe("checkRedeemPayout", () => {
   });
 
   it("on the live curve a single lot at stair 1 is too small to sell back", () => {
-    // One lot (1,000 tokens) at the opening stair is worth 33 sats, under the
+    // One lot (1,000 tokens) at the opening stair is worth 27 sats, under the
     // 1,000-sat floor on the exit fee.
     const gross = grossRedeem(100_000n, 1_000n);
     const c = checkRedeemPayout(gross, redeemFeeSats(gross), P2WPKH);
-    expect(gross).toBe(33n);
+    expect(gross).toBe(27n);
     expect(c.isPayable).toBe(false);
   });
 
   it("a whole stair clears the exit fee", () => {
-    // 100 lots at 33 sats = 3,300; the 1,000-sat fee floor leaves 2,300.
+    // 100 lots at 27 sats = 2,700; the 1,000-sat fee floor leaves 1,700.
     const gross = grossRedeem(100_000n, 100_000n);
     const c = checkRedeemPayout(gross, redeemFeeSats(gross), P2WPKH);
-    expect(c.netSats).toBe(2_300n);
+    expect(c.netSats).toBe(1_700n);
     expect(c.isPayable).toBe(true);
   });
 

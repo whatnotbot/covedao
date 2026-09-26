@@ -12,17 +12,17 @@ import {
 } from "../src/index.js";
 
 describe("stage pricing", () => {
-  it("CURVE-001: stair 1 costs 33 sats a lot (33,000 sats / 1M)", () => {
-    expect(getStagePrice(1)).toBe(33_000n);
+  it("CURVE-001: stair 1 costs 27 sats a lot (27,000 sats / 1M)", () => {
+    expect(getStagePrice(1)).toBe(27_000n);
   });
 
-  it("CURVE-002: stair 210 costs 6,930 sats a lot (6,930,000 sats / 1M)", () => {
-    expect(getStagePrice(210)).toBe(6_930_000n);
+  it("CURVE-002: stair 210 costs 5,670 sats a lot (5,670,000 sats / 1M)", () => {
+    expect(getStagePrice(210)).toBe(5_670_000n);
   });
 
-  it("every stair is exactly 33 sats a lot dearer than the one below", () => {
+  it("every stair is exactly 27 sats a lot dearer than the one below", () => {
     for (let i = 1; i < STAGE_PRICES_SATS_PER_MILLION.length; i++) {
-      expect(STAGE_PRICES_SATS_PER_MILLION[i]! - STAGE_PRICES_SATS_PER_MILLION[i - 1]!).toBe(33_000n);
+      expect(STAGE_PRICES_SATS_PER_MILLION[i]! - STAGE_PRICES_SATS_PER_MILLION[i - 1]!).toBe(27_000n);
     }
   });
 

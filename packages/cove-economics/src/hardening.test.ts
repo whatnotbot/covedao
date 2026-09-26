@@ -16,22 +16,22 @@ const STAGE = 100_000n;
 
 
 describe("zero-delta economics (§1.1)", () => {
-  it("no whole lot has a zero R-delta: every lot costs at least 33 sats", () => {
+  it("no whole lot has a zero R-delta: every lot costs at least 27 sats", () => {
     // Mints and sell-backs move whole lots of 1,000, so this is the case that
-    // matters; the cheapest lot is 33 sats.
+    // matters; the cheapest lot is 27 sats.
     for (const s of [0n, 1_000n, STAGE - 1_000n, STAGE, 10n * STAGE, PUBLIC_SUPPLY - 1_000n]) {
-      expect(grossBuy(s, 1_000n) >= 33n, `buy a lot at ${s}`).toBe(true);
+      expect(grossBuy(s, 1_000n) >= 27n, `buy a lot at ${s}`).toBe(true);
     }
-    expect(requiredBackingSats(2_000n) - requiredBackingSats(1_000n)).toBe(33n);
+    expect(requiredBackingSats(2_000n) - requiredBackingSats(1_000n)).toBe(27n);
   });
 
   it("a sub-lot quantity that would cost nothing is refused, never free", () => {
-    // At 0.033 sats a token, a single token between two roundings is a 0-sat
+    // At 0.027 sats a token, a single token between two roundings is a 0-sat
     // delta; the curve throws rather than handing it out.
     expect(() => grossBuy(999n, 1n)).toThrow(/zero backing delta/);
   });
 
-  it("a single token at stair 1 costs 1 sat (0.033, rounded up)", () => {
+  it("a single token at stair 1 costs 1 sat (0.027, rounded up)", () => {
     expect(grossBuy(0n, 1n)).toBe(1n);
     expect(grossRedeem(1n, 1n)).toBe(1n);
   });

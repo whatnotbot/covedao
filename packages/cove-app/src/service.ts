@@ -28,7 +28,7 @@ import {
   type FundingInputChecker,
 } from "@crclaunch/cove-guardian/v3";
 import { loadCanonicalViewSnapshotFromDb, computeHealth, getTokenUtxosByScriptDb, getLiveTokenUtxosAtDb } from "@crclaunch/cove-indexer/v3";
-import { grossBuy, grossRedeem, deterministicFee, mintFeeSats, redeemFeeSats, creatorFeeSats, CREATOR_RECORD_SATS, checkRedeemPayout } from "@crclaunch/cove-economics";
+import { grossBuy, grossRedeem, mintFeeSats, redeemFeeSats, creatorFeeSats, CREATOR_RECORD_SATS, checkRedeemPayout } from "@crclaunch/cove-economics";
 import { ATOMS_PER_TOKEN, LOT_TOKENS, PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
 import { canonicalTicker, computeTokenId, OP_MINT, OP_REDEEM, type ParsedEnvelopeV2 } from "@crclaunch/cove-wire";
 import {
@@ -1235,7 +1235,9 @@ export class V3AppService {
         backing.state.issuedPublicSupplyAtoms / ATOMS_PER_TOKEN,
         params.amountAtoms / ATOMS_PER_TOKEN,
       ),
-      feeSats: deterministicFee(
+      // redeemFeeSats, not a bare percentage: it carries the fee's floor, as
+      // the Guardian, the builder and the indexer all do.
+      feeSats: redeemFeeSats(
         grossRedeem(
           backing.state.issuedPublicSupplyAtoms / ATOMS_PER_TOKEN,
           params.amountAtoms / ATOMS_PER_TOKEN,

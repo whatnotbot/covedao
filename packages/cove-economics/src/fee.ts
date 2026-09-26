@@ -60,7 +60,7 @@ export interface CoveFeeConfig {
 
 export const COVE_FEE_CONFIG: CoveFeeConfig = {
   // Mint: a flat launch-style fee plus a share of the curve price. The flat
-  // 10,000 sats comfortably clears the 294-sat P2WPKH dust threshold, so no
+  // 5,000 sats comfortably clears the 294-sat P2WPKH dust threshold, so no
   // buy is ever refused for a dust fee.
   buyFeeBps: 750n, // 7.50%
   buyFeeFlatSats: 5_000n, // per mint

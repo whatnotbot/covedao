@@ -1,5 +1,4 @@
-import { resolve } from "node:path";
-import { loadMainnetProfile, hashMainnetProfile } from "@crclaunch/cove-mainnet";
+import { resolveMainnetProfile } from "@crclaunch/cove-mainnet";
 import { CoreRpcProvider } from "@crclaunch/bitcoin";
 import { createDb } from "@crclaunch/db";
 import { computeHealth } from "@crclaunch/cove-indexer/v3";
@@ -22,7 +21,8 @@ import { committedHash, evaluateIndexerProbe, probeWorkerLock } from "./readines
  */
 
 export interface RuntimeReadinessEnv {
-  COVE_V3_MAINNET_PROFILE_PATH?: string;
+  /** TEST-ONLY profile file (CI); the committed profile otherwise. */
+  COVE_TEST_ONLY_PROFILE_PATH?: string;
   /** Committed hash of the approved mainnet profile (the source of truth). */
   COVE_V3_MAINNET_PROFILE_HASH?: string;
   /** Committed expected state root (replay root) the indexer must reach. */
@@ -44,7 +44,8 @@ export interface RuntimeReadinessResult {
   readiness: MainnetReadiness;
   profileHash: string;
   expectedProfileHash: string | null;
-  profilePath: string;
+  /** "committed", or "test-only" when CI named a test profile file. */
+  profileSource: "committed" | "test-only";
   stateRoot: string;
   coreAgreementDetail: string | null;
 }
@@ -62,9 +63,11 @@ async function guardianHealthHttp(endpoint: string, token: string) {
 }
 
 export async function runRuntimeReadiness(env: RuntimeReadinessEnv): Promise<RuntimeReadinessResult> {
-  const profilePath = resolve(process.env.INIT_CWD ?? process.cwd(), env.COVE_V3_MAINNET_PROFILE_PATH ?? ".cove-v3-mainnet-profile.json");
-  const { profile } = loadMainnetProfile(profilePath);
-  const profileHash = hashMainnetProfile(profile);
+  const { profile, profileHash, source } = resolveMainnetProfile({
+    network: "tooling",
+    testOnlyPath: env.COVE_TEST_ONLY_PROFILE_PATH,
+    baseDir: process.env.INIT_CWD ?? process.cwd(),
+  });
   const canaryActive = ["true", "1", "yes", "on"].includes((env.COVE_V3_CANARY_ACTIVE ?? "").toLowerCase());
 
   // Committed expected values — fail closed when absent/invalid.
@@ -154,7 +157,7 @@ export async function runRuntimeReadiness(env: RuntimeReadinessEnv): Promise<Run
     readiness,
     profileHash,
     expectedProfileHash,
-    profilePath,
+    profileSource: source,
     stateRoot,
     coreAgreementDetail,
   };

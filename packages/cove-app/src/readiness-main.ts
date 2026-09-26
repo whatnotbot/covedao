@@ -1,5 +1,4 @@
-import { resolve } from "node:path";
-import { loadMainnetProfile, hashMainnetProfile } from "@crclaunch/cove-mainnet";
+import { resolveMainnetProfile, TEST_ONLY_PROFILE_ENV } from "@crclaunch/cove-mainnet";
 import { runRuntimeReadiness } from "./readiness-cli.js";
 
 /**
@@ -13,8 +12,9 @@ import { runRuntimeReadiness } from "./readiness-cli.js";
 const args = process.argv.slice(2);
 const doStatic = args.includes("--static") || args.length === 0;
 const doRuntime = args.includes("--runtime") || args.length === 0;
-// Resolve relative paths against the invocation cwd (pnpm sets INIT_CWD).
-const PROFILE_PATH = resolve(process.env.INIT_CWD ?? process.cwd(), process.env.COVE_V3_MAINNET_PROFILE_PATH ?? ".cove-v3-mainnet-profile.json");
+// The committed profile, unless CI names a TEST-ONLY profile file (relative
+// paths resolve against the invocation cwd; pnpm sets INIT_CWD).
+const TEST_ONLY_PATH = process.env[TEST_ONLY_PROFILE_ENV];
 
 function line(name: string, ok: boolean, detail = ""): void {
   console.log(`${name.padEnd(32)} ${ok ? "PASS" : "FAIL"}${ok ? "" : ` — ${detail}`}`);
@@ -23,13 +23,18 @@ function line(name: string, ok: boolean, detail = ""): void {
 function staticSection(): boolean {
   console.log("── STATIC ──");
   try {
-    const { profile, validation } = loadMainnetProfile(PROFILE_PATH);
+    const { validation, profileHash, source } = resolveMainnetProfile({
+      network: "tooling",
+      testOnlyPath: TEST_ONLY_PATH,
+      baseDir: process.env.INIT_CWD ?? process.cwd(),
+    });
+    console.log(`profile source: ${source}${source === "test-only" ? ` (${TEST_ONLY_PATH}; test keys allowed)` : ""}`);
     line("profile completeness", validation.ok, validation.errors.slice(0, 3).join("; "));
     line("protocol profile match", !validation.errors.some((e) => e.includes("PROFILE_PROTOCOL_MISMATCH")));
     const owner = validation.errors.filter((e) => e.startsWith("OWNER_DECISION_REQUIRED"));
     console.log(`owner decisions remaining: ${owner.length}`);
     // The hash operators commit out-of-band and the Guardian must report.
-    if (validation.ok) console.log(`profile hash: ${hashMainnetProfile(profile)}`);
+    if (validation.ok) console.log(`profile hash: ${profileHash}`);
     return validation.ok;
   } catch (e) {
     console.log(`cannot load profile: ${(e as Error).message}`);

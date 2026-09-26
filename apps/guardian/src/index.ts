@@ -12,7 +12,8 @@ import { requireAuthToken, safeEqual, FixedWindowRateLimiter, readJsonWithLimit 
 
 const PORT = Number(process.env.GUARDIAN_PORT ?? 4391);
 const AUTH_TOKEN = requireAuthToken(process.env.GUARDIAN_AUTH_TOKEN);
-const PROFILE_PATH = process.env.COVE_V3_MAINNET_PROFILE_PATH ?? ".cove-v3-mainnet-profile.json";
+// The committed profile; CI on regtest may name a TEST-ONLY profile file.
+const TEST_ONLY_PROFILE_PATH = process.env.COVE_TEST_ONLY_PROFILE_PATH || undefined;
 const DATABASE_URL = process.env.COVE_DATABASE_URL ?? process.env.DATABASE_URL ?? "";
 const NETWORK = (process.env.GUARDIAN_NETWORK ?? "regtest") as "regtest" | "signet" | "testnet" | "mainnet";
 const MAX_BODY_BYTES = 1_000_000;
@@ -44,7 +45,7 @@ async function main(): Promise<void> {
   if (!DATABASE_URL) throw new Error("COVE_DATABASE_URL is required");
   if (!CORE_RPC.url) throw new Error("GUARDIAN_BITCOIN_RPC_URL is required (the Guardian checks funding inputs against its own node)");
   const built = buildGuardianService({
-    profilePath: PROFILE_PATH,
+    testOnlyProfilePath: TEST_ONLY_PROFILE_PATH,
     databaseUrl: DATABASE_URL,
     network: NETWORK,
     custodyBackend,

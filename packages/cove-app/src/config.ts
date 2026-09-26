@@ -2,7 +2,7 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { ECPairFactory } from "ecpair";
 import { CHAIN_BITCOIN_REGTEST, CHAIN_BITCOIN_SIGNET, CHAIN_BITCOIN_TESTNET, CHAIN_BITCOIN_MAINNET } from "@crclaunch/cove-wire";
-import { loadMainnetProfile, hashMainnetProfile, type MainnetProfile } from "@crclaunch/cove-mainnet";
+import { committedMainnetProfile, hashMainnetProfile, validateMainnetProfile, type MainnetProfile } from "@crclaunch/cove-mainnet";
 import { COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
 import { PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
 import { AppError } from "./errors.js";
@@ -127,9 +127,11 @@ function hexOrNull(v: string | undefined): Buffer | null {
 
 type Env = Record<string, string | undefined>;
 
-/** Map the canonical mainnet profile's recovery to a VaultRecoveryProfile. */
+/** Map the canonical mainnet profile's recovery (2-of-3 or 1-of-1) to a VaultRecoveryProfile. */
 export function recoveryProfileFromMainnetProfile(profile: MainnetProfile): VaultRecoveryProfile {
-  if (profile.recovery.pubkeys.length !== 3 || profile.recovery.csvBlocks == null) {
+  const n = profile.recovery.pubkeys.length;
+  const shapeOk = (profile.recovery.threshold === 2 && n === 3) || (profile.recovery.threshold === 1 && n === 1);
+  if (!shapeOk || profile.recovery.csvBlocks == null) {
     throw new AppError("MAINNET_DISABLED", "mainnet profile recovery is incomplete");
   }
   return {
@@ -140,10 +142,19 @@ export function recoveryProfileFromMainnetProfile(profile: MainnetProfile): Vaul
   };
 }
 
-/** Load the committed public profile for mainnet (no private keys). */
-function loadMainnetConfig(env: Env): MainnetProfile {
-  const profilePath = env.COVE_V3_MAINNET_PROFILE_PATH ?? ".cove-v3-mainnet-profile.json";
-  const { profile, validation } = loadMainnetProfile(profilePath);
+export interface LoadV3AppConfigOptions {
+  /**
+   * TESTS ONLY: use this profile instead of the committed one, validated with
+   * the test-key bypass. Production code never passes it (there is no env
+   * route to it), so a mainnet service always runs the committed profile.
+   */
+  testOnlyMainnetProfile?: MainnetProfile;
+}
+
+/** The committed mainnet profile, which must validate (no private keys in it). */
+function loadMainnetConfig(opts: LoadV3AppConfigOptions): MainnetProfile {
+  const profile = opts.testOnlyMainnetProfile ?? committedMainnetProfile().profile;
+  const validation = validateMainnetProfile(profile, { allowTestKeys: opts.testOnlyMainnetProfile !== undefined });
   if (!validation.ok) {
     throw new AppError("MAINNET_DISABLED", `invalid mainnet profile: ${validation.errors.join("; ")}`);
   }
@@ -153,7 +164,7 @@ function loadMainnetConfig(env: Env): MainnetProfile {
   return profile;
 }
 
-export function loadV3AppConfig(env: Env): V3AppConfig {
+export function loadV3AppConfig(env: Env, opts: LoadV3AppConfigOptions = {}): V3AppConfig {
   const enabled = ["true", "1", "yes", "on"].includes((env.COVE_V3_APP_ENABLED ?? "").toLowerCase());
   const network = parseNetwork(env.COVE_NETWORK ?? env.CRC_NETWORK ?? "regtest");
 
@@ -171,7 +182,7 @@ export function loadV3AppConfig(env: Env): V3AppConfig {
     if (!env.COVE_ORD_URL) {
       throw new AppError("MAINNET_DISABLED", "COVE_ORD_URL is required on mainnet: funding inputs must be checked for inscriptions and runes");
     }
-    const profile = loadMainnetConfig(env);
+    const profile = loadMainnetConfig(opts);
     const recoveryProfile = recoveryProfileFromMainnetProfile(profile);
     return {
       enabled,

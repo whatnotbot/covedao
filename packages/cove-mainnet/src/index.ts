@@ -10,4 +10,14 @@ export {
   type MainnetRecoveryProfile,
   type MainnetCanary,
   type MainnetProfileValidationResult,
+  type ValidateMainnetProfileOptions,
 } from "./profile.js";
+export {
+  COMMITTED_MAINNET_PROFILE_JSON,
+  committedMainnetProfile,
+  resolveMainnetProfile,
+  TEST_ONLY_PROFILE_ENV,
+  type CommittedMainnetProfile,
+  type ResolvedMainnetProfile,
+} from "./committed-profile.js";
+export { KNOWN_TEST_KEY_BYTES, isKnownTestPrivateKeyHex, isKnownTestXOnly, isKnownTestScript } from "./test-keys.js";

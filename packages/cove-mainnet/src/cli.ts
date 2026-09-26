@@ -1,11 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import {
-  parseMainnetProfileJson,
-  validateMainnetProfile,
-  hashMainnetProfile,
-  type MainnetProfileValidationResult,
-} from "./profile.js";
+import { type MainnetProfileValidationResult } from "./profile.js";
+import { resolveMainnetProfile, TEST_ONLY_PROFILE_ENV } from "./committed-profile.js";
 
 /**
  * Cove V3 mainnet readiness CLI (Phase 8.1 §49-§50). Consumes the ONE canonical
@@ -17,9 +11,9 @@ import {
  * Never broadcasts anything.
  */
 
-const RAW_PATH = process.env.COVE_V3_MAINNET_PROFILE_PATH ?? ".cove-v3-mainnet-profile.json";
-// Resolve relative paths against the invocation cwd (pnpm sets INIT_CWD), not the package dir.
-const PROFILE_PATH = resolve(process.env.INIT_CWD ?? process.cwd(), RAW_PATH);
+// The committed profile, unless a TEST-ONLY profile file is named (CI).
+// Relative paths resolve against the invocation cwd (pnpm sets INIT_CWD).
+const TEST_ONLY_PATH = process.env[TEST_ONLY_PROFILE_ENV];
 const MODE = process.argv.includes("--runtime") ? "runtime" : process.argv.includes("--static") ? "static" : "static";
 
 function line(name: string, ok: boolean, detail: string): void {
@@ -28,25 +22,17 @@ function line(name: string, ok: boolean, detail: string): void {
 
 function staticChecks(): { ready: boolean; validation: MainnetProfileValidationResult } {
   console.log("Cove V3 — mainnet readiness (STATIC)");
-  if (!existsSync(PROFILE_PATH)) {
-    console.log(`no profile at ${PROFILE_PATH}`);
-    console.log("");
-    console.log("READY_EXCEPT_FOR_OPERATOR_CEREMONY — no committed profile (operator decisions required)");
-    return { ready: false, validation: { ok: false, errors: ["NO_PROFILE"] } };
-  }
-
-  let profile;
+  let resolved;
   try {
-    profile = parseMainnetProfileJson(readFileSync(PROFILE_PATH, "utf8"));
+    resolved = resolveMainnetProfile({ network: "tooling", testOnlyPath: TEST_ONLY_PATH, baseDir: process.env.INIT_CWD ?? process.cwd() });
   } catch (e) {
-    console.log(`cannot parse ${PROFILE_PATH}: ${(e as Error).message}`);
+    console.log(`cannot load profile: ${(e as Error).message}`);
     console.log("");
     console.log("NOT_READY — profile unparsable");
     return { ready: false, validation: { ok: false, errors: ["UNPARSABLE_PROFILE"] } };
   }
-
-  const validation = validateMainnetProfile(profile);
-  const profileHash = hashMainnetProfile(profile);
+  console.log(`profile source: ${resolved.source}${resolved.source === "test-only" ? ` (${TEST_ONLY_PATH}; test keys allowed)` : ""}`);
+  const { validation, profileHash } = resolved;
 
   // Categorize the validation errors by section (protocol vs owner decision vs canary).
   const has = (prefix: string) => validation.errors.some((e) => e.startsWith(prefix));
@@ -54,7 +40,7 @@ function staticChecks(): { ready: boolean; validation: MainnetProfileValidationR
   line("profile completeness", validation.ok, validation.errors.join("; "));
   line("protocol profile match", !has("PROFILE_PROTOCOL_MISMATCH") && !has("POLICY_VERSION_MISMATCH") && !has("VAULT_PROFILE_MISMATCH") && !has("CHAIN_IDENTITY_MISMATCH"), "carrier/anchor/supply/reserve/CMRs vs frozen constants");
   line("activation height", !has("INVALID_ACTIVATION_HEIGHT") && !validation.errors.some((e) => e === "OWNER_DECISION_REQUIRED: activationHeight"), validation.errors.find((e) => e.includes("activationHeight")) ?? "");
-  line("recovery profile", !has("INVALID_RECOVERY") && !has("DUPLICATE_RECOVERY") && !validation.errors.some((e) => e.includes("recovery.pubkeys") || e.includes("recovery.csvBlocks")), "2-of-3 keys + CSV");
+  line("recovery profile", !has("INVALID_RECOVERY") && !has("DUPLICATE_RECOVERY") && !validation.errors.some((e) => e.includes("recovery.pubkeys") || e.includes("recovery.csvBlocks")), "2-of-3 or 1-of-1 keys + CSV");
   line("fee schedule", !has("INVALID_BUY_FEE") && !has("INVALID_REDEEM_FEE") && !has("INVALID_P2P_FEE") && !validation.errors.some((e) => e.includes("buyFeeBps") || e.includes("redeemFeeBps") || e.includes("p2pFeeBps")), "buy/redeem/p2p bps + feeScript");
   line("canary wallet allowlist", !validation.errors.some((e) => e.includes("allowedWalletScripts")), "allowedWalletScripts");
   line("canary token policy", !validation.errors.some((e) => e.includes("allowedTokenIds")), "allowedTokenIds");

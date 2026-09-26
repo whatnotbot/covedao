@@ -1,10 +1,6 @@
 import * as bitcoin from "bitcoinjs-lib";
 import { createDb } from "@crclaunch/db";
-import {
-  loadMainnetProfile,
-  hashMainnetProfile,
-  type MainnetProfile,
-} from "@crclaunch/cove-mainnet";
+import { resolveMainnetProfile, type MainnetProfile } from "@crclaunch/cove-mainnet";
 import type { VaultRecoveryProfile } from "@crclaunch/cove-vault";
 import { CoreRpcProvider } from "@crclaunch/bitcoin";
 import {
@@ -29,7 +25,8 @@ import type { Database } from "@crclaunch/db";
  */
 
 export interface GuardianServiceConfig {
-  profilePath: string;
+  /** TEST-ONLY profile file (regtest CI); the committed profile otherwise. Refused on mainnet. */
+  testOnlyProfilePath?: string;
   databaseUrl: string;
   network: "regtest" | "signet" | "testnet" | "mainnet";
   custodyBackend: GuardianCustodyBackend;
@@ -55,7 +52,9 @@ export interface BuiltGuardianService {
 }
 
 export function recoveryProfileFromMainnet(profile: MainnetProfile): VaultRecoveryProfile {
-  if (profile.recovery.pubkeys.length !== 3 || profile.recovery.csvBlocks == null) {
+  const n = profile.recovery.pubkeys.length;
+  const shapeOk = (profile.recovery.threshold === 2 && n === 3) || (profile.recovery.threshold === 1 && n === 1);
+  if (!shapeOk || profile.recovery.csvBlocks == null) {
     throw new Error("mainnet profile recovery is incomplete");
   }
   return {
@@ -93,14 +92,13 @@ export function buildGuardianService(config: GuardianServiceConfig): BuiltGuardi
   if (config.network === "mainnet" && !config.ordUrl) {
     throw new Error("GUARDIAN_ORD_URL is required on mainnet: funding inputs must be checked for inscriptions and runes");
   }
-  const { profile, validation } = loadMainnetProfile(config.profilePath);
+  const { profile, validation, profileHash } = resolveMainnetProfile({ network: config.network, testOnlyPath: config.testOnlyProfilePath });
   if (!validation.ok) {
     throw new Error(`invalid mainnet profile: ${validation.errors.join("; ")}`);
   }
   if (profile.guardianXOnly == null || profile.feeScript == null) {
     throw new Error("mainnet profile is missing guardianXOnly/feeScript");
   }
-  const profileHash = hashMainnetProfile(profile);
   const guardianXOnly = profile.guardianXOnly;
   const recoveryProfile = recoveryProfileFromMainnet(profile);
   const recoveryKeyXOnly = recoveryProfile.recoveryPubkeys[0]!; // unused for MAINNET1 (2-of-3)

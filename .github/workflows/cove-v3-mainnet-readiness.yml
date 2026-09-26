@@ -114,11 +114,11 @@ jobs:
       - name: Run production-profile-regtest lifecycle (remote Guardian, MAINNET1, real Core)
         run: pnpm --filter @crclaunch/cove-guardian v3-production-profile-lifecycle
         env:
-          COVE_V3_MAINNET_PROFILE_PATH: test/fixtures/mainnet-profile.json
+          COVE_TEST_ONLY_PROFILE_PATH: test/fixtures/mainnet-profile.json
 
-      - name: Readiness --static (real public template → READY_EXCEPT_FOR_OPERATOR_CEREMONY)
+      - name: Readiness --static (committed profile → READY_EXCEPT_FOR_OPERATOR_CEREMONY)
         run: |
-          OUT=$(COVE_V3_MAINNET_PROFILE_PATH=config/cove-v3-mainnet-profile.template.json pnpm cove:v3-mainnet-readiness --static)
+          OUT=$(pnpm cove:v3-mainnet-readiness --static)
           echo "$OUT"
           echo "$OUT" | grep -q "READY_EXCEPT_FOR_OPERATOR_CEREMONY"
 
@@ -128,7 +128,7 @@ jobs:
       - name: Readiness --runtime with NO Guardian → NOT_READY (fail-closed)
         run: |
           set +e
-          OUT=$(COVE_V3_MAINNET_PROFILE_PATH=test/fixtures/mainnet-profile.json \
+          OUT=$(COVE_TEST_ONLY_PROFILE_PATH=test/fixtures/mainnet-profile.json \
             COVE_BITCOIN_RPC_URL=http://127.0.0.1:18443 \
             COVE_BITCOIN_RPC_URL_SECONDARY=http://127.0.0.1:18443 \
             pnpm cove:v3-mainnet-readiness --runtime)
@@ -141,12 +141,12 @@ jobs:
       - name: Apply database migrations
         run: pnpm --filter @crclaunch/db db:migrate
 
-      # The Guardian resolves COVE_V3_MAINNET_PROFILE_PATH against its own
+      # The Guardian resolves COVE_TEST_ONLY_PROFILE_PATH against its own
       # package cwd (pnpm --filter), so this must be absolute.
       - name: Start the real Guardian service
         run: |
           COVE_DATABASE_URL="$DATABASE_URL" \
-          COVE_V3_MAINNET_PROFILE_PATH="$GITHUB_WORKSPACE/test/fixtures/mainnet-profile.json" \
+          COVE_TEST_ONLY_PROFILE_PATH="$GITHUB_WORKSPACE/test/fixtures/mainnet-profile.json" \
           GUARDIAN_AUTH_TOKEN=ci-readiness-token \
           GUARDIAN_NETWORK=regtest \
           GUARDIAN_TEST_KEY_HEX=$(printf '42%.0s' $(seq 1 32)) \
@@ -182,7 +182,7 @@ jobs:
       # would mean the probes had been faked again.
       - name: Readiness --runtime (fixture + Core quorum + REAL Guardian → all reachable signals PASS, fails closed at READ_ONLY)
         run: |
-          EXPECTED=$(COVE_V3_MAINNET_PROFILE_PATH=test/fixtures/mainnet-profile.json \
+          EXPECTED=$(COVE_TEST_ONLY_PROFILE_PATH=test/fixtures/mainnet-profile.json \
             pnpm --silent cove:v3-mainnet-readiness --static | awk '/profile hash:/ {print $3}')
           # No fallback: a hard-coded hash silently went stale when the
           # protocol profile changed.
@@ -192,7 +192,7 @@ jobs:
           # NOT_READY, and under `set -e` that would kill the step before the
           # per-signal PASS/FAIL lines are printed, hiding the cause.
           set +e
-          OUT=$(COVE_V3_MAINNET_PROFILE_PATH=test/fixtures/mainnet-profile.json \
+          OUT=$(COVE_TEST_ONLY_PROFILE_PATH=test/fixtures/mainnet-profile.json \
             COVE_V3_MAINNET_PROFILE_HASH="$EXPECTED" \
             COVE_BITCOIN_RPC_URL=http://127.0.0.1:18443 \
             COVE_BITCOIN_RPC_URL_SECONDARY=http://127.0.0.1:18443 \
@@ -219,7 +219,7 @@ jobs:
       - name: Readiness rejects a mismatched committed profile hash
         run: |
           set +e
-          OUT=$(COVE_V3_MAINNET_PROFILE_PATH=test/fixtures/mainnet-profile.json \
+          OUT=$(COVE_TEST_ONLY_PROFILE_PATH=test/fixtures/mainnet-profile.json \
             COVE_V3_MAINNET_PROFILE_HASH=$(printf 'ab%.0s' $(seq 1 32)) \
             COVE_BITCOIN_RPC_URL=http://127.0.0.1:18443 \
             COVE_BITCOIN_RPC_URL_SECONDARY=http://127.0.0.1:18443 \

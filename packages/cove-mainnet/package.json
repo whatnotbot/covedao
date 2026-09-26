@@ -20,9 +20,11 @@
     "@crclaunch/cove-simplicity": "workspace:*",
     "@crclaunch/cove-wire": "workspace:*",
     "@crclaunch/curve": "workspace:*",
+    "bitcoinjs-lib": "^6.1.7",
     "tiny-secp256k1": "^2.2.3"
   },
   "devDependencies": {
+    "@crclaunch/cove-vault": "workspace:*",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

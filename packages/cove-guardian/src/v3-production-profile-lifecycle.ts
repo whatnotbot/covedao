@@ -51,7 +51,8 @@ const ECPair = ECPairFactory(ecc);
 const RPC_URL = process.env.COVE_REGTEST_RPC_URL ?? "http://127.0.0.1:18443";
 const RPC_USER = process.env.COVE_REGTEST_RPC_USER ?? "user";
 const RPC_PASSWORD = process.env.COVE_REGTEST_RPC_PASSWORD ?? "pass";
-const PROFILE_PATH = resolve(process.env.INIT_CWD ?? process.cwd(), process.env.COVE_V3_MAINNET_PROFILE_PATH ?? "test/fixtures/mainnet-profile.json");
+// TEST-ONLY profile (its keys are the repo's public test keys).
+const PROFILE_PATH = resolve(process.env.INIT_CWD ?? process.cwd(), process.env.COVE_TEST_ONLY_PROFILE_PATH ?? "test/fixtures/mainnet-profile.json");
 
 const MINER_FEE = 1_000n;
 const NONCE = Buffer.alloc(32, 0xab);
@@ -133,7 +134,8 @@ async function main(): Promise<void> {
   await rpc.generateToAddress(101, mineAddr);
 
   // Load the fixture profile (PUBLIC values only).
-  const { profile } = loadMainnetProfile(PROFILE_PATH);
+  const { profile, validation } = loadMainnetProfile(PROFILE_PATH, { allowTestKeys: true });
+  assert(validation.ok, `fixture profile invalid: ${validation.errors.join("; ")}`);
   const profileHash = hashMainnetProfile(profile);
   assert(profile.guardianXOnly != null && profile.feeScript != null, "profile incomplete");
   const guardianXOnly = Buffer.from(profile.guardianXOnly, "hex");

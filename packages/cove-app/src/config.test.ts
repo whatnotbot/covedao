@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { resolve } from "node:path";
 import { loadV3AppConfig } from "./config.js";
+import { loadMainnetProfile, validateMainnetProfile } from "@crclaunch/cove-mainnet";
 
 const FIXTURE = resolve(process.cwd(), "../../test/fixtures/mainnet-profile.json");
 const ORD = "http://127.0.0.1:4000";
+// The fixture profile uses the repo's public test keys: TEST-ONLY bypass.
+const TEST_PROFILE = { testOnlyMainnetProfile: loadMainnetProfile(FIXTURE, { allowTestKeys: true }).profile };
 
 describe("loadV3AppConfig mainnet path (§15)", () => {
   it("loads the public profile and never a private key", () => {
-    const cfg = loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_ORD_URL: ORD, COVE_V3_MAINNET_PROFILE_PATH: FIXTURE });
+    const cfg = loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_ORD_URL: ORD  }, TEST_PROFILE);
     expect(cfg.network).toBe("mainnet");
     expect(cfg.chainIdentity).toBe("bitcoin-mainnet");
     expect(cfg.guardianPrivateKey).toBeNull();
@@ -23,18 +26,24 @@ describe("loadV3AppConfig mainnet path (§15)", () => {
   });
 
   it("fails closed if any local private-key env var is present on mainnet", () => {
-    expect(() => loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_ORD_URL: ORD, COVE_V3_MAINNET_PROFILE_PATH: FIXTURE, COVE_GUARDIAN_PRIVATE_KEY_HEX: "42".repeat(32) })).toThrow(/local Guardian\/recovery\/fee private keys/);
-    expect(() => loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_ORD_URL: ORD, COVE_V3_MAINNET_PROFILE_PATH: FIXTURE, COVE_RECOVERY_PRIVATE_KEY_HEX: "43".repeat(32) })).toThrow(/local Guardian\/recovery\/fee private keys/);
-    expect(() => loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_ORD_URL: ORD, COVE_V3_MAINNET_PROFILE_PATH: FIXTURE, COVE_FEE_PRIVATE_KEY_HEX: "44".repeat(32) })).toThrow(/local Guardian\/recovery\/fee private keys/);
+    expect(() => loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_ORD_URL: ORD, COVE_GUARDIAN_PRIVATE_KEY_HEX: "42".repeat(32)  }, TEST_PROFILE)).toThrow(/local Guardian\/recovery\/fee private keys/);
+    expect(() => loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_ORD_URL: ORD, COVE_RECOVERY_PRIVATE_KEY_HEX: "43".repeat(32)  }, TEST_PROFILE)).toThrow(/local Guardian\/recovery\/fee private keys/);
+    expect(() => loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_ORD_URL: ORD, COVE_FEE_PRIVATE_KEY_HEX: "44".repeat(32)  }, TEST_PROFILE)).toThrow(/local Guardian\/recovery\/fee private keys/);
   });
 
   it("fails closed without an ord server on mainnet (inscriptions and runes)", () => {
-    expect(() => loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_V3_MAINNET_PROFILE_PATH: FIXTURE })).toThrow(/COVE_ORD_URL is required/);
-    expect(loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_ORD_URL: ORD, COVE_V3_MAINNET_PROFILE_PATH: FIXTURE }).ordUrl).toBe(ORD);
+    expect(() => loadV3AppConfig({ COVE_NETWORK: "mainnet" }, TEST_PROFILE)).toThrow(/COVE_ORD_URL is required/);
+    expect(loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_ORD_URL: ORD  }, TEST_PROFILE).ordUrl).toBe(ORD);
   });
 
-  it("fails closed on a missing/invalid profile", () => {
-    expect(() => loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_ORD_URL: ORD, COVE_V3_MAINNET_PROFILE_PATH: "/nonexistent.json" })).toThrow();
+  it("fails closed on the committed profile until its owner decisions are filled in", () => {
+    expect(() => loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_ORD_URL: ORD })).toThrow(/invalid mainnet profile: .*OWNER_DECISION_REQUIRED/);
+  });
+
+  it("refuses the fixture profile without the test-only bypass (its keys are public)", () => {
+    const fixture = TEST_PROFILE.testOnlyMainnetProfile;
+    expect(() => loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_ORD_URL: ORD }, {})).toThrow();
+    expect(validateMainnetProfile(fixture).errors.join()).toMatch(/TEST_KEY_IN_PROFILE/);
   });
 
   it("loads the secondary Core URL for the two-node quorum (§P1-2)", () => {

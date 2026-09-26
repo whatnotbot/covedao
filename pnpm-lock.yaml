@@ -492,10 +492,16 @@ importers:
       '@crclaunch/curve':
         specifier: workspace:*
         version: link:../curve
+      bitcoinjs-lib:
+        specifier: 6.1.8
+        version: 6.1.8
       tiny-secp256k1:
         specifier: ^2.2.3
         version: 2.2.4
     devDependencies:
+      '@crclaunch/cove-vault':
+        specifier: workspace:*
+        version: link:../cove-vault
       tsx:
         specifier: ^4.19.2
         version: 4.23.15

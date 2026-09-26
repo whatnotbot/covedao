@@ -5,6 +5,7 @@ import { TOKEN_CARRIER_SATS, RESERVE_ANCHOR_SATS } from "@crclaunch/cove-covenan
 import { MINT_CMR, REDEEM_CMR } from "@crclaunch/cove-simplicity";
 import { CHAIN_BITCOIN_MAINNET, COVE_POLICY_V3 } from "@crclaunch/cove-wire";
 import { PUBLIC_SUPPLY_ATOMS, GRADUATION_RESERVE_ATOMS } from "@crclaunch/curve";
+import { isKnownTestScript, isKnownTestXOnly } from "./test-keys.js";
 
 /**
  * THE canonical Cove V3 mainnet profile (Phase 8.1 §2-§6). ONE schema, ONE
@@ -22,8 +23,9 @@ import { PUBLIC_SUPPLY_ATOMS, GRADUATION_RESERVE_ATOMS } from "@crclaunch/curve"
 export const MAINNET_PROFILE_DOMAIN = "Cove/MainnetProfile/v1";
 
 export interface MainnetRecoveryProfile {
+  /** 2 (with 3 keys) or 1 (with 1 key). */
   threshold: number;
-  /** 3 x-only pubkeys (64-hex), canonical (lexicographic) order. */
+  /** 3 x-only pubkeys (2-of-3) or 1 (1-of-1), 64-hex, canonical (lexicographic) order. */
   pubkeys: string[];
   /** Relative CSV delay (blocks), null until the operator commits it. */
   csvBlocks: number | null;
@@ -124,12 +126,21 @@ function csvValid(csv: number | null): boolean {
   return csv !== null && Number.isInteger(csv) && csv >= 1 && csv <= 65_535;
 }
 
+export interface ValidateMainnetProfileOptions {
+  /**
+   * TESTS ONLY: accept keys and scripts controlled by the repo's known test
+   * private keys (test/fixtures/mainnet-profile.json uses them). Production
+   * code never sets this; a mainnet profile holding a public key is refused.
+   */
+  allowTestKeys?: boolean;
+}
+
 /**
  * Validate a parsed profile against the frozen protocol constants + the
  * operator-decision completeness rules. Returns every failure (not just the
  * first) so the readiness CLI can report each missing owner decision.
  */
-export function validateMainnetProfile(p: MainnetProfile): MainnetProfileValidationResult {
+export function validateMainnetProfile(p: MainnetProfile, opts: ValidateMainnetProfileOptions = {}): MainnetProfileValidationResult {
   const errors: string[] = [];
   const fail = (e: string) => errors.push(e);
 
@@ -154,10 +165,15 @@ export function validateMainnetProfile(p: MainnetProfile): MainnetProfileValidat
   if (p.guardianXOnly === null) fail("OWNER_DECISION_REQUIRED: guardianXOnly");
   else if (!isXOnlyKey(p.guardianXOnly)) fail("INVALID_GUARDIAN_KEY");
 
-  // Recovery 2-of-3.
-  if (p.recovery.threshold !== 2) fail(`INVALID_RECOVERY_THRESHOLD: ${p.recovery.threshold} != 2`);
+  // Recovery: 2-of-3, or 1-of-1 (one offline key; simpler, but that one key
+  // alone can sweep every vault after the CSV delay).
+  const RECOVERY_KEYS_FOR: Record<number, number> = { 2: 3, 1: 1 };
+  const wantKeys = RECOVERY_KEYS_FOR[p.recovery.threshold];
+  if (wantKeys === undefined) fail(`INVALID_RECOVERY_THRESHOLD: ${p.recovery.threshold} (allowed: 2-of-3 or 1-of-1)`);
   if (p.recovery.pubkeys.length === 0) fail("OWNER_DECISION_REQUIRED: recovery.pubkeys");
-  else if (p.recovery.pubkeys.length !== 3) fail(`INVALID_RECOVERY_KEYS: expected 3, got ${p.recovery.pubkeys.length}`);
+  else if (wantKeys !== undefined && p.recovery.pubkeys.length !== wantKeys) {
+    fail(`INVALID_RECOVERY_KEYS: threshold ${p.recovery.threshold} needs ${wantKeys} key(s), got ${p.recovery.pubkeys.length}`);
+  }
   for (const k of p.recovery.pubkeys) if (!isXOnlyKey(k)) fail(`INVALID_RECOVERY_KEY: ${k.slice(0, 12)}…`);
   if (p.guardianXOnly !== null && p.recovery.pubkeys.some((k) => k.toLowerCase() === p.guardianXOnly!.toLowerCase())) {
     fail("GUARDIAN_KEY_IN_RECOVERY_SET");
@@ -191,6 +207,15 @@ export function validateMainnetProfile(p: MainnetProfile): MainnetProfileValidat
     if (cap === null) fail(`OWNER_DECISION_REQUIRED: canary.${name}`);
     else if (cap <= 0n) fail(`INVALID_CANARY_CAP: ${name} ${cap}`);
   }
+  // Keys and scripts the repo's public test keys control (§8). Their private
+  // keys are in this repository, so a profile using them is spendable by anyone.
+  if (!opts.allowTestKeys) {
+    if (p.guardianXOnly !== null && isKnownTestXOnly(p.guardianXOnly)) fail("TEST_KEY_IN_PROFILE: guardianXOnly");
+    for (const k of p.recovery.pubkeys) if (isKnownTestXOnly(k)) fail(`TEST_KEY_IN_PROFILE: recovery key ${k.slice(0, 12)}…`);
+    if (p.feeScript !== null && isKnownTestScript(p.feeScript)) fail("TEST_KEY_IN_PROFILE: feeScript");
+    for (const w of p.canary.allowedWalletScripts) if (isKnownTestScript(w)) fail(`TEST_KEY_IN_PROFILE: canary wallet ${w.slice(0, 12)}…`);
+  }
+
   // A per-mint cap above the whole protocol supply is not a cap.
   if (p.canary.maxMintAtoms !== null && p.canary.maxMintAtoms > p.maxProtocolSupplyAtoms) {
     fail(`INVALID_CANARY_CAP: maxMintAtoms ${p.canary.maxMintAtoms} exceeds the protocol supply`);
@@ -372,9 +397,12 @@ export function parseMainnetProfileJson(text: string): MainnetProfile {
 }
 
 /** Load + parse + validate a profile file. Throws on parse/validation failure. */
-export function loadMainnetProfile(path: string): { profile: MainnetProfile; validation: MainnetProfileValidationResult } {
+export function loadMainnetProfile(
+  path: string,
+  opts: ValidateMainnetProfileOptions = {},
+): { profile: MainnetProfile; validation: MainnetProfileValidationResult } {
   const text = readFileSync(path, "utf8");
   const profile = parseMainnetProfileJson(text);
-  const validation = validateMainnetProfile(profile);
+  const validation = validateMainnetProfile(profile, opts);
   return { profile, validation };
 }

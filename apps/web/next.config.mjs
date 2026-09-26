@@ -13,9 +13,7 @@ const nextConfig = {
     "@crclaunch/protocol",
     "@crclaunch/wallets",
   ],
-  experimental: {
-    serverComponentsExternalPackages: ["pg", "ioredis", "bullmq"],
-  },
+  serverExternalPackages: ["pg", "ioredis", "bullmq"],
   eslint: {
     ignoreDuringBuilds: true,
   },

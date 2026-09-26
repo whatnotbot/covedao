@@ -114,6 +114,9 @@ with the public test keys, so the standalone Guardian (`pnpm dev:guardian`) is
 not needed for manual testing. Stop with `pnpm dev:infra:down`; wipe the chain
 and database with `pnpm dev:infra:reset`.
 
+Fees go to `COVE_FEE_ADDRESS` from `.env` (a local-only regtest address in
+`.env.example`), as on mainnet; `pnpm dev:fees` shows what it has collected.
+
 Browser wallets do not support regtest, so locally **Connect** lists the
 built-in test wallets (alice, bob, carol) with their BTC. They sign on the
 server with the public fixture keys; disconnect and connect again to switch.

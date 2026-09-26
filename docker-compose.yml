@@ -4,6 +4,7 @@
 #   pnpm dev               run web (http://localhost:3000) + worker
 #   pnpm dev:infra:down    stop (keeps the chain and the database)
 #   pnpm dev:infra:reset   stop and delete the chain and the database
+#   pnpm dev:fees          fees collected at COVE_FEE_ADDRESS (from .env)
 #
 # Credentials match .env.example. Every port binds to 127.0.0.1 only.
 # bitcoind-setup mines 101 blocks and funds the dev wallet identities
@@ -88,6 +89,21 @@ services:
           sleep $${MINE_INTERVAL:-10}
           $$CLI -rpcwallet=dev -generate 1 >/dev/null || $$CLI loadwallet dev >/dev/null 2>&1
         done
+
+  # What the fee address has collected: `pnpm dev:fees`. Reads COVE_FEE_ADDRESS
+  # from the repo-root .env (compose loads it), the same value the app uses.
+  fees:
+    <<: *bitcoin-cli
+    profiles: [tools]
+    restart: "no"
+    environment:
+      CLI: bitcoin-cli -regtest -rpcconnect=bitcoind -rpcport=18443 -rpcuser=user -rpcpassword=pass
+      FEE_ADDRESS: ${COVE_FEE_ADDRESS:-}
+    command:
+      - |
+        if [ -z "$$FEE_ADDRESS" ]; then echo "COVE_FEE_ADDRESS is not set in .env"; exit 1; fi
+        $$CLI scantxoutset start "[\"addr($$FEE_ADDRESS)\"]" \
+          | sed -n 's/.*"total_amount": *\([0-9.]*\).*/fees collected at '"$$FEE_ADDRESS"': \1 BTC/p'
 
   # Legacy V1 mock worker only (apps/worker dev:v1, reindex, demo:reset):
   #   docker compose --profile legacy up -d redis

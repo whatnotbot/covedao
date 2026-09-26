@@ -15,6 +15,7 @@
     "dev:infra": "docker compose up -d --wait && pnpm dev:db",
     "dev:infra:down": "docker compose down",
     "dev:infra:reset": "docker compose down -v",
+    "dev:fees": "docker compose run --rm fees",
     "dev:db": "DATABASE_URL=postgres://cove:cove@127.0.0.1:5432/cove pnpm --filter @crclaunch/db exec drizzle-kit push --force",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

@@ -1,14 +1,12 @@
 /**
  * Runs once when the Next.js server starts.
  *
- * On mainnet the web app and the Guardian must run the same profile, fee
- * address (COVE_FEE_ADDRESS) included: the server stops on a mismatch rather
- * than serve mints and redeems the Guardian or the indexer would reject.
+ * This file is also compiled for the edge runtime, which has no Node built-ins,
+ * so the Node-only check lives in instrumentation-node.ts and is imported only
+ * behind the literal NEXT_RUNTIME test that lets the edge build drop it.
  */
 export async function register() {
-  if (process.env.NEXT_RUNTIME !== "nodejs" || process.env.COVE_NETWORK !== "mainnet") return;
-  const { getV3Services } = await import("@/lib/v3-server");
-  const { watchGuardianAgreement } = await import("@crclaunch/cove-app");
-  const { config, transitionSigner } = getV3Services();
-  watchGuardianAgreement(transitionSigner, config, { service: "web" });
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    await import("./instrumentation-node");
+  }
 }

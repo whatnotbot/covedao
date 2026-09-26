@@ -905,17 +905,19 @@ export class V3AppService {
     }
     const lo = loLots * LOT_TOKENS;
     const perMintTokens = perMintLots * LOT_TOKENS;
+    const base = { carrierSats: TOKEN_CARRIER_SATS, minGrossSats: limits.minGrossSats, maxGrossSats: limits.maxGrossSats } as const;
+    const nothing = { ...base, amountAtoms: 0n, grossSats: 0n, feeSats: 0n, creatorFeeSats: 0n, totalSats: 0n, limitedBy: "budget" } as const;
+    // The budget does not cover one lot (or the curve is minted out): there is
+    // nothing to price, and grossBuy rejects a zero amount.
+    if (lo === 0n) return nothing;
     const c = costOf(lo);
+    if (c.gross < limits.minGrossSats) return nothing;
     const next = lo < remaining ? costOf(lo + LOT_TOKENS) : null;
     const limitedBy =
       lo === remaining ? "supply"
         : lo === perMintTokens || (next !== null && next.total <= budgetSats) ? "per-mint limit"
           : "budget";
-    const base = { carrierSats: TOKEN_CARRIER_SATS, limitedBy, minGrossSats: limits.minGrossSats, maxGrossSats: limits.maxGrossSats } as const;
-    if (lo === 0n || c.gross < limits.minGrossSats) {
-      return { ...base, amountAtoms: 0n, grossSats: 0n, feeSats: 0n, creatorFeeSats: 0n, totalSats: 0n, limitedBy: "budget" };
-    }
-    return { ...base, amountAtoms: lo * ATOMS_PER_TOKEN, grossSats: c.gross, feeSats: c.fee, creatorFeeSats: c.creator, totalSats: c.total };
+    return { ...base, limitedBy, amountAtoms: lo * ATOMS_PER_TOKEN, grossSats: c.gross, feeSats: c.fee, creatorFeeSats: c.creator, totalSats: c.total };
   }
 
   async quoteBackingBuy(tokenId: string, amountAtoms: bigint): Promise<BackingQuote> {

@@ -122,6 +122,10 @@ test("E2E-002 mint: Alice mints by spending sats", async ({ browser }) => {
   minted = BigInt(q.data.amountAtoms);
   expect(minted).toBeGreaterThan(10_000n * T);
   expect(minted % (1_000n * T)).toBe(0n); // whole lots
+  // A budget below one lot (the flat fee alone is 5,000 sats) quotes nothing, not a 500.
+  const tiny = await fetch(`${BASE}/api/v3/backing/buy/quote-sats`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tokenId: aliceTokenId, budgetSats: "100" }) }).then((r) => r.json());
+  expect(tiny.ok).toBe(true);
+  expect(tiny.data.amountAtoms).toBe("0");
   // Two steps on purpose: the price, the protocol fee and the network fee are
   // on screen before anything is built or signed.
   await page.getByRole("button", { name: /review mint/i }).click();

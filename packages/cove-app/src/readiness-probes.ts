@@ -36,9 +36,21 @@ export function evaluateIndexerProbe(health: HealthReport | null, expectedStateR
   return { indexerHealthy, stateRootVerified, stateRoot };
 }
 
+/**
+ * The Postgres advisory-lock key a V3 worker holds for its network. One per
+ * network: testnet and mainnet used to share key 3, so a worker for one could
+ * block (or be mistaken for) the other on a shared database.
+ */
+export function workerLockKey(network: string): number {
+  const keys: Record<string, number> = { regtest: 1, signet: 2, testnet: 3, mainnet: 4 };
+  const key = keys[network];
+  if (key === undefined) throw new Error(`no worker lock key for network "${network}"`);
+  return key;
+}
+
 /** The worker is healthy iff it currently holds the per-network advisory lock. */
 export async function probeWorkerLock(db: Database, network: string): Promise<boolean> {
-  const key = network === "regtest" ? 1 : network === "signet" ? 2 : 3;
+  const key = workerLockKey(network);
   try {
     const res = await db.execute(
       sql`SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND classid = 0 AND objid = ${key} AND objsubid = 1) AS held`,

@@ -8,7 +8,7 @@ import {
   reorgPersistentToTip,
   hydrateState,
 } from "@crclaunch/cove-indexer/v3";
-import { loadV3AppConfig, V3AppService, Metrics, buildAppTransitionSigner } from "@crclaunch/cove-app";
+import { loadV3AppConfig, V3AppService, Metrics, buildAppTransitionSigner, workerLockKey } from "@crclaunch/cove-app";
 import type { V3IndexerConfig } from "@crclaunch/cove-indexer/v3";
 
 /**
@@ -23,8 +23,8 @@ const DB_URL = process.env.COVE_DATABASE_URL ?? process.env.DATABASE_URL ?? "";
 async function acquireNetworkLock(network: string): Promise<Client> {
   const client = new Client({ connectionString: DB_URL });
   await client.connect();
-  // Small deterministic advisory-lock key per network (single-owner guard).
-  const key = network === "regtest" ? 1 : network === "signet" ? 2 : 3;
+  // Deterministic advisory-lock key per network (single-owner guard).
+  const key = workerLockKey(network);
   const res = await client.query("SELECT pg_try_advisory_lock($1)", [key]);
   if (res.rows[0]?.pg_try_advisory_lock !== true) {
     await client.end();

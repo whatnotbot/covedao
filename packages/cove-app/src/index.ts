@@ -80,3 +80,4 @@ export {
   type ResolvedWalletIdentity,
   type ResolvedRole,
 } from "./wallet-identity.js";
+export { workerLockKey } from "./readiness-probes.js";

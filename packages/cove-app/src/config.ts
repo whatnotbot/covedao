@@ -66,6 +66,11 @@ export interface V3AppConfig {
   maxMinerFeeSats: bigint;
   maxListingBlocks: bigint;
   reservationTtlSeconds: number;
+  /**
+   * Mainnet only: the committed profile passed validateMainnetProfile at boot.
+   * The mutation gate requires it, so mainnet never runs on a partial profile.
+   */
+  mainnetProfileValid?: boolean;
   /** Committed profile hash (mainnet) — used to verify the remote Guardian (§P1-2/C4). */
   mainnetProfileHash?: string;
   /** Remote Guardian service endpoint (mainnet). */
@@ -228,6 +233,7 @@ export function loadV3AppConfig(env: Env, opts: LoadV3AppConfigOptions = {}): V3
       maxMinerFeeSats: 20_000n,
       maxListingBlocks: 21_000n,
       reservationTtlSeconds: 90,
+      mainnetProfileValid: true, // loadMainnetConfig threw otherwise
       mainnetProfileHash: hashMainnetProfile(profile),
       guardianEndpoint: env.COVE_GUARDIAN_ENDPOINT,
       guardianAuthToken: env.COVE_GUARDIAN_AUTH_TOKEN,

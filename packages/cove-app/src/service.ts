@@ -269,6 +269,9 @@ export class V3AppService {
     // key, or without an ord server; signing goes only to the remote Guardian,
     // which checks the same profile hash and key; and the profile's canary
     // allowlists and caps still apply to every mutation.
+    if (this.config.network === "mainnet" && this.config.mainnetProfileValid !== true) {
+      throw new AppError("MAINNET_DISABLED", "mainnet mutations need the committed profile to validate");
+    }
     return this.config.network;
   }
 

@@ -114,7 +114,7 @@ class RegtestRpc {
       await this.call("createwallet", [name, false, false, "", false, true, false]);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (!/already exists/i.test(msg)) throw e; /* on a node that persists (scripts/alkanes-up.sh) the wallet exists but may not be loaded */ await this.call("loadwallet", [name]).catch((le: Error) => { if (!/already loaded/i.test(le.message)) throw le; });
+      if (!/already exists/i.test(msg)) throw e; /* on a node that persists between runs the wallet exists but may not be loaded */ await this.call("loadwallet", [name]).catch((le: Error) => { if (!/already loaded/i.test(le.message)) throw le; });
     }
   }
 

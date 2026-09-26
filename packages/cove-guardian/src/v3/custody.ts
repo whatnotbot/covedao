@@ -1,7 +1,7 @@
-import { readFileSync, statSync } from "node:fs";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { ECPairFactory, type ECPairInterface } from "ecpair";
+import { isKnownTestPrivateKeyHex } from "@crclaunch/cove-mainnet";
 import {
   type GuardianV3Signer,
   computeVaultExecutionSighash,
@@ -46,46 +46,41 @@ export class TestGuardianCustodyBackend implements GuardianCustodyBackend {
 }
 
 /**
- * Production custody from a key FILE: the `guardian.key` the offline ceremony
- * writes (64 hex characters, mode 0600). The Guardian signs every mint and
- * redeem automatically, so this is a hot key: keep the file only on the
- * Guardian's own machine, on an encrypted disk, readable by its user alone.
+ * Production custody from the environment: GUARDIAN_KEY_HEX, exactly 64 hex
+ * characters. The Guardian signs every mint and redeem automatically, so this
+ * is a hot key: set it only on the Guardian service, never on web or worker.
  *
- * Loading refuses a file that group or others can read, a malformed key, and
- * (when `expectedXOnlyHex` is given) a key that is not the one the committed
- * profile names — so a wrong file cannot sign for the wrong vaults.
+ * The key stays inside this object: there is no method that returns it.
+ * Loading refuses a malformed key and any of the repo's public test keys
+ * (their private halves are in this repository).
  */
-export class FileGuardianCustodyBackend implements GuardianCustodyBackend {
-  private readonly key: ECPairInterface;
-  private readonly xOnly: Buffer;
+export class EnvGuardianCustodyBackend implements GuardianCustodyBackend {
+  readonly #key: ECPairInterface;
+  readonly #xOnly: Buffer;
   private constructor(priv: Buffer) {
     const ECPair = ECPairFactory(ecc);
-    this.key = ECPair.fromPrivateKey(priv);
-    this.xOnly = Buffer.from(this.key.publicKey.subarray(1));
+    this.#key = ECPair.fromPrivateKey(priv);
+    this.#xOnly = Buffer.from(this.#key.publicKey.subarray(1));
   }
 
-  static load(path: string, expectedXOnlyHex?: string): FileGuardianCustodyBackend {
-    const mode = statSync(path).mode & 0o777;
-    if ((mode & 0o077) !== 0) {
-      throw new Error(`GUARDIAN_KEY_FILE ${path} is readable by group or others (mode ${mode.toString(8)}); chmod 600 it`);
-    }
-    const hex = readFileSync(path, "utf8").trim();
-    if (!/^[0-9a-f]{64}$/i.test(hex)) throw new Error("GUARDIAN_KEY_FILE must hold exactly 64 hex characters");
-    const priv = Buffer.from(hex, "hex");
-    if (!ecc.isPrivate(priv)) throw new Error("GUARDIAN_KEY_FILE is not a valid secp256k1 private key");
-    // ECPair keeps this buffer as the key, so it is not wiped here.
-    const backend = new FileGuardianCustodyBackend(priv);
-    if (expectedXOnlyHex !== undefined && backend.xOnly.toString("hex") !== expectedXOnlyHex.toLowerCase()) {
-      throw new Error("GUARDIAN_KEY_FILE does not match the profile's guardianXOnly; refusing to sign for other vaults");
-    }
-    return backend;
+  static fromHex(hex: string | undefined): EnvGuardianCustodyBackend {
+    const h = (hex ?? "").trim();
+    if (!/^[0-9a-fA-F]{64}$/.test(h)) throw new Error("GUARDIAN_KEY_HEX must be exactly 64 hex characters");
+    if (isKnownTestPrivateKeyHex(h)) throw new Error("GUARDIAN_KEY_HEX is one of the repo's public test keys; generate a real key");
+    const priv = Buffer.from(h, "hex");
+    if (!ecc.isPrivate(priv)) throw new Error("GUARDIAN_KEY_HEX is not a valid secp256k1 private key");
+    return new EnvGuardianCustodyBackend(priv);
   }
 
   async xOnlyPubkey(): Promise<Buffer> {
-    return Buffer.from(this.xOnly);
+    return Buffer.from(this.#xOnly);
   }
   async signTaprootScriptPath(params: { sighash: Buffer; leafTapleafHash: Buffer }): Promise<Buffer> {
-    return Buffer.from(ecc.signSchnorr(params.sighash, this.key.privateKey!));
+    return Buffer.from(ecc.signSchnorr(params.sighash, this.#key.privateKey!));
+  }
+  /** Never print the key, even by accident. */
+  toJSON(): string {
+    return "[EnvGuardianCustodyBackend]";
   }
 }
 

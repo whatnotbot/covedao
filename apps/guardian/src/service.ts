@@ -1,6 +1,6 @@
 import * as bitcoin from "bitcoinjs-lib";
 import { createDb } from "@crclaunch/db";
-import { resolveMainnetProfile, type MainnetProfile } from "@crclaunch/cove-mainnet";
+import type { MainnetProfile, ResolvedMainnetProfile } from "@crclaunch/cove-mainnet";
 import type { VaultRecoveryProfile } from "@crclaunch/cove-vault";
 import { CoreRpcProvider } from "@crclaunch/bitcoin";
 import {
@@ -25,8 +25,10 @@ import type { Database } from "@crclaunch/db";
  */
 
 export interface GuardianServiceConfig {
-  /** TEST-ONLY profile file (regtest CI); the committed profile otherwise. Refused on mainnet. */
-  testOnlyProfilePath?: string;
+  /** The committed profile (or, in regtest CI, a test-only one); see boot.ts. */
+  profile: ResolvedMainnetProfile;
+  /** Reported by /health (e.g. the deployed commit). */
+  releaseId: string;
   databaseUrl: string;
   network: "regtest" | "signet" | "testnet" | "mainnet";
   custodyBackend: GuardianCustodyBackend;
@@ -90,9 +92,9 @@ export function riskPolicyFromProfile(profile: MainnetProfile): GuardianRiskPoli
 
 export function buildGuardianService(config: GuardianServiceConfig): BuiltGuardianService {
   if (config.network === "mainnet" && !config.ordUrl) {
-    throw new Error("GUARDIAN_ORD_URL is required on mainnet: funding inputs must be checked for inscriptions and runes");
+    throw new Error("mainnet needs an ord server (committed network settings): funding inputs must be checked for inscriptions and runes");
   }
-  const { profile, validation, profileHash } = resolveMainnetProfile({ network: config.network, testOnlyPath: config.testOnlyProfilePath });
+  const { profile, validation, profileHash } = config.profile;
   if (!validation.ok) {
     throw new Error(`invalid mainnet profile: ${validation.errors.join("; ")}`);
   }
@@ -101,7 +103,7 @@ export function buildGuardianService(config: GuardianServiceConfig): BuiltGuardi
   }
   const guardianXOnly = profile.guardianXOnly;
   const recoveryProfile = recoveryProfileFromMainnet(profile);
-  const recoveryKeyXOnly = recoveryProfile.recoveryPubkeys[0]!; // unused for MAINNET1 (2-of-3)
+  const recoveryKeyXOnly = recoveryProfile.recoveryPubkeys[0]!; // unused for MAINNET1
   const feeScript = Buffer.from(profile.feeScript, "hex");
   const riskPolicy = riskPolicyFromProfile(profile);
 
@@ -113,12 +115,36 @@ export function buildGuardianService(config: GuardianServiceConfig): BuiltGuardi
     assets: config.ordUrl ? ordAssetLookup(config.ordUrl) : undefined,
   });
   const signingBackend: GuardianSigningBackend = custodySigningBackend(config.custodyBackend);
-  const signer = new LocalGuardianTransitionSigner(
-    signingBackend,
-    new PostgresSigningJournal(db),
-    new PostgresGuardianAudit(db, "COVE_V3_VAULT_PROFILE_MAINNET1"),
-    riskPolicy,
-  );
+  const journal = new PostgresSigningJournal(db);
+  const audit = new PostgresGuardianAudit(db, "COVE_V3_VAULT_PROFILE_MAINNET1");
+  const signer = new LocalGuardianTransitionSigner(signingBackend, journal, audit, riskPolicy);
+
+  // /health reports what a signature actually needs, probed live — not the
+  // in-process fixture's hard-coded "all green".
+  const healthProbe = async () => {
+    let custodyBackendReady = false;
+    try {
+      custodyBackendReady = (await config.custodyBackend.xOnlyPubkey()).toString("hex") === guardianXOnly.toLowerCase();
+    } catch {
+      custodyBackendReady = false; // unconfigured backend throws
+    }
+    let auditHeadHash = "";
+    let auditHealthy = false;
+    try {
+      auditHeadHash = await audit.headHash(config.network);
+      auditHealthy = true;
+    } catch {
+      auditHealthy = false;
+    }
+    let signingJournalHealthy = false;
+    try {
+      await journal.probe(config.network);
+      signingJournalHealthy = true;
+    } catch {
+      signingJournalHealthy = false;
+    }
+    return { releaseId: config.releaseId, auditHeadHash, auditHealthy, signingJournalHealthy, custodyBackendReady };
+  };
 
   const transport = new InProcessGuardianTransport({
     signer,
@@ -135,6 +161,7 @@ export function buildGuardianService(config: GuardianServiceConfig): BuiltGuardi
     buyFeeBps: BigInt(profile.buyFeeBps!),
     redeemFeeBps: BigInt(profile.redeemFeeBps!),
     fundingChecker,
+    healthProbe,
   });
 
   return { transport, profile, profileHash, guardianXOnly, core };

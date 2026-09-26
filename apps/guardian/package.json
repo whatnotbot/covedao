@@ -19,8 +19,10 @@
     "@crclaunch/cove-indexer": "workspace:*",
     "@crclaunch/cove-mainnet": "workspace:*",
     "@crclaunch/cove-vault": "workspace:*",
+    "@crclaunch/cove-wire": "workspace:*",
     "@crclaunch/db": "workspace:*",
-    "bitcoinjs-lib": "^6.1.7"
+    "bitcoinjs-lib": "^6.1.7",
+    "dotenv": "^16.4.7"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

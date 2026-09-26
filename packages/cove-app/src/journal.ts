@@ -15,6 +15,15 @@ import { SIGNING_JOURNAL_TTL_MS, type SigningJournalStore, type SigningReservati
 export class PostgresSigningJournal implements SigningJournalStore {
   constructor(readonly db: Database) {}
 
+  /** Health probe: the journal table answers a read. Throws when it cannot. */
+  async probe(network: string): Promise<void> {
+    await this.db
+      .select({ network: schema.coveV3SigningJournal.network })
+      .from(schema.coveV3SigningJournal)
+      .where(eq(schema.coveV3SigningJournal.network, network))
+      .limit(1);
+  }
+
   private rowKey(params: { network: string; backingTxid: string; backingVout: number }) {
     return and(
       eq(schema.coveV3SigningJournal.network, params.network),

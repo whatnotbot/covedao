@@ -125,23 +125,41 @@ export interface InProcessGuardianTransportOptions {
   redeemFeeBps?: bigint;
   /** The SERVICE's own funding-input checks, from its own Core and DB. */
   fundingChecker: FundingInputChecker;
+  /**
+   * Real readiness for /health: custody key present and matching the profile,
+   * audit and journal stores answering. Without it, health reports the
+   * in-process fixture defaults (tests only).
+   */
+  healthProbe?: () => Promise<GuardianHealthProbe>;
+}
+
+export interface GuardianHealthProbe {
+  releaseId: string;
+  auditHeadHash: string;
+  auditHealthy: boolean;
+  signingJournalHealthy: boolean;
+  custodyBackendReady: boolean;
 }
 
 /** In-process transport (tests/fixtures): calls the signing service directly. */
 export class InProcessGuardianTransport implements GuardianTransport {
   constructor(private readonly opts: InProcessGuardianTransportOptions) {}
   async health(): Promise<GuardianHealthWire> {
-    return {
-      reachable: true,
-      releaseId: "in-process-fixture",
-      profileHash: this.opts.profileHash,
-      guardianXOnly: this.opts.guardianXOnly,
-      auditHeadHash: "0".repeat(64),
-      auditHealthy: true,
-      signingJournalHealthy: true,
-      custodyBackendReady: true,
-      signingEnabled: true,
-    };
+    const base = { reachable: true, profileHash: this.opts.profileHash, guardianXOnly: this.opts.guardianXOnly };
+    if (!this.opts.healthProbe) {
+      return {
+        ...base,
+        releaseId: "in-process-fixture",
+        auditHeadHash: "0".repeat(64),
+        auditHealthy: true,
+        signingJournalHealthy: true,
+        custodyBackendReady: true,
+        signingEnabled: true,
+      };
+    }
+    const p = await this.opts.healthProbe();
+    // Signing is enabled only when every dependency of a signature is ready.
+    return { ...base, ...p, signingEnabled: p.custodyBackendReady && p.auditHealthy && p.signingJournalHealthy };
   }
   async sign(req: GuardianSignRequestWire): Promise<GuardianSignResponseWire> {
     const { psbt } = this.opts.decode(req.psbtBase64);
@@ -188,10 +206,15 @@ export class HttpGuardianTransport implements GuardianTransport {
     // §C15: enforce TLS in production. Local loopback is the only allowed
     // non-https exception (dev/integration).
     const url = new URL(endpoint);
-    const local = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
-    if (url.protocol !== "https:" && !local) {
-      throw new Error("HttpGuardianTransport requires an https:// endpoint (or localhost for dev)");
+    const local = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1" || url.hostname === "[::1]";
+    // Railway private networking: service-to-service traffic on
+    // *.railway.internal stays inside the project's private network, which
+    // does not offer TLS. The bearer token is still required.
+    const railwayPrivate = url.protocol === "http:" && url.hostname.endsWith(".railway.internal");
+    if (url.protocol !== "https:" && !local && !railwayPrivate) {
+      throw new Error("HttpGuardianTransport requires an https:// endpoint (or localhost, or http on *.railway.internal)");
     }
+    if (!authToken) throw new Error("HttpGuardianTransport requires a bearer token");
     this.endpoint = endpoint;
     this.authToken = authToken;
     this.timeoutMs = timeoutMs;

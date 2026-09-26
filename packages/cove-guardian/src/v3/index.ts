@@ -16,7 +16,7 @@ export {
   localSigningBackend,
   custodySigningBackend,
   TestGuardianCustodyBackend,
-  FileGuardianCustodyBackend,
+  EnvGuardianCustodyBackend,
   UnconfiguredGuardianCustodyBackend,
   type GuardianCustodyBackend,
   type GuardianSigningBackend,

@@ -62,12 +62,18 @@ importers:
       '@crclaunch/cove-vault':
         specifier: workspace:*
         version: link:../../packages/cove-vault
+      '@crclaunch/cove-wire':
+        specifier: workspace:*
+        version: link:../../packages/cove-wire
       '@crclaunch/db':
         specifier: workspace:*
         version: link:../../packages/db
       bitcoinjs-lib:
         specifier: 6.1.8
         version: 6.1.8
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
     devDependencies:
       '@types/node':
         specifier: ^22.10.0

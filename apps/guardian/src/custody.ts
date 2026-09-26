@@ -1,5 +1,5 @@
 import {
-  FileGuardianCustodyBackend,
+  EnvGuardianCustodyBackend,
   TestGuardianCustodyBackend,
   UnconfiguredGuardianCustodyBackend,
   type GuardianCustodyBackend,
@@ -8,25 +8,28 @@ import {
 /**
  * Select the Guardian custody backend (§C5).
  *
- * - `GUARDIAN_KEY_FILE`: the ceremony's `guardian.key` (mode 0600). The
- *   production backend; allowed on every network, and it must match the
- *   profile's guardianXOnly when one is given.
- * - `GUARDIAN_TEST_KEY_HEX`: REGTEST/tests only. FORBIDDEN on mainnet.
- * - Neither: the fail-closed unconfigured backend, which signs nothing.
+ * Mainnet (or a committed mainnet profile): GUARDIAN_KEY_HEX is REQUIRED and
+ * GUARDIAN_TEST_KEY_HEX is FORBIDDEN. The key may not be a repo test key.
  *
- * Setting both is refused, so it is never unclear which key signs.
+ * Other networks (unchanged): GUARDIAN_TEST_KEY_HEX selects the test backend;
+ * GUARDIAN_KEY_HEX is also accepted; neither selects the fail-closed
+ * unconfigured backend, which signs nothing.
  */
 export function selectCustodyBackend(
   network: string,
-  keys: { testKeyHex?: string; keyFile?: string; expectedXOnlyHex?: string },
+  keys: { testKeyHex?: string; keyHex?: string },
 ): GuardianCustodyBackend {
-  if (keys.testKeyHex && keys.keyFile) {
-    throw new Error("set GUARDIAN_KEY_FILE or GUARDIAN_TEST_KEY_HEX, not both");
+  if (keys.testKeyHex && keys.keyHex) {
+    throw new Error("set GUARDIAN_KEY_HEX or GUARDIAN_TEST_KEY_HEX, not both");
   }
-  if (network === "mainnet" && keys.testKeyHex) {
-    throw new Error("GUARDIAN_TEST_KEY_HEX is forbidden on mainnet — a production custody backend is required");
+  if (network === "mainnet") {
+    if (keys.testKeyHex) {
+      throw new Error("GUARDIAN_TEST_KEY_HEX is forbidden on mainnet — a production custody backend is required");
+    }
+    if (!keys.keyHex) throw new Error("GUARDIAN_KEY_HEX is required on mainnet");
+    return EnvGuardianCustodyBackend.fromHex(keys.keyHex);
   }
-  if (keys.keyFile) return FileGuardianCustodyBackend.load(keys.keyFile, keys.expectedXOnlyHex);
+  if (keys.keyHex) return EnvGuardianCustodyBackend.fromHex(keys.keyHex);
   return keys.testKeyHex
     ? new TestGuardianCustodyBackend(Buffer.from(keys.testKeyHex, "hex"))
     : new UnconfiguredGuardianCustodyBackend();

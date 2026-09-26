@@ -145,15 +145,14 @@ jobs:
       # package cwd (pnpm --filter), so this must be absolute.
       - name: Start the real Guardian service
         run: |
+          COVE_NETWORK=regtest \
           COVE_DATABASE_URL="$DATABASE_URL" \
           COVE_TEST_ONLY_PROFILE_PATH="$GITHUB_WORKSPACE/test/fixtures/mainnet-profile.json" \
+          COVE_BITCOIN_RPC_URL=http://127.0.0.1:18443 \
+          COVE_BITCOIN_RPC_USER="$COVE_REGTEST_RPC_USER" \
+          COVE_BITCOIN_RPC_PASSWORD="$COVE_REGTEST_RPC_PASSWORD" \
           GUARDIAN_AUTH_TOKEN=ci-readiness-token \
-          GUARDIAN_NETWORK=regtest \
           GUARDIAN_TEST_KEY_HEX=$(printf '42%.0s' $(seq 1 32)) \
-          GUARDIAN_BITCOIN_RPC_URL=http://127.0.0.1:18443 \
-          GUARDIAN_BITCOIN_RPC_USER="$COVE_REGTEST_RPC_USER" \
-          GUARDIAN_BITCOIN_RPC_PASSWORD="$COVE_REGTEST_RPC_PASSWORD" \
-          GUARDIAN_PORT=4391 \
           nohup pnpm --filter @crclaunch/guardian start > /tmp/guardian.log 2>&1 &
           for i in $(seq 1 60); do
             curl -fsS -H "Authorization: Bearer ci-readiness-token" \

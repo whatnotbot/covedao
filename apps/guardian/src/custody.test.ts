@@ -1,63 +1,63 @@
 import { describe, expect, it } from "vitest";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import * as ecc from "tiny-secp256k1";
 import { selectCustodyBackend } from "./custody.js";
 import {
-  FileGuardianCustodyBackend,
+  EnvGuardianCustodyBackend,
   TestGuardianCustodyBackend,
   UnconfiguredGuardianCustodyBackend,
 } from "@crclaunch/cove-guardian/v3";
 
-const PRIV = "42".repeat(32);
-const XONLY = Buffer.from(ecc.pointFromScalar(Buffer.from(PRIV, "hex"), true)!.subarray(1)).toString("hex");
-
-function keyFile(contents: string, mode: number): string {
-  const path = join(mkdtempSync(join(tmpdir(), "guardian-key-")), "guardian.key");
-  writeFileSync(path, contents);
-  chmodSync(path, mode);
-  return path;
-}
+const TEST_KEY = "42".repeat(32);
+// Not a repo test key: fine for a unit test, never used anywhere else.
+const REAL_KEY = "7a".repeat(32);
+const REAL_XONLY = Buffer.from(ecc.pointFromScalar(Buffer.from(REAL_KEY, "hex"), true)!.subarray(1)).toString("hex");
 
 describe("Guardian custody backend selection (§C5)", () => {
-  it("refuses the test backend on mainnet", () => {
-    expect(() => selectCustodyBackend("mainnet", { testKeyHex: PRIV })).toThrow(/forbidden on mainnet/);
+  it("mainnet requires GUARDIAN_KEY_HEX and forbids the test key", () => {
+    expect(() => selectCustodyBackend("mainnet", {})).toThrow(/GUARDIAN_KEY_HEX is required on mainnet/);
+    expect(() => selectCustodyBackend("mainnet", { testKeyHex: TEST_KEY })).toThrow(/forbidden on mainnet/);
+    expect(selectCustodyBackend("mainnet", { keyHex: REAL_KEY })).toBeInstanceOf(EnvGuardianCustodyBackend);
   });
 
-  it("allows the test backend on regtest/signet/testnet", () => {
+  it("non-mainnet is unchanged: test key → test backend, none → unconfigured", () => {
     for (const network of ["regtest", "signet", "testnet"]) {
-      expect(selectCustodyBackend(network, { testKeyHex: PRIV })).toBeInstanceOf(TestGuardianCustodyBackend);
+      expect(selectCustodyBackend(network, { testKeyHex: TEST_KEY })).toBeInstanceOf(TestGuardianCustodyBackend);
+      expect(selectCustodyBackend(network, {})).toBeInstanceOf(UnconfiguredGuardianCustodyBackend);
     }
   });
 
-  it("fails closed (unconfigured) when no key is supplied", () => {
-    expect(selectCustodyBackend("mainnet", {})).toBeInstanceOf(UnconfiguredGuardianCustodyBackend);
-    expect(selectCustodyBackend("regtest", {})).toBeInstanceOf(UnconfiguredGuardianCustodyBackend);
+  it("refuses both keys at once", () => {
+    expect(() => selectCustodyBackend("regtest", { keyHex: REAL_KEY, testKeyHex: TEST_KEY })).toThrow(/not both/);
   });
+});
 
-  it("loads the ceremony key file on mainnet and signs with it", async () => {
-    const backend = selectCustodyBackend("mainnet", { keyFile: keyFile(PRIV + "\n", 0o600), expectedXOnlyHex: XONLY });
-    expect(backend).toBeInstanceOf(FileGuardianCustodyBackend);
-    expect((await backend.xOnlyPubkey()).toString("hex")).toBe(XONLY);
+describe("EnvGuardianCustodyBackend", () => {
+  it("signs with the key and exposes only the public key", async () => {
+    const b = EnvGuardianCustodyBackend.fromHex(REAL_KEY);
+    expect((await b.xOnlyPubkey()).toString("hex")).toBe(REAL_XONLY);
     const sighash = Buffer.alloc(32, 7);
-    const sig = await backend.signTaprootScriptPath({ sighash, leafTapleafHash: Buffer.alloc(32) });
-    expect(ecc.verifySchnorr(sighash, Buffer.from(XONLY, "hex"), sig)).toBe(true);
+    const sig = await b.signTaprootScriptPath({ sighash, leafTapleafHash: Buffer.alloc(32) });
+    expect(ecc.verifySchnorr(sighash, Buffer.from(REAL_XONLY, "hex"), sig)).toBe(true);
+    // No way to read the key back out.
+    expect(JSON.stringify(b)).not.toContain(REAL_KEY);
+    expect(Object.keys(b)).toEqual([]);
+    expect(Object.getOwnPropertyNames(Object.getPrototypeOf(b)).sort()).toEqual(["constructor", "signTaprootScriptPath", "toJSON", "xOnlyPubkey"]);
   });
 
-  it("refuses a key file others can read", () => {
-    expect(() => selectCustodyBackend("mainnet", { keyFile: keyFile(PRIV, 0o644) })).toThrow(/chmod 600/);
+  it("requires exactly 64 hex characters", () => {
+    expect(() => EnvGuardianCustodyBackend.fromHex(undefined)).toThrow(/64 hex/);
+    expect(() => EnvGuardianCustodyBackend.fromHex("ab".repeat(31))).toThrow(/64 hex/);
+    expect(() => EnvGuardianCustodyBackend.fromHex("zz".repeat(32))).toThrow(/64 hex/);
   });
 
-  it("refuses a key that is not the profile's Guardian key", () => {
-    expect(() => selectCustodyBackend("mainnet", { keyFile: keyFile(PRIV, 0o600), expectedXOnlyHex: "11".repeat(32) })).toThrow(/does not match/);
+  it("refuses every known repo test key", () => {
+    for (const b of ["42", "43", "44", "46", "47", "48", "49", "51", "52", "53"]) {
+      expect(() => EnvGuardianCustodyBackend.fromHex(b.repeat(32))).toThrow(/public test keys/);
+      expect(() => EnvGuardianCustodyBackend.fromHex(b.toUpperCase().repeat(32))).toThrow(/public test keys/);
+    }
   });
 
-  it("refuses a malformed key file", () => {
-    expect(() => selectCustodyBackend("mainnet", { keyFile: keyFile("not a key", 0o600) })).toThrow(/64 hex/);
-  });
-
-  it("refuses both a key file and a test key", () => {
-    expect(() => selectCustodyBackend("regtest", { keyFile: keyFile(PRIV, 0o600), testKeyHex: PRIV })).toThrow(/not both/);
+  it("refuses an invalid scalar", () => {
+    expect(() => EnvGuardianCustodyBackend.fromHex("00".repeat(32))).toThrow(/not a valid/);
   });
 });

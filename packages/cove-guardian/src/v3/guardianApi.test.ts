@@ -189,4 +189,26 @@ describe("remote Guardian client (§24)", () => {
     expect(() => new HttpGuardianTransport("https://guardian.example.com", "t")).not.toThrow();
     expect(() => new HttpGuardianTransport("http://localhost:4391", "t")).not.toThrow();
   });
+
+  it("allows plain http only on Railway's private network, and always needs a token", () => {
+    expect(() => new HttpGuardianTransport("http://guardian.railway.internal:4391", "t")).not.toThrow();
+    expect(() => new HttpGuardianTransport("http://guardian.railway.internal.evil.com:4391", "t")).toThrow(/https/);
+    expect(() => new HttpGuardianTransport("http://railway.internal.example.com", "t")).toThrow(/https/);
+    expect(() => new HttpGuardianTransport("ftp://guardian.railway.internal", "t")).toThrow(/https/);
+    expect(() => new HttpGuardianTransport("http://guardian.railway.internal:4391", "")).toThrow(/bearer token/);
+    expect(() => new HttpGuardianTransport("https://guardian.example.com", "")).toThrow(/bearer token/);
+  });
+
+  it("/health reports the live probe, and signing is enabled only when custody, audit and journal are all ready", async () => {
+    const probe = { releaseId: "abc", auditHeadHash: "11".repeat(32), auditHealthy: true, signingJournalHealthy: true, custodyBackendReady: true };
+    const mk = (p: typeof probe) => {
+      const t = transportFor(new CoveChainView());
+      (t as unknown as { opts: { healthProbe: () => Promise<typeof probe> } }).opts.healthProbe = async () => p;
+      return t;
+    };
+    expect(await mk(probe).health()).toMatchObject({ releaseId: "abc", auditHeadHash: "11".repeat(32), custodyBackendReady: true, signingEnabled: true });
+    expect((await mk({ ...probe, custodyBackendReady: false }).health()).signingEnabled).toBe(false);
+    expect((await mk({ ...probe, auditHealthy: false }).health()).signingEnabled).toBe(false);
+    expect((await mk({ ...probe, signingJournalHealthy: false }).health()).signingEnabled).toBe(false);
+  });
 });

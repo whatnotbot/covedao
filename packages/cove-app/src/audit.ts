@@ -39,7 +39,8 @@ function digestFields(r: AuditRecord): GuardianAuditDigestFields {
 export class PostgresGuardianAudit implements DurableAuditSink {
   constructor(readonly db: Database, readonly vaultProfileVersion: string = "COVE_V3_VAULT_PROFILE_DEV1") {}
 
-  private async headHash(network: string): Promise<string> {
+  /** The latest audit record's hash (all zeros when empty). Also the health probe. */
+  async headHash(network: string): Promise<string> {
     const rows = await this.db
       .select({ auditHash: schema.coveV3GuardianAudit.auditHash })
       .from(schema.coveV3GuardianAudit)

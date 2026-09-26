@@ -196,15 +196,16 @@ describe("mock chain end-to-end", () => {
     for (let i = 0; i < 3; i++) {
       const mint = await adapter.buildMint({
         deploymentId: token.deploymentId, ticker: "RORG", buyerAddress: buyer, treasuryAddress: TREASURY,
-        tokenAmountAtoms: 1_000n, curveContributionSats: 8_692n, platformFeeSats: 87n,
-        minerFeeSats: 450n, currentSupplyAtoms: BigInt(i * 1_000), stateHash: await node.getStateHash(),
+        // 50,000 tokens a mint: stair 1, stair 1, then stair 2 (33 then 66 sats a lot).
+        tokenAmountAtoms: 50_000n, curveContributionSats: [1_650n, 1_650n, 3_300n][i]!, platformFeeSats: [17n, 17n, 33n][i]!,
+        minerFeeSats: 450n, currentSupplyAtoms: BigInt(i * 50_000), stateHash: await node.getStateHash(),
       });
       await signAndSubmit(adapter, mint, buyer);
       await node.mineBlock();
     }
 
     const before = await adapter.getTokenByDeployment(token.deploymentId);
-    expect(before!.confirmedMintedAtoms).toBe(3_000n);
+    expect(before!.confirmedMintedAtoms).toBe(150_000n);
 
     await node.reorg(3);
     const afterReorg = await adapter.getTokenByDeployment(token.deploymentId);
@@ -213,7 +214,7 @@ describe("mock chain end-to-end", () => {
     // Re-mine the returned mempool txs.
     for (let i = 0; i < 3; i++) await node.mineBlock();
     const afterRemine = await adapter.getTokenByDeployment(token.deploymentId);
-    expect(afterRemine!.confirmedMintedAtoms).toBe(3_000n);
+    expect(afterRemine!.confirmedMintedAtoms).toBe(150_000n);
   });
 
   it("mint is rejected when buyer lacks BTC", async () => {

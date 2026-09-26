@@ -21,7 +21,7 @@ import {
   type TokenIdentityInput,
 } from "@crclaunch/cove-wire";
 import { grossBuy } from "@crclaunch/cove-economics";
-import { deterministicFee, mintFeeSats, creatorFeeSats, CREATOR_RECORD_SATS, dustThreshold, COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
+import { mintFeeSats, redeemFeeSats as redeemFeeOf, creatorFeeSats, CREATOR_RECORD_SATS, dustThreshold, COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
 import type { Sats } from "@crclaunch/curve";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
@@ -415,7 +415,7 @@ export function buildRedeemPsbtV3(params: {
       recoveryProfile: params.recoveryProfile,
     network: params.network,
   });
-  const redeemFeeSats = deterministicFee(grossSats, params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps, params.redeemFeeFlatSats ?? COVE_FEE_CONFIG.redeemFeeFlatSats);
+  const redeemFeeSats = redeemFeeOf(grossSats, params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps, params.redeemFeeFlatSats ?? COVE_FEE_CONFIG.redeemFeeFlatSats);
   const netSats = grossSats - redeemFeeSats;
   const changeAtoms = params.tokenInputTotalAtoms - params.redeemAmountAtoms;
   if (changeAtoms < 0n) throw new Error("redeem exceeds token input");

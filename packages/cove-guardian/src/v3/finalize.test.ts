@@ -27,7 +27,7 @@ const guardianXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x42), tr
 const recoveryXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x43), true)!.subarray(1));
 const NONCE = Buffer.alloc(32, 0xab);
 const feeScript = Buffer.from("0014" + "f".repeat(40), "hex");
-const MINT_AMOUNT = 10_000n * 100_000_000n;
+const MINT_AMOUNT = 1_000_000n * 100_000_000n;
 const DEPLOY_TXID = "aa".repeat(32);
 const MINT_TXID = "ff".repeat(32);
 
@@ -135,7 +135,7 @@ describe("finalize — full/partial redeem BTC change layout (§3)", () => {
   it.skipIf(!isSimplicityAvailable())("partial redeem + token change carrier (5 outputs) → valid", async () => {
     const s = mintedSetup();
     // Redeem 60M (leave 24M change): gross 37,350 → fee 374 clears P2WPKH dust.
-    const raw = redeemRaw(6_000n * 100_000_000n, 0n);
+    const raw = redeemRaw(600_000n * 100_000_000n, 0n);
     const r = await validateFinalizedRedeemTransaction({ rawTxHex: raw, view: s.view, ...base() });
     expect("ok" in r).toBe(false);
   });

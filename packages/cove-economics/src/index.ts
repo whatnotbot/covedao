@@ -24,6 +24,8 @@ export {
   deterministicFee,
   mintFeeSats,
   creatorFeeSats,
+  redeemFeeSats,
+  CREATOR_MIN_SATS,
   isCreatorScript,
   CREATOR_RECORD_SATS,
   type CoveFeeConfig,

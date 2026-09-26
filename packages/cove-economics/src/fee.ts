@@ -41,6 +41,8 @@ export interface CoveFeeConfig {
   redeemFeeBps: BasisPoints;
   /** Flat sats deducted from every redemption payout. */
   redeemFeeFlatSats: Sats;
+  /** The redemption fee never drops below this. */
+  redeemFeeMinSats: Sats;
   /** Peer-to-peer marketplace fee, in basis points. */
   p2pFeeBps: BasisPoints;
   /** Flat sats added to every peer-to-peer fill. */
@@ -62,7 +64,7 @@ export const COVE_FEE_CONFIG: CoveFeeConfig = {
   // buy is ever refused for a dust fee.
   buyFeeBps: 750n, // 7.50%
   buyFeeFlatSats: 5_000n, // per mint
-  buyFeeLotSats: 500n, // per 1,000-token lot
+  buyFeeLotSats: 10n, // per 1,000-token lot
   // The creator is paid as the token sells, not by taking the backing: the
   // vault still holds the full curve price, so redemption is never short.
   creatorFeeBps: 2_000n, // 20% of the curve price
@@ -70,6 +72,8 @@ export const COVE_FEE_CONFIG: CoveFeeConfig = {
   // that 7.5% would be dust is refused by the quote as too small to make.
   redeemFeeBps: 750n, // 7.50%
   redeemFeeFlatSats: 0n,
+  // Floor, so a small sell-back's fee output is never dust.
+  redeemFeeMinSats: 1_000n,
   // Marketplace: a clean percentage, floored so a small fill is never refused
   // for a dust fee.
   p2pFeeBps: 750n, // 7.50%
@@ -126,9 +130,26 @@ export function mintFeeSats(
  */
 export const CREATOR_RECORD_SATS: Sats = 1_000n;
 
-/** The creator's share of a mint: a percentage of the curve price, rounded up. */
+/**
+ * Smallest creator payment: at or above the dust limit of every address type
+ * a creator can have (P2SH is the highest, 540). Early lots cost a few sats,
+ * so a bare 20% would be an output Bitcoin refuses to relay.
+ */
+export const CREATOR_MIN_SATS: Sats = 546n;
+
+/** The creator's share of a mint: a percentage of the curve price, rounded up, never below dust. */
 export function creatorFeeSats(grossSats: Sats, creatorBps: BasisPoints = COVE_FEE_CONFIG.creatorFeeBps): Sats {
-  return deterministicFee(grossSats, creatorBps);
+  return deterministicFee(grossSats, creatorBps, 0n, CREATOR_MIN_SATS);
+}
+
+/** The fee on a sell-back to the vault: a percentage plus any flat part, floored. */
+export function redeemFeeSats(
+  grossSats: Sats,
+  feeBps: BasisPoints = COVE_FEE_CONFIG.redeemFeeBps,
+  flatSats: Sats = COVE_FEE_CONFIG.redeemFeeFlatSats,
+  minSats: Sats = COVE_FEE_CONFIG.redeemFeeMinSats,
+): Sats {
+  return deterministicFee(grossSats, feeBps, flatSats, minSats);
 }
 
 /** Scripts a creator can be paid to: native segwit, nested segwit or Taproot. */

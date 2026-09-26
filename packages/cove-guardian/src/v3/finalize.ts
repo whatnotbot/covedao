@@ -9,7 +9,7 @@ import {
 import { buildBackingVaultV3, type VaultRecoveryProfile } from "@crclaunch/cove-vault";
 import { executeMintV3, executeRedeemV3 } from "@crclaunch/cove-simplicity";
 import { OP_DEPLOY, OP_MINT, OP_REDEEM, OP_TRANSFER, computeTokenId } from "@crclaunch/cove-wire";
-import { COVE_FEE_CONFIG, CREATOR_RECORD_SATS, checkFeeSettlement, creatorFeeSats, deterministicFee, isCreatorScript, mintFeeSats, isP2TR, isP2WPKH } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, CREATOR_RECORD_SATS, checkFeeSettlement, creatorFeeSats, isCreatorScript, mintFeeSats, redeemFeeSats, isP2TR, isP2WPKH } from "@crclaunch/cove-economics";
 import { s0StateV2 } from "@crclaunch/cove-covenant";
 import { RESERVE_ANCHOR_SATS } from "./builder.js";
 import { decodeCoveOpReturnTx } from "./resolve.js";
@@ -362,7 +362,7 @@ export async function validateFinalizedRedeemTransaction(params: FinalizeParams)
   } catch (e) {
     return reject(`REFERENCE_POLICY_REJECTED: ${(e as Error).message}`);
   }
-  const protocolFeeSats = deterministicFee(grossSats, params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps, params.redeemFeeFlatSats ?? COVE_FEE_CONFIG.redeemFeeFlatSats);
+  const protocolFeeSats = redeemFeeSats(grossSats, params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps, params.redeemFeeFlatSats ?? COVE_FEE_CONFIG.redeemFeeFlatSats);
   const netPayoutSats = grossSats - protocolFeeSats;
 
   const nextVault = buildBackingVaultV3({

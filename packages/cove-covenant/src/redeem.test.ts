@@ -19,7 +19,7 @@ const MINT_50M = 100_000n * ATOMS_PER_TOKEN;
 describe("canonical curve unification (§1.2) + applyRedeem", () => {
   it("applyMint contribution == R-delta == grossBuy", () => {
     const r = applyMint(S0, MINT_50M);
-    expect(r.curveContributionSats).toBe(869_200n);
+    expect(r.curveContributionSats).toBe(3_300n);
     // backing invariant: state.reserveSats == R(issuedSupply in tokens)
     const supplyTokens = r.nextState.publicSupplyAtoms / ATOMS_PER_TOKEN;
     expect(r.nextState.reserveSats).toBe(requiredBackingSats(supplyTokens));
@@ -28,7 +28,7 @@ describe("canonical curve unification (§1.2) + applyRedeem", () => {
   it("applyRedeem: mint then redeem returns to S0 (reserve 0)", () => {
     const mint = applyMint(S0, MINT_50M);
     const redeem = applyRedeem(mint.nextState, MINT_50M);
-    expect(redeem.grossRedeemSats).toBe(869_200n);
+    expect(redeem.grossRedeemSats).toBe(3_300n);
     expect(redeem.nextState.publicSupplyAtoms).toBe(0n);
     expect(redeem.nextState.reserveSats).toBe(0n);
     expect(redeem.nextState.curveStage).toBe(1);

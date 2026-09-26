@@ -24,7 +24,7 @@ import {
   validateRedeemTransitionV3,
 } from "@crclaunch/cove-guardian/v3";
 import { loadCanonicalViewSnapshotFromDb, computeHealth, getTokenUtxosByScriptDb, getLiveTokenUtxosAtDb } from "@crclaunch/cove-indexer/v3";
-import { grossBuy, grossRedeem, deterministicFee, mintFeeSats, creatorFeeSats, CREATOR_RECORD_SATS, checkRedeemPayout } from "@crclaunch/cove-economics";
+import { grossBuy, grossRedeem, deterministicFee, mintFeeSats, redeemFeeSats, creatorFeeSats, CREATOR_RECORD_SATS, checkRedeemPayout } from "@crclaunch/cove-economics";
 import { ATOMS_PER_TOKEN, LOT_TOKENS, PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
 import { canonicalTicker, computeTokenId, OP_MINT, OP_REDEEM, type ParsedEnvelopeV2 } from "@crclaunch/cove-wire";
 import {
@@ -1051,7 +1051,7 @@ export class V3AppService {
     if (amountAtoms <= 0n || amountAtoms % ATOMS_PER_TOKEN !== 0n) throw new AppError("TOKEN_AMOUNT_INVALID", "redeem requires whole display tokens");
     const backing = await this.loadBacking(tokenId);
     const gross = grossRedeem(backing.state.issuedPublicSupplyAtoms / ATOMS_PER_TOKEN, amountAtoms / ATOMS_PER_TOKEN);
-    const fee = deterministicFee(gross, this.config.redeemFeeBps, this.config.redeemFeeFlatSats);
+    const fee = redeemFeeSats(gross, this.config.redeemFeeBps, this.config.redeemFeeFlatSats);
     // Quote the refusal here rather than letting it surface from the builder:
     // the user asked what this is worth, and "less than nothing" is the answer.
     assertRedeemPayoutIsPayable({ grossSats: gross, feeSats: fee, payoutScript: this.config.feeScript });

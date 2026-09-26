@@ -91,7 +91,8 @@ async function topUp(n: MockChainNode, address: string): Promise<void> {
 }
 
 // For 1,000 tokens from supply 0: required curve = 8,692 sats, platform = 87 sats.
-const VALID = { amount: 1_000n, curve: 8_692n, platform: 87n };
+// Half a stair: 50,000 tokens at 33 sats a lot, above the 1,000-sat minimum and still on stair 1.
+const VALID = { amount: 50_000n, curve: 1_650n, platform: 17n };
 
 describe("adversarial mint validation (tampered envelopes, no builder)", () => {
   beforeAll(async () => {
@@ -111,10 +112,10 @@ describe("adversarial mint validation (tampered envelopes, no builder)", () => {
     const r = await submit(mintEnvelope({ deploymentId: frogId, amount: VALID.amount, supplyBefore: 0n, curveAmt: VALID.curve, platformAmt: VALID.platform }), BUYER);
     expect(r.status).toBe("CONFIRMED");
     const after = snapshot();
-    expect(after.minted).toBe(1_000n);
-    expect(after.buyerTokens).toBe(1_000n);
-    expect(after.reserve).toBe(8_692n);
-    expect(after.platform).toBe(before.platform + 87n);
+    expect(after.minted).toBe(50_000n);
+    expect(after.buyerTokens).toBe(50_000n);
+    expect(after.reserve).toBe(1_650n);
+    expect(after.platform).toBe(before.platform + 17n);
     expect(after.invariants).toEqual([]);
   });
 

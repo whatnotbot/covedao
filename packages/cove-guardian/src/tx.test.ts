@@ -83,14 +83,14 @@ function expectReject(psbt: bitcoin.Psbt, signer: TaprootGuardianSigner, reason:
 describe("buildMintPsbt + validateMintTx (canonical MINT layout)", () => {
   it("builds a canonical tx that passes end-to-end validation", () => {
     const { analysis } = buildValid();
-    // MINT one stair -> 869,200 sats curve contribution (golden), 1% platform fee = 8,692.
-    expect(analysis.curveContributionSats).toBe(869_200n);
-    expect(analysis.platformFeeSats).toBe(8_692n);
+    // MINT one stair -> 3,300 sats curve contribution (golden), 1% platform fee = 33.
+    expect(analysis.curveContributionSats).toBe(3_300n);
+    expect(analysis.platformFeeSats).toBe(33n);
     expect(analysis.minerFeeSats).toBe(MINER_FEE);
     expect(analysis.buyerChangeSats).toBe(
-      BUYER_FUND - 869_200n - TOKEN_COMMITMENT_SATS - 8_692n - MINER_FEE,
+      BUYER_FUND - 3_300n - TOKEN_COMMITMENT_SATS - 33n - MINER_FEE,
     );
-    expect(analysis.nextState.reserveSats).toBe(869_200n);
+    expect(analysis.nextState.reserveSats).toBe(3_300n);
     expect(analysis.nextState.publicSupplyAtoms).toBe(MINT_42M);
   });
 

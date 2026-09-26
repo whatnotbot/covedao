@@ -8,22 +8,22 @@ const M = 1_000_000n;
 const STAGE = 100_000n;
 
 describe("requiredBackingSats R(s) golden vectors (stairs210)", () => {
-  it("R(0) = 0, R(100k) = 869,200, R(200k) = 1,775,800", () => {
+  it("R(0) = 0, R(100k) = 3,300, R(200k) = 9,900", () => {
     expect(requiredBackingSats(0n)).toBe(0n);
-    expect(requiredBackingSats(STAGE)).toBe(869_200n);
-    expect(requiredBackingSats(2n * STAGE)).toBe(1_775_800n);
+    expect(requiredBackingSats(STAGE)).toBe(3_300n);
+    expect(requiredBackingSats(2n * STAGE)).toBe(9_900n);
   });
-  it("R(21M) = 1,003,275,000 sats (full raise)", () => {
-    expect(requiredBackingSats(PUBLIC_SUPPLY)).toBe(1_003_275_000n);
+  it("R(21M) = 73,111,500 sats (full raise)", () => {
+    expect(requiredBackingSats(PUBLIC_SUPPLY)).toBe(73_111_500n);
   });
 });
 
 describe("quoteBuy / quoteRedeem golden vectors", () => {
-  it("buy one stair from 0 = 869,200 gross, 120,190 fee (5,000 + 100 lots × 500 + 7.5%)", () => {
-    expect(quoteBuy(0n, STAGE)).toEqual({ gross: 869_200n, fee: 120_190n, net: 989_390n });
+  it("buy one stair from 0 = 3,300 gross, 6,248 fee (5,000 + 100 lots × 10 + 7.5%)", () => {
+    expect(quoteBuy(0n, STAGE)).toEqual({ gross: 3_300n, fee: 6_248n, net: 9_548n });
   });
-  it("redeem one stair from one stair = 869,200 gross, 65,190 fee (7.5%)", () => {
-    expect(quoteRedeem(STAGE, STAGE)).toEqual({ gross: 869_200n, fee: 65_190n, net: 804_010n });
+  it("redeem one stair from one stair = 3,300 gross, 1,000 fee (7.5%, floored at 1,000)", () => {
+    expect(quoteRedeem(STAGE, STAGE)).toEqual({ gross: 3_300n, fee: 1_000n, net: 2_300n });
   });
   it("deterministicFee rounds up", () => {
     expect(deterministicFee(1n, 100n)).toBe(1n); // 0.01 sat → 1 sat
@@ -76,10 +76,10 @@ describe("P0 invariant: buy→redeem round trip cannot drain backing", () => {
 
   it("redemption reduces issued supply and releases capacity for re-buy", () => {
     // Sell out, redeem 1M, re-buy 1M: capacity is restored.
-    expect(requiredBackingSats(PUBLIC_SUPPLY)).toBe(1_003_275_000n);
+    expect(requiredBackingSats(PUBLIC_SUPPLY)).toBe(73_111_500n);
     const afterRedeem = PUBLIC_SUPPLY - M;
     const redeemGross = grossRedeem(PUBLIC_SUPPLY, M);
-    expect(requiredBackingSats(afterRedeem)).toBe(1_003_275_000n - redeemGross);
+    expect(requiredBackingSats(afterRedeem)).toBe(73_111_500n - redeemGross);
     // 1M is buyable again from afterRedeem.
     expect(() => grossBuy(afterRedeem, M)).not.toThrow();
     expect(requiredBackingSats(afterRedeem) + grossBuy(afterRedeem, M)).toBe(
@@ -100,8 +100,8 @@ describe("boundary / failure cases", () => {
     expect(() => grossRedeem(STAGE, STAGE + 1n)).toThrow(/issued/);
   });
   it("single-unit quantities work", () => {
-    // 1 token at 8,692 sats a lot is 8.692 sats, rounded up.
-    expect(grossBuy(0n, 1n)).toBe(9n);
-    expect(grossRedeem(1n, 1n)).toBe(9n);
+    // 1 token at 33 sats a lot is 0.033 sats, rounded up.
+    expect(grossBuy(0n, 1n)).toBe(1n);
+    expect(grossRedeem(1n, 1n)).toBe(1n);
   });
 });

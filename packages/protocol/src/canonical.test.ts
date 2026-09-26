@@ -49,6 +49,6 @@ describe("CanonicalCRCProvider (mock)", () => {
       requestedAmountAtoms: 1_000n * 100_000_000n, // one lot @ 8dp
     });
     expect(auth.authorized).toBe(true);
-    expect(auth.requiredPaymentSats).toBe(8_692n); // stair 1: 8,692 sats a lot
+    expect(auth.requiredPaymentSats).toBe(33n); // stair 1: 33 sats a lot
   });
 });

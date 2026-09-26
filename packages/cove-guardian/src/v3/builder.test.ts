@@ -5,7 +5,7 @@ import { ECPairFactory } from "ecpair";
 import { s0StateV2, applyMintV2, applyRedeemV2, TOKEN_CARRIER_SATS } from "@crclaunch/cove-covenant";
 import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
 import { CHAIN_BITCOIN_REGTEST, decodeV2, discoveryAgreesWithBinary } from "@crclaunch/cove-wire";
-import { creatorFeeSats, deterministicFee, mintFeeSats } from "@crclaunch/cove-economics";
+import { creatorFeeSats, mintFeeSats, redeemFeeSats } from "@crclaunch/cove-economics";
 import {
   buildDeployPsbtV3,
   buildMintPsbtV3,
@@ -79,7 +79,7 @@ describe("V3 builders (offline)", () => {
         script: d.vault.scriptPubKey,
         valueSats: RESERVE_ANCHOR_SATS,
       },
-      mintAmountAtoms: 10_000n * 100_000_000n,
+      mintAmountAtoms: 1_000_000n * 100_000_000n,
       guardianXOnly,
       recoveryKeyXOnly: recoveryXOnly,
       buyerInputs: [
@@ -96,10 +96,10 @@ describe("V3 builders (offline)", () => {
       minerFeeSats: 1_000n,
       creatorScript: Buffer.from("0014" + "c".repeat(40), "hex"),
     });
-    const expected = applyMintV2(d.s0, 10_000n * 100_000_000n);
+    const expected = applyMintV2(d.s0, 1_000_000n * 100_000_000n);
     expect(mint.nextState.backingSats).toBe(expected.nextState.backingSats);
-    expect(mint.grossSats).toBe(86_920n);
-    expect(mint.buyFeeSats).toBe(16_519n);
+    expect(mint.grossSats).toBe(181_500n);
+    expect(mint.buyFeeSats).toBe(28_613n);
     // State input spends the PREV vault (MINT leaf).
     expect(mint.psbt.data.inputs[0]!.tapMerkleRoot!.equals(mint.prevVault.merkleRoot)).toBe(true);
     // Successor output is the NEXT vault.
@@ -128,10 +128,10 @@ describe("V3 builders (offline)", () => {
           valueSats: TOKEN_CARRIER_SATS,
         },
       ],
-      tokenInputTotalAtoms: 10_000n * 100_000_000n,
+      tokenInputTotalAtoms: 1_000_000n * 100_000_000n,
       tokenOutputs: [
-        { script: Buffer.from("0014" + "b".repeat(40), "hex"), amountAtoms: 5_000n * 100_000_000n },
-        { script: Buffer.from("0014" + "c".repeat(40), "hex"), amountAtoms: 5_000n * 100_000_000n },
+        { script: Buffer.from("0014" + "b".repeat(40), "hex"), amountAtoms: 500_000n * 100_000_000n },
+        { script: Buffer.from("0014" + "c".repeat(40), "hex"), amountAtoms: 500_000n * 100_000_000n },
       ],
       funderInputs: [
         {
@@ -152,8 +152,8 @@ describe("V3 builders (offline)", () => {
     const env = decodeV2(t.psbt.txOutputs[0]!.script.subarray(2));
     expect(env.op).toBe(2); // TRANSFER
     expect((env as { allocations: { vout: number; amount: bigint }[] }).allocations).toEqual([
-      { vout: 1, amount: 5_000n * 100_000_000n },
-      { vout: 2, amount: 5_000n * 100_000_000n },
+      { vout: 1, amount: 500_000n * 100_000_000n },
+      { vout: 2, amount: 500_000n * 100_000_000n },
     ]);
     // Conservation violation must throw.
     expect(() =>
@@ -173,7 +173,7 @@ describe("V3 builders (offline)", () => {
 
   it("REDEEM: script-path REDEEM leaf, successor backing = R(next), net = gross - fee", () => {
     const d = deploy();
-    const mintAmountAtoms = 10_000n * 100_000_000n;
+    const mintAmountAtoms = 1_000_000n * 100_000_000n;
     const minted = applyMintV2(d.s0, mintAmountAtoms);
     const r = buildRedeemPsbtV3({
       network: bitcoin.networks.regtest,
@@ -209,9 +209,9 @@ describe("V3 builders (offline)", () => {
     const expected = applyRedeemV2(minted.nextState, mintAmountAtoms);
     expect(r.nextState.backingSats).toBe(expected.nextState.backingSats);
     expect(r.nextState.issuedPublicSupplyAtoms).toBe(0n);
-    expect(r.grossSats).toBe(86_920n);
-    expect(r.redeemFeeSats).toBe(6_519n);
-    expect(r.netSats).toBe(80_401n);
+    expect(r.grossSats).toBe(181_500n);
+    expect(r.redeemFeeSats).toBe(13_613n);
+    expect(r.netSats).toBe(167_887n);
     expect(r.changeAtoms).toBe(0n);
     // State input spends the PREV vault via the REDEEM leaf.
     expect(r.psbt.data.inputs[0]!.tapMerkleRoot!.equals(r.prevVault.merkleRoot)).toBe(true);
@@ -220,7 +220,7 @@ describe("V3 builders (offline)", () => {
     ).toBe(true);
     // [0] OP_RETURN, [1] successor vault, [2] payout, [3] fee (no change carrier, no BTC change).
     expect(r.psbt.txOutputs[1]!.script.equals(r.nextVault.scriptPubKey)).toBe(true);
-    expect(r.psbt.txOutputs[2]!.value).toBe(80_401);
+    expect(r.psbt.txOutputs[2]!.value).toBe(167_887);
     const env = decodeV2(r.psbt.txOutputs[0]!.script.subarray(2));
     expect(env.op).toBe(4); // REDEEM
     expect((env as { redeemAmount: bigint }).redeemAmount).toBe(mintAmountAtoms);
@@ -228,7 +228,7 @@ describe("V3 builders (offline)", () => {
 
   it("MINT: protocol fee schedule is parameterized (profile-driven), not the dev default", () => {
     const d = deploy();
-    const mintAmountAtoms = 10_000n * 100_000_000n;
+    const mintAmountAtoms = 1_000_000n * 100_000_000n;
     const gross = applyMintV2(d.s0, mintAmountAtoms).grossSats;
     const mint = buildMintPsbtV3({
       network: bitcoin.networks.regtest,
@@ -248,21 +248,21 @@ describe("V3 builders (offline)", () => {
       creatorScript: Buffer.from("0014" + "c".repeat(40), "hex"),
     });
     expect(mint.buyFeeSats).toBe(mintFeeSats(gross, mintAmountAtoms, 50n, 7n));
-    expect(mint.buyFeeSats).not.toBe(16_519n); // the dev default (stage-scaled flat + 750 bps)
+    expect(mint.buyFeeSats).not.toBe(28_613n); // the dev default (stage-scaled flat + 750 bps)
   });
 
   it("REDEEM: protocol fee schedule is parameterized (profile-driven), not the dev default", () => {
     const d = deploy();
-    const minted = applyMintV2(d.s0, 10_000n * 100_000_000n);
-    const gross = applyRedeemV2(minted.nextState, 10_000n * 100_000_000n).grossSats;
+    const minted = applyMintV2(d.s0, 1_000_000n * 100_000_000n);
+    const gross = applyRedeemV2(minted.nextState, 1_000_000n * 100_000_000n).grossSats;
     const r = buildRedeemPsbtV3({
       network: bitcoin.networks.regtest,
       tokenId: d.tokenId,
       prevState: minted.nextState,
       prevBacking: { txid: "e".repeat(64), vout: 1, script: buildBackingVaultV3({ state: minted.nextState, guardianXOnly, recoveryKeyXOnly: recoveryXOnly }).scriptPubKey, valueSats: RESERVE_ANCHOR_SATS + minted.nextState.backingSats },
-      redeemAmountAtoms: 10_000n * 100_000_000n,
+      redeemAmountAtoms: 1_000_000n * 100_000_000n,
       tokenInputs: [{ txid: "f".repeat(64), vout: 1, script: Buffer.from("0014" + "e".repeat(40), "hex"), valueSats: TOKEN_CARRIER_SATS }],
-      tokenInputTotalAtoms: 10_000n * 100_000_000n,
+      tokenInputTotalAtoms: 1_000_000n * 100_000_000n,
       guardianXOnly,
       recoveryKeyXOnly: recoveryXOnly,
       sellerPayoutScript: Buffer.from("0014" + "e".repeat(40), "hex"),
@@ -272,8 +272,9 @@ describe("V3 builders (offline)", () => {
       redeemFeeBps: 50n,
       redeemFeeFlatSats: 7n,
     });
-    expect(r.redeemFeeSats).toBe(deterministicFee(gross, 50n, 7n));
-    expect(r.redeemFeeSats).not.toBe(6_519n); // the dev default (7.5%)
+    // 0.5% + 7 is 915 here, under the 1,000-sat floor every sell-back pays.
+    expect(r.redeemFeeSats).toBe(redeemFeeSats(gross, 50n, 7n));
+    expect(r.redeemFeeSats).not.toBe(13_613n); // the dev default (7.5%)
   });
 });
 
@@ -290,7 +291,7 @@ describe("crc-20 discovery envelope in the built PSBT (§D1)", () => {
         script: d.vault.scriptPubKey,
         valueSats: RESERVE_ANCHOR_SATS,
       },
-      mintAmountAtoms: 10_000n * 100_000_000n,
+      mintAmountAtoms: 1_000_000n * 100_000_000n,
       guardianXOnly,
       recoveryKeyXOnly: recoveryXOnly,
       buyerInputs: [
@@ -327,7 +328,7 @@ describe("crc-20 discovery envelope in the built PSBT (§D1)", () => {
     expect(last.script[0]).toBe(0x6a);
     expect(last.value).toBe(0);
     expect(Buffer.from(last.script).subarray(2).toString("utf8")).toBe(
-      '{"p":"crc-20","op":"mint","tick":"FROG","amt":"1000000000000"}',
+      '{"p":"crc-20","op":"mint","tick":"FROG","amt":"100000000000000"}',
     );
   });
 
@@ -366,7 +367,7 @@ describe("REDEEM miner-fee funding", () => {
     funderSats?: bigint;
   }) {
     const d = deploy();
-    const mintAmountAtoms = 10_000n * 100_000_000n;
+    const mintAmountAtoms = 1_000_000n * 100_000_000n;
     const minted = applyMintV2(d.s0, mintAmountAtoms);
     const per = mintAmountAtoms / BigInt(opts.carriers);
     return buildRedeemPsbtV3({
@@ -404,7 +405,7 @@ describe("REDEEM miner-fee funding", () => {
     });
   }
 
-  const ALL = 10_000n * 100_000_000n;
+  const ALL = 1_000_000n * 100_000_000n;
   const HALF = ALL / 2n;
 
   it("still refuses a partial redeem from one carrier when nothing funds the fee", () => {
@@ -439,7 +440,7 @@ describe("REDEEM miner-fee funding", () => {
       minerFeeSats: 12_000n,
       funderSats: 50_000n,
     });
-    expect(r.netSats).toBe(80_401n);
+    expect(r.netSats).toBe(167_887n);
   });
 
   it("refuses that fee without a funder, as before", () => {
@@ -524,9 +525,9 @@ describe("dust change is absorbed into the miner fee, and reported", () => {
   it("reports the real fee for a mint too", () => {
     const d = deploy();
     const anchorAndFee = RESERVE_ANCHOR_SATS;
-    const minted = applyMintV2(d.s0, 10_000n * 100_000_000n);
+    const minted = applyMintV2(d.s0, 1_000_000n * 100_000_000n);
     const gross = minted.grossSats;
-    const buyFee = mintFeeSats(gross, 10_000n * 100_000_000n, 750n, 5_000n);
+    const buyFee = mintFeeSats(gross, 1_000_000n * 100_000_000n, 750n, 5_000n);
     // Fund exactly enough to leave 100 sats of change: below dust.
     const funding = gross + buyFee + creatorFeeSats(gross) + TOKEN_CARRIER_SATS + 1_000n + 100n;
     const m = buildMintPsbtV3({
@@ -543,7 +544,7 @@ describe("dust change is absorbed into the miner fee, and reported", () => {
         }).scriptPubKey,
         valueSats: anchorAndFee,
       },
-      mintAmountAtoms: 10_000n * 100_000_000n,
+      mintAmountAtoms: 1_000_000n * 100_000_000n,
       guardianXOnly,
       recoveryKeyXOnly: recoveryXOnly,
       buyerInputs: [{ txid: "b".repeat(64), vout: 0, script: WALLET, valueSats: funding }],

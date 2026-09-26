@@ -28,17 +28,17 @@ export const TEAM_ALLOCATION_TOKENS: DisplayTokens = 0n;
  * The curve is an even staircase: 210 stairs of 100,000 tokens. Tokens are
  * minted and redeemed in lots of 1,000, and every lot on a stair costs the
  * same. Each stair is LOT_STEP_SATS dearer per lot than the last, so the
- * price climbs by the same amount at every step: 8,692 sats a lot on the
- * first stair, 86,858 on the last, about ten BTC for the whole supply.
+ * price climbs by the same amount at every step, from near zero: 33 sats a
+ * lot on the first stair, 6,930 on the last, 73,111,500 sats for the whole supply.
  */
 export const STAGE_COUNT = 210;
 export const TOKENS_PER_STAGE: DisplayTokens = 100_000n;
 /** Mints and redemptions move whole lots. */
 export const LOT_TOKENS: DisplayTokens = 1_000n;
 /** Price of one lot on the first stair, in sats. */
-export const LOT_BASE_SATS: Sats = 8_692n;
+export const LOT_BASE_SATS: Sats = 33n;
 /** How much dearer a lot is on each stair than on the one below. */
-export const LOT_STEP_SATS: Sats = 374n;
+export const LOT_STEP_SATS: Sats = 33n;
 
 /** Satoshis per 1,000,000 display tokens. */
 export const PRICE_UNIT_TOKENS: DisplayTokens = 1_000_000n;

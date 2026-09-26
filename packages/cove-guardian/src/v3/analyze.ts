@@ -5,7 +5,7 @@ import {
   type CoveStateV2,
 } from "@crclaunch/cove-covenant";
 import { OP_MINT, OP_REDEEM } from "@crclaunch/cove-wire";
-import { COVE_FEE_CONFIG, creatorFeeSats, deterministicFee, mintFeeSats } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, creatorFeeSats, mintFeeSats, redeemFeeSats } from "@crclaunch/cove-economics";
 import { decodeCoveOpReturn, readPsbtInputs, readPsbtOutputs } from "./resolve.js";
 import {
   type CoveCanonicalView,
@@ -177,7 +177,7 @@ export function analyzeRedeemTransitionV3(params: AnalyzeParams): RedeemAnalysis
     throw new CoveAnalyzeError("REFERENCE_POLICY_REJECTED", (e as Error).message);
   }
 
-  const protocolFeeSats = deterministicFee(grossSats, params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps, params.redeemFeeFlatSats ?? COVE_FEE_CONFIG.redeemFeeFlatSats);
+  const protocolFeeSats = redeemFeeSats(grossSats, params.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps, params.redeemFeeFlatSats ?? COVE_FEE_CONFIG.redeemFeeFlatSats);
   const netPayoutSats = grossSats - protocolFeeSats;
   const outputs = readPsbtOutputs(params.psbt);
   const totalIn = inputs.reduce((s, i) => s + i.valueSats, 0n);

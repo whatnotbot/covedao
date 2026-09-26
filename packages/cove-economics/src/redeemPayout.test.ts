@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkRedeemPayout } from "./redeemPayout.js";
 import { grossRedeem } from "./backing.js";
-import { deterministicFee, COVE_FEE_CONFIG } from "./fee.js";
+import { deterministicFee, COVE_FEE_CONFIG, redeemFeeSats } from "./fee.js";
 
 const P2WPKH = Buffer.from("0014" + "cc".repeat(20), "hex");
 const P2TR = Buffer.from("5120" + "cc".repeat(32), "hex");
@@ -31,14 +31,20 @@ describe("checkRedeemPayout", () => {
     expect(checkRedeemPayout(2_830n, 2_500n, P2TR).isPayable).toBe(true);
   });
 
-  it("on the live curve even a single lot at stair 1 clears the 7.5% exit fee", () => {
-    // One lot (1,000 tokens) at the opening stair is worth 8,692 sats; 7.5% of
-    // it leaves 8,040 — well above dust.
+  it("on the live curve a single lot at stair 1 is too small to sell back", () => {
+    // One lot (1,000 tokens) at the opening stair is worth 33 sats, under the
+    // 1,000-sat floor on the exit fee.
     const gross = grossRedeem(100_000n, 1_000n);
-    const fee = deterministicFee(gross, COVE_FEE_CONFIG.redeemFeeBps, COVE_FEE_CONFIG.redeemFeeFlatSats);
-    const c = checkRedeemPayout(gross, fee, P2WPKH);
-    expect(gross).toBe(8_692n);
-    expect(c.netSats).toBe(8_040n);
+    const c = checkRedeemPayout(gross, redeemFeeSats(gross), P2WPKH);
+    expect(gross).toBe(33n);
+    expect(c.isPayable).toBe(false);
+  });
+
+  it("a whole stair clears the exit fee", () => {
+    // 100 lots at 33 sats = 3,300; the 1,000-sat fee floor leaves 2,300.
+    const gross = grossRedeem(100_000n, 100_000n);
+    const c = checkRedeemPayout(gross, redeemFeeSats(gross), P2WPKH);
+    expect(c.netSats).toBe(2_300n);
     expect(c.isPayable).toBe(true);
   });
 

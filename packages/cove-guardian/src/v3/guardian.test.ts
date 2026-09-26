@@ -32,7 +32,7 @@ const guardianXOnly = signer.xOnlyPubkey();
 const recoveryXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x43), true)!.subarray(1));
 const NONCE = Buffer.alloc(32, 0xab);
 const feeScript = Buffer.from("0014" + "f".repeat(40), "hex"); // valid P2WPKH
-const MINT_AMOUNT = 10_000n * 100_000_000n;
+const MINT_AMOUNT = 1_000_000n * 100_000_000n;
 
 type K = ReturnType<typeof ECPair.makeRandom>;
 function p2wpkh(key: K): Buffer {

@@ -307,7 +307,7 @@ async function main(): Promise<void> {
   console.log(line);
   console.log("STEP 2/6 — MINT/BUY (Alice, 10k tokens)");
   const aliceUtxo = await fundKey(rpc, provider, alice, 1.0, mineAddr);
-  const mintAmountAtoms = 10_000n * 100_000_000n;
+  const mintAmountAtoms = 1_000_000n * 100_000_000n;
   const mint1 = buildMintPsbtV3({
     network: bitcoin.networks.regtest,
     tokenId,
@@ -360,8 +360,8 @@ async function main(): Promise<void> {
   const mint1Txid = await broadcastValidated(validatedOrThrow(mint1Fin, "MINT"));
   rawTxs.push(mint1Hex);
   await confirm(mint1Txid, "MINT");
-  assert(mint1.grossSats === 86_920n, `mint gross ${mint1.grossSats}`);
-  assert(mint1.buyFeeSats === 16_519n, `mint fee ${mint1.buyFeeSats}`);
+  assert(mint1.grossSats === 181_500n, `mint gross ${mint1.grossSats}`);
+  assert(mint1.buyFeeSats === 28_613n, `mint fee ${mint1.buyFeeSats}`);
   const aliceCarrier: OutPoint = { txid: mint1Txid, vout: 2 };
   view.mint({
     tokenId,
@@ -467,9 +467,9 @@ async function main(): Promise<void> {
   const redeemTxid = await broadcastValidated(validatedOrThrow(redeemFin, "REDEEM"));
   rawTxs.push(redeemHex);
   await confirm(redeemTxid, "REDEEM");
-  assert(redeem.grossSats === 86_920n, `redeem gross ${redeem.grossSats}`);
-  assert(redeem.redeemFeeSats === 6_519n, `redeem fee ${redeem.redeemFeeSats}`);
-  assert(redeem.netSats === 80_401n, `redeem net ${redeem.netSats}`);
+  assert(redeem.grossSats === 181_500n, `redeem gross ${redeem.grossSats}`);
+  assert(redeem.redeemFeeSats === 13_613n, `redeem fee ${redeem.redeemFeeSats}`);
+  assert(redeem.netSats === 167_887n, `redeem net ${redeem.netSats}`);
   assert(redeem.changeAtoms === 0n, "full redeem must have zero token change");
   view.redeem({
     tokenId,
@@ -566,7 +566,7 @@ async function main(): Promise<void> {
   const p2pFee = deterministicFee(p2pPrice, COVE_FEE_CONFIG.p2pFeeBps, COVE_FEE_CONFIG.p2pFeeFlatSats);
   assert(p2pFee === 7_500n, `p2p fee ${p2pFee}`); // 7.5% of 100,000, floored at 1,000
   const carolFund = await fundKey(rpc, provider, carol, 0.2, mineAddr);
-  const halfAtoms = 5_000n * 100_000_000n;
+  const halfAtoms = 500_000n * 100_000_000n;
   const p2p = buildTransferPsbtV2({
     network: bitcoin.networks.regtest,
     tokenId,

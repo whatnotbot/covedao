@@ -6,7 +6,7 @@ import { eq, and, isNull } from "drizzle-orm";
 import { CHAIN_BITCOIN_REGTEST, computeTokenId, encodeDeployV2, encodeMintV2, encodeRedeemV2, encodeTransferV2 } from "@crclaunch/cove-wire";
 import { applyMintV2, applyRedeemV2, s0StateV2 } from "@crclaunch/cove-covenant";
 import { buildBackingVaultV3 } from "@crclaunch/cove-vault";
-import { COVE_FEE_CONFIG, CREATOR_RECORD_SATS, creatorFeeSats, deterministicFee, mintFeeSats } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, CREATOR_RECORD_SATS, creatorFeeSats, mintFeeSats, redeemFeeSats } from "@crclaunch/cove-economics";
 import { V3IndexerState } from "./state.js";
 import { V3Store } from "./store.js";
 import { RESERVE_ANCHOR_SATS } from "./constants.js";
@@ -22,7 +22,7 @@ const recoveryXOnly = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x43), tr
 const NONCE = Buffer.alloc(32, 0xab);
 const feeScript = Buffer.from("0014" + "f".repeat(40), "hex");
 const ATOMS = 100_000_000n;
-const MINT_AMOUNT = 10_000n * ATOMS;
+const MINT_AMOUNT = 1_000_000n * ATOMS;
 
 function config() {
   return { network: "regtest" as const, chainIdentity: CHAIN_BITCOIN_REGTEST, guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript, genesisHeight: 0n };
@@ -111,7 +111,7 @@ describe.skipIf(!URL)("V3Store persistence — DEPLOY/MINT/TRANSFER/REDEEM + rev
 
     // ── REDEEM full 84M (height 4) ──
     const redeemed = applyRedeemV2(minted.nextState, MINT_AMOUNT);
-    const redeemFee = deterministicFee(redeemed.grossSats, COVE_FEE_CONFIG.redeemFeeBps, COVE_FEE_CONFIG.redeemFeeFlatSats);
+    const redeemFee = redeemFeeSats(redeemed.grossSats);
     const redeemWire = encodeRedeemV2({ tokenId, redeemAmount: MINT_AMOUNT, changeAllocations: [] });
     const redeemHex = tx(
       [{ txid: mintTxid, vout: 1 }, { txid: transferTxid, vout: 1 }],

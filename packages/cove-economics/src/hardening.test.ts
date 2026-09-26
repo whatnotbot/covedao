@@ -16,23 +16,29 @@ const STAGE = 100_000n;
 
 
 describe("zero-delta economics (§1.1)", () => {
-  it("no positive quantity has a zero R-delta: every token costs at least 8 sats", () => {
-    // The cheapest lot is 8,692 sats, so one token is 8.692 sats; ECONOMIC_DUST
-    // is unreachable for any positive amount on this curve.
-    for (const s of [0n, 999n, 1_000n, STAGE - 1n, STAGE, 10n * STAGE, PUBLIC_SUPPLY - 1n]) {
-      expect(grossBuy(s, 1n) >= 8n, `buy 1 at ${s}`).toBe(true);
+  it("no whole lot has a zero R-delta: every lot costs at least 33 sats", () => {
+    // Mints and sell-backs move whole lots of 1,000, so this is the case that
+    // matters; the cheapest lot is 33 sats.
+    for (const s of [0n, 1_000n, STAGE - 1_000n, STAGE, 10n * STAGE, PUBLIC_SUPPLY - 1_000n]) {
+      expect(grossBuy(s, 1_000n) >= 33n, `buy a lot at ${s}`).toBe(true);
     }
-    expect(requiredBackingSats(1001n) - requiredBackingSats(1000n)).toBe(9n);
+    expect(requiredBackingSats(2_000n) - requiredBackingSats(1_000n)).toBe(33n);
   });
 
-  it("a single token at stair 1 costs 9 sats (8.692, rounded up)", () => {
-    expect(grossBuy(0n, 1n)).toBe(9n);
-    expect(grossRedeem(1n, 1n)).toBe(9n);
+  it("a sub-lot quantity that would cost nothing is refused, never free", () => {
+    // At 0.033 sats a token, a single token between two roundings is a 0-sat
+    // delta; the curve throws rather than handing it out.
+    expect(() => grossBuy(999n, 1n)).toThrow(/zero backing delta/);
+  });
+
+  it("a single token at stair 1 costs 1 sat (0.033, rounded up)", () => {
+    expect(grossBuy(0n, 1n)).toBe(1n);
+    expect(grossRedeem(1n, 1n)).toBe(1n);
   });
 
   it("BUY and REDEEM use identical R (gross round-trip exact)", () => {
     for (let k = 0n; k < 210n; k++) {
-      const s = k * STAGE; // stair boundary: 1-token delta is always >= 8 sats
+      const s = k * STAGE; // stair boundary: 1-token delta is always >= 1 sat
       const q = 1n;
       expect(grossRedeem(s + q, q)).toBe(grossBuy(s, q));
     }
@@ -47,9 +53,9 @@ describe("zero-delta economics (§1.1)", () => {
   });
 
   it("redemption net payout below destination dust is rejected (P2TR dust=330)", () => {
-    // Redeem 1 token from supply 1: gross 9 sats, fee 1 sat (7.5%, rounded up) → net 8.
+    // Redeem 1 token from supply 1: gross 1 sat, fee floored at 1,000 → nothing to pay out.
     const q = quoteRedeem(1n, 1n);
-    expect(q.gross).toBe(9n);
+    expect(q.gross).toBe(1n);
     const p2tr = Buffer.from("5120" + "ab".repeat(32), "hex");
     expect(dustThreshold(p2tr)).toBe(330n);
     expect(isDustSafe(q.net, p2tr)).toBe(false);

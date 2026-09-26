@@ -36,7 +36,7 @@ describe("CoveStateV2 (§6)", () => {
       policyVersion: 3,
       tokenId: "cd".repeat(32),
       issuedPublicSupplyAtoms: 100_000n * 100_000_000n,
-      backingSats: 869_200n,
+      backingSats: 3_300n,
       curveStage: 2,
     };
     expect(deserializeStateV2(serializeStateV2(s))).toEqual(s);

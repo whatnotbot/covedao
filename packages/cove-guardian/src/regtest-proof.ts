@@ -31,9 +31,9 @@ const WIF = "cPoVxi18CnxHUQjYNpjRM3RYUVFA61wuTNQez7BtRKkfp9Fw6RTW";
 const internalKey = Buffer.from(ecc.pointFromScalar(Buffer.alloc(32, 0x42), true)!.subarray(1));
 // Half a stair of the 21M staircase (50 lots).
 const MINT_42M = 50_000n * 100_000_000n;
-// Real on-chain proof mints one full stair (100 lots, 869,200 sats), so the
-// 1% platform-fee output clears Bitcoin Core's P2WPKH dust threshold.
-const MINT_84M = 100_000n * 100_000_000n;
+// Real on-chain proof mints four full stairs (400 lots, 33,000 sats), so the
+// 1% platform-fee output (330 sats) clears Bitcoin Core's P2WPKH dust threshold.
+const MINT_84M = 400_000n * 100_000_000n;
 
 const S0: CoveState = {
   version: 1,

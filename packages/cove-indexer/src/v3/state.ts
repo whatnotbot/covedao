@@ -18,7 +18,7 @@ import {
   computeTokenId,
   type ParsedEnvelopeV2,
 } from "@crclaunch/cove-wire";
-import { COVE_FEE_CONFIG, CREATOR_RECORD_SATS, creatorFeeSats, isCreatorScript, deterministicFee, mintFeeSats, isP2TR, isP2WPKH } from "@crclaunch/cove-economics";
+import { COVE_FEE_CONFIG, CREATOR_RECORD_SATS, creatorFeeSats, isCreatorScript, mintFeeSats, redeemFeeSats, isP2TR, isP2WPKH } from "@crclaunch/cove-economics";
 import { RESERVE_ANCHOR_SATS } from "./constants.js";
 import { parseCoveTx, txidOf } from "./parser.js";
 import { computeStateRoot } from "./root.js";
@@ -574,7 +574,7 @@ export class V3IndexerState {
     } catch (e) {
       return { op: "REDEEM", valid: false, reason: `REFERENCE_REJECTED: ${(e as Error).message}`, tokenId: tokenIdHex, undo: null };
     }
-    const feeSats = deterministicFee(grossSats, this.config.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps, this.config.redeemFeeFlatSats ?? COVE_FEE_CONFIG.redeemFeeFlatSats);
+    const feeSats = redeemFeeSats(grossSats, this.config.redeemFeeBps ?? COVE_FEE_CONFIG.redeemFeeBps, this.config.redeemFeeFlatSats ?? COVE_FEE_CONFIG.redeemFeeFlatSats);
     const netPayoutSats = grossSats - feeSats;
     const nextVault = buildBackingVaultV3({
       state: nextState,

@@ -48,7 +48,7 @@ const RPC_PASSWORD = process.env.COVE_REGTEST_RPC_PASSWORD ?? "pass";
 
 const MINER_FEE = 1_000n;
 const NONCE = Buffer.alloc(32, 0xab);
-const MINT_AMOUNT = 10_000n * 100_000_000n;
+const MINT_AMOUNT = 1_000_000n * 100_000_000n;
 
 function xonly(byte: number): Buffer {
   return Buffer.from(ECPair.fromPrivateKey(Buffer.alloc(32, byte)).publicKey.subarray(1));
@@ -268,7 +268,7 @@ async function main(): Promise<void> {
   }), "MINT");
   const mint1Txid = await broadcastValidated(mint1Val);
   await rpc.generateToAddress(1, mineAddr);
-  assert(mint1.grossSats === 86_920n, `mint gross ${mint1.grossSats}`);
+  assert(mint1.grossSats === 181_500n, `mint gross ${mint1.grossSats}`);
   const aliceCarrier: OutPoint = { txid: mint1Txid, vout: 2 };
   view.mint({
     tokenId, nextState: mint1.nextState,
@@ -320,8 +320,8 @@ async function main(): Promise<void> {
   }), "REDEEM");
   const redeemTxid = await broadcastValidated(redeemVal);
   await rpc.generateToAddress(1, mineAddr);
-  assert(redeem.grossSats === 86_920n, `redeem gross ${redeem.grossSats}`);
-  assert(redeem.netSats === 80_401n, `redeem net ${redeem.netSats}`);
+  assert(redeem.grossSats === 181_500n, `redeem gross ${redeem.grossSats}`);
+  assert(redeem.netSats === 167_887n, `redeem net ${redeem.netSats}`);
   assert(redeem.changeAtoms === 0n, "full redeem must have zero token change");
   view.redeem({
     tokenId, nextState: redeem.nextState,

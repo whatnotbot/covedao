@@ -41,12 +41,12 @@ describe("REDEEM CMR is frozen (V3)", () => {
 describe("differential: TS redeem == Simplicity REDEEM Bit Machine", () => {
   it.skipIf(!isSimplicityAvailable())("valid redeem agrees (PASS)", async () => {
     const payout = grossRedeem(420_000n, 420_000n);
-    expect(payout).toBe(3_904_960n);
+    expect(payout).toBe(36_300n);
     await expectAgree({
       amount: 420_000n,
       oldSupply: 420_000n,
       newSupply: 0n,
-      oldBacking: 3_904_960n,
+      oldBacking: 36_300n,
       newBacking: 0n,
       payout,
     });
@@ -58,26 +58,26 @@ describe("differential: TS redeem == Simplicity REDEEM Bit Machine", () => {
       amount: 100_000n,
       oldSupply: 420_000n,
       newSupply: 320_000n,
-      oldBacking: 3_904_960n,
-      newBacking: 3_904_960n - payout,
+      oldBacking: 36_300n,
+      newBacking: 36_300n - payout,
       payout,
     });
   });
 
   it.skipIf(!isSimplicityAvailable())("zero amount agrees (FAIL)", async () => {
-    await expectAgree({ amount: 0n, oldSupply: 420_000n, newSupply: 420_000n, oldBacking: 3_904_960n, newBacking: 3_904_960n, payout: 0n });
+    await expectAgree({ amount: 0n, oldSupply: 420_000n, newSupply: 420_000n, oldBacking: 36_300n, newBacking: 36_300n, payout: 0n });
   });
 
   it.skipIf(!isSimplicityAvailable())("underflow (amount > supply) agrees (FAIL)", async () => {
-    await expectAgree({ amount: 420_000n + 1n, oldSupply: 420_000n, newSupply: 0n, oldBacking: 3_904_960n, newBacking: 0n, payout: 3_904_960n });
+    await expectAgree({ amount: 420_000n + 1n, oldSupply: 420_000n, newSupply: 0n, oldBacking: 36_300n, newBacking: 0n, payout: 36_300n });
   });
 
   it.skipIf(!isSimplicityAvailable())("wrong successor supply agrees (FAIL)", async () => {
-    await expectAgree({ amount: 420_000n, oldSupply: 420_000n, newSupply: 1n, oldBacking: 3_904_960n, newBacking: 0n, payout: 3_904_960n });
+    await expectAgree({ amount: 420_000n, oldSupply: 420_000n, newSupply: 1n, oldBacking: 36_300n, newBacking: 0n, payout: 36_300n });
   });
 
   it.skipIf(!isSimplicityAvailable())("wrong successor backing agrees (FAIL)", async () => {
-    await expectAgree({ amount: 420_000n, oldSupply: 420_000n, newSupply: 0n, oldBacking: 3_904_960n, newBacking: 1n, payout: 3_904_960n });
+    await expectAgree({ amount: 420_000n, oldSupply: 420_000n, newSupply: 0n, oldBacking: 36_300n, newBacking: 1n, payout: 36_300n });
   });
 });
 
@@ -89,8 +89,8 @@ describe("TS-only payout exactness (curve check, not in Simplicity overlap)", ()
         amount: 420_000n,
         oldSupply: 420_000n,
         newSupply: 0n,
-        oldBacking: 3_904_960n,
-        newBacking: 3_904_960n - (correct + 1n),
+        oldBacking: 36_300n,
+        newBacking: 36_300n - (correct + 1n),
         payout: correct + 1n,
       }),
     ).toBe(true); // backing conservation still holds

@@ -2,8 +2,8 @@ import type { DisplayTokens, Sats } from "@crclaunch/curve";
 import { ATOMS_PER_TOKEN } from "@crclaunch/curve";
 import { stairs210, PUBLIC_SUPPLY } from "./curve.js";
 import {
-  deterministicFee,
   mintFeeSats,
+  redeemFeeSats,
   COVE_FEE_CONFIG,
   type CoveFeeConfig,
 } from "./fee.js";
@@ -122,6 +122,6 @@ export function quoteRedeem(
   feeConfig: CoveFeeConfig = COVE_FEE_CONFIG,
 ): Quote {
   const gross = grossRedeem(supply, amount);
-  const fee = deterministicFee(gross, feeConfig.redeemFeeBps, feeConfig.redeemFeeFlatSats);
+  const fee = redeemFeeSats(gross, feeConfig.redeemFeeBps, feeConfig.redeemFeeFlatSats, feeConfig.redeemFeeMinSats);
   return { gross, fee, net: gross - fee };
 }

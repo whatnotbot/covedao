@@ -43,25 +43,25 @@ describe("Cove atom unit model (8 decimals)", () => {
 });
 
 describe("Golden economics (unchanged by atom model)", () => {
-  it("one lot (1,000 tokens) at supply 0 → 8,692 sats", () => {
+  it("one lot (1,000 tokens) at supply 0 → 33 sats", () => {
     const q = quoteExactTokens({ desiredTokens: 1_000n, currentSupply: 0n });
-    expect(q.curveContributionSats).toBe(8_692n);
+    expect(q.curveContributionSats).toBe(33n);
   });
 
-  it("full public mint (21,000,000 tokens) → 1,003,275,000 sats", () => {
-    expect(getTheoreticalFullRaise()).toBe(1_003_275_000n);
+  it("full public mint (21,000,000 tokens) → 73,111,500 sats", () => {
+    expect(getTheoreticalFullRaise()).toBe(73_111_500n);
     const q = quoteExactTokens({ desiredTokens: 21_000_000n, currentSupply: 0n });
-    expect(q.curveContributionSats).toBe(1_003_275_000n);
+    expect(q.curveContributionSats).toBe(73_111_500n);
   });
 
   it("stair boundary crossing is preserved (100k/stair)", () => {
-    // Stair 1 is exactly 100 lots at 8,692 sats = 869,200 sats.
+    // Stair 1 is exactly 100 lots at 33 sats = 3,300 sats.
     const stair1 = quoteExactTokens({ desiredTokens: 100_000n, currentSupply: 0n });
-    expect(stair1.curveContributionSats).toBe(869_200n);
+    expect(stair1.curveContributionSats).toBe(3_300n);
     expect(stair1.endingStage).toBe(1);
     // The next lot starts stair 2 at 9,066 sats.
     const stair2 = quoteExactTokens({ desiredTokens: 1_000n, currentSupply: 100_000n });
-    expect(stair2.curveContributionSats).toBe(9_066n);
+    expect(stair2.curveContributionSats).toBe(66n);
     expect(stair2.startingStage).toBe(2);
   });
 });

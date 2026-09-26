@@ -50,7 +50,7 @@ function mintPsbt(): { psbt: bitcoin.Psbt; mintLeaf: VaultLeafRef; controlBlock:
     tokenId,
     prevState: deploy.s0,
     prevBacking: { txid: "a".repeat(64), vout: 1, script: deploy.vault.scriptPubKey, valueSats: RESERVE_ANCHOR_SATS },
-    mintAmountAtoms: 10_000n * 100_000_000n,
+    mintAmountAtoms: 1_000_000n * 100_000_000n,
     guardianXOnly,
     recoveryKeyXOnly,
     recoveryProfile: MAINNET1,

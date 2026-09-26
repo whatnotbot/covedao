@@ -14,13 +14,13 @@ import {
 } from "../src/index.js";
 
 describe("raise economics", () => {
-  it("CURVE-005 (golden): full raise = 1,003,275,000 sats", () => {
-    expect(getTheoreticalFullRaise()).toBe(1_003_275_000n);
+  it("CURVE-005 (golden): full raise = 73,111,500 sats", () => {
+    expect(getTheoreticalFullRaise()).toBe(73_111_500n);
   });
 
-  it("reserve contribution before fees is about ten BTC", () => {
+  it("reserve contribution before fees is 0.731 BTC", () => {
     const sats = getTheoreticalFullRaise();
-    expect(sats).toBe(1_003_275_000n);
+    expect(sats).toBe(73_111_500n);
     expect(sats * 100_000_000n / 100_000_000n).toBe(sats);
   });
 
@@ -40,12 +40,12 @@ describe("raise economics", () => {
       "Must be exactly 210 stages.",
     );
     const badFirst = [...prices];
-    badFirst[0] = 8_692_001n;
-    expect(validateCurveConfig({ stagePrices: badFirst })).toContain("Stage 1 price must be 8692000.");
+    badFirst[0] = 33_001n;
+    expect(validateCurveConfig({ stagePrices: badFirst })).toContain("Stage 1 price must be 33000.");
     const badLast = [...prices];
-    badLast[209] = 86_857_999n;
+    badLast[209] = 6_929_999n;
     expect(validateCurveConfig({ stagePrices: badLast })).toContain(
-      "Stage 210 price must be 86858000.",
+      "Stage 210 price must be 6930000.",
     );
     const badOrder = [...prices];
     badOrder[5] = badOrder[4]!;
@@ -53,7 +53,7 @@ describe("raise economics", () => {
       "Stage 6 price must exceed stage 5 price.",
     );
     expect(validateCurveConfig({ tokensPerStage: 99_000n }).join(" ")).toContain(
-      "Full raise must be 1003275000 sats",
+      "Full raise must be 73111500 sats",
     );
   });
 

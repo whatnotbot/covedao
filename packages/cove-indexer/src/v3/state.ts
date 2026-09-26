@@ -307,11 +307,20 @@ export class V3IndexerState {
     block: V3BlockInput,
   ): ApplyResult {
     if (envelope.op !== OP_DEPLOY) return { op: null, valid: false, reason: "WRONG_OPCODE", tokenId: null, undo: null };
+    const tx = bitcoin.Transaction.fromHex(rawHex);
+    // Output 2 names the creator: exactly CREATOR_RECORD_SATS to the address
+    // every mint will pay the creator's share to. The tokenId commits to it,
+    // so it is read first.
+    const creatorOut = tx.outs[2];
+    if (!creatorOut || BigInt(creatorOut.value) !== CREATOR_RECORD_SATS || !isCreatorScript(creatorOut.script)) {
+      return { op: "DEPLOY", valid: false, reason: "CREATOR_OUTPUT_MISSING", tokenId: null, undo: null };
+    }
     const tokenId = computeTokenId({
       chainIdentity: this.config.chainIdentity,
       policyVersion: envelope.policyVersion,
       ticker: envelope.ticker,
       tokenNonce: envelope.tokenNonce,
+      creatorScript: creatorOut.script,
     });
     const tokenIdHex = tokenId.toString("hex");
     if (this.tokens.has(tokenIdHex)) {
@@ -325,19 +334,12 @@ export class V3IndexerState {
       recoveryProfile: this.config.recoveryProfile,
       network: this.bitcoinNetwork(),
     });
-    const tx = bitcoin.Transaction.fromHex(rawHex);
     const s0Out = tx.outs[1];
     if (!s0Out || !s0Out.script.equals(vault.scriptPubKey)) {
       return { op: "DEPLOY", valid: false, reason: "S0_VAULT_MISMATCH", tokenId: tokenIdHex, undo: null };
     }
     if (BigInt(s0Out.value) !== RESERVE_ANCHOR_SATS) {
       return { op: "DEPLOY", valid: false, reason: "S0_ANCHOR_MISMATCH", tokenId: tokenIdHex, undo: null };
-    }
-    // Output 2 names the creator: exactly CREATOR_RECORD_SATS to the address
-    // every mint will pay the creator's share to.
-    const creatorOut = tx.outs[2];
-    if (!creatorOut || BigInt(creatorOut.value) !== CREATOR_RECORD_SATS || !isCreatorScript(creatorOut.script)) {
-      return { op: "DEPLOY", valid: false, reason: "CREATOR_OUTPUT_MISSING", tokenId: tokenIdHex, undo: null };
     }
     const meta: V3TokenMeta = {
       tokenId: tokenIdHex,

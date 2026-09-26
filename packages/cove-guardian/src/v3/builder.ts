@@ -85,12 +85,14 @@ export interface DeployResult {
 
 /**
  * Build a real DEPLOY PSBT (§8). Canonical outputs: [0] OP_RETURN (wire v2
- * DEPLOY), [1] S0 backing vault (RESERVE_ANCHOR_SATS, backing=0), [2] deployer
- * change. tokenId is derived pre-transaction (never the txid).
+ * DEPLOY), [1] S0 backing vault (RESERVE_ANCHOR_SATS, backing=0), [2] creator
+ * record (CREATOR_RECORD_SATS), [3] deployer change if any. tokenId is derived
+ * pre-transaction (never the txid) and commits to the creator script.
  */
 export function buildDeployPsbtV3(params: {
   network: bitcoin.networks.Network;
-  identity: TokenIdentityInput;
+  /** The token identity; the creator script is taken from `creatorScript` below. */
+  identity: Omit<TokenIdentityInput, "creatorScript">;
   guardianXOnly: Buffer;
   recoveryKeyXOnly: Buffer;
   recoveryProfile?: VaultRecoveryProfile;
@@ -100,7 +102,8 @@ export function buildDeployPsbtV3(params: {
   creatorScript?: Buffer;
   minerFeeSats: Sats;
 }): DeployResult {
-  const tokenId = computeTokenId(params.identity);
+  const creatorScript = params.creatorScript ?? params.deployerChangeScript;
+  const tokenId = computeTokenId({ ...params.identity, creatorScript });
   const tokenIdHex = tokenId.toString("hex");
   const s0 = s0StateV2({ tokenId: tokenIdHex });
   const vault = buildBackingVaultV3({
@@ -123,7 +126,7 @@ export function buildDeployPsbtV3(params: {
   psbt.addOutput({ script: Buffer.concat([Buffer.from([0x6a, wire.length]), wire]), value: 0 });
   psbt.addOutput({ script: vault.scriptPubKey, value: Number(RESERVE_ANCHOR_SATS) });
   // Output 2 records the creator: every mint pays their share to this script.
-  psbt.addOutput({ script: params.creatorScript ?? params.deployerChangeScript, value: Number(CREATOR_RECORD_SATS) });
+  psbt.addOutput({ script: creatorScript, value: Number(CREATOR_RECORD_SATS) });
 
   const totalIn = params.deployerInputs.reduce((s, i) => s + i.valueSats, 0n);
   const change = totalIn - RESERVE_ANCHOR_SATS - CREATOR_RECORD_SATS - params.minerFeeSats;

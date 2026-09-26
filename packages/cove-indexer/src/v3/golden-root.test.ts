@@ -51,7 +51,7 @@ const carolScript = Buffer.from("0014" + "c".repeat(40), "hex");
 /** Run the full 6-op deterministic lifecycle and return the state. */
 function fullLifecycleState(): V3IndexerState {
   const state = new V3IndexerState(config());
-  const tokenId = computeTokenId({ chainIdentity: CHAIN_BITCOIN_REGTEST, policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
+  const tokenId = computeTokenId({ chainIdentity: CHAIN_BITCOIN_REGTEST, policyVersion: 3, ticker: "FROG", tokenNonce: NONCE, creatorScript: CREATOR_SCRIPT });
   const tokenIdHex = tokenId.toString("hex");
   const s0 = s0StateV2({ tokenId: tokenIdHex });
   const minted = applyMintV2(s0, MINT_AMOUNT);
@@ -123,7 +123,7 @@ function fullLifecycleState(): V3IndexerState {
 }
 
 /** Frozen deterministic state-root golden for the full 6-op lifecycle fixture. */
-export const V3_STATE_ROOT_GOLDEN = "e6854c8f3e00da7ca4858a2f1aae50baf3ced5d6a21e6ec2c6738d8c7f7c9cde";
+export const V3_STATE_ROOT_GOLDEN = "b78f210c4f652d8618c04ec2f3cd229ade498b8d1fbc3ec43327d90d8e6d7638";
 
 describe("deterministic V3 state-root golden (§18)", () => {
   it("matches the frozen golden root", () => {

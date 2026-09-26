@@ -672,6 +672,7 @@ function replayChain(rawTxs: string[]): { view: CoveChainView; state: CoveStateV
           policyVersion: env.policyVersion,
           ticker: env.ticker,
           tokenNonce: env.tokenNonce,
+          creatorScript: tx.outs[2]!.script,
         });
         const s0 = s0StateV2({ tokenId: tokenId.toString("hex") });
         state = s0;

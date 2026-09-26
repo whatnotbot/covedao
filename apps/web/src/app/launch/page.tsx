@@ -12,7 +12,8 @@ function errorText(j: { error?: { message?: string; detail?: string } }): string
 }
 
 interface Prepared {
-  tokenId: string;
+  /** Null until a wallet is known: the id commits to the creator address. */
+  tokenId: string | null;
   ticker: string;
   nonceHex: string;
   policyVersion: number;
@@ -77,7 +78,7 @@ export default function LaunchPage() {
           websiteUrl: website,
           xUrl,
           imageUrl,
-          idempotencyKey: `launch-${prepared.tokenId}`,
+          idempotencyKey: `launch-${prepared.nonceHex}`,
         }),
       });
       const bj = await build.json();
@@ -93,7 +94,7 @@ export default function LaunchPage() {
       });
       const sj = await submit.json();
       if (!sj.ok) throw new Error(errorText(sj));
-      setTokenId(prepared.tokenId);
+      setTokenId(bj.data.tokenId);
       setStatus(`Broadcast ${sj.data.txid.slice(0, 16)}…`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -141,7 +142,7 @@ export default function LaunchPage() {
       ) : (
         <div className="border border-rule bg-ink-2 p-5 text-sm">
           <h2 className="text-bone">Review</h2>
-          <Row k="tokenId" v={<span className="break-all font-mono text-xs">{prepared.tokenId}</span>} />
+          <Row k="tokenId" v={<span className="break-all font-mono text-xs">{prepared.tokenId ?? "set when you sign (it includes your address)"}</span>} />
           <Row k="Ticker" v={`$${prepared.ticker}`} />
           <Row k="Policy" v={`V${prepared.policyVersion}`} />
           <Row k="Total supply" v={`${fmtInt(BigInt(prepared.publicCapAtoms) / 100_000_000n)} tokens`} />

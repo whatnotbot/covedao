@@ -72,6 +72,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
       policyVersion: 3,
       ticker: "FROG",
       tokenNonce: NONCE,
+      creatorScript: CREATOR_SCRIPT,
     });
     const tokenIdHex = tokenId.toString("hex");
     const s0 = s0StateV2({ tokenId: tokenIdHex });
@@ -177,6 +178,29 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
     expect(state.stateRoot()).toBe(before);
   });
 
+  it("a copied DEPLOY naming another creator gets its own tokenId (no front-run)", () => {
+    const state = new V3IndexerState(config());
+    const thief = Buffer.from("0014" + "e".repeat(40), "hex");
+    const deployWire = encodeDeployV2({ policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
+    const deployFor = (creator: Buffer, fundTxid: string) => {
+      const id = computeTokenId({ chainIdentity: CHAIN_BITCOIN_REGTEST, policyVersion: 3, ticker: "FROG", tokenNonce: NONCE, creatorScript: creator });
+      const s0 = s0StateV2({ tokenId: id.toString("hex") });
+      const hex = tx(
+        [{ txid: fundTxid, vout: 0 }],
+        [{ script: opReturn(deployWire), value: 0n }, { script: vaultScript(s0), value: RESERVE_ANCHOR_SATS }, { script: creator, value: CREATOR_RECORD_SATS }],
+      );
+      return { id: id.toString("hex"), hex };
+    };
+    // The copy confirms first; the real creator's DEPLOY is still valid.
+    const copy = deployFor(thief, "d1".repeat(32));
+    const real = deployFor(CREATOR_SCRIPT, "d0".repeat(32));
+    state.applyBlock(block(1, [copy.hex, real.hex]));
+    expect(copy.id).not.toBe(real.id);
+    expect(state.events.map((e) => e.valid)).toEqual([true, true]);
+    expect(state.getTokenCreatorScript(Buffer.from(real.id, "hex"))!.equals(CREATOR_SCRIPT)).toBe(true);
+    expect(state.getTokenCreatorScript(Buffer.from(copy.id, "hex"))!.equals(thief)).toBe(true);
+  });
+
   it("rejects a transfer claiming tokens not present", () => {
     const state = new V3IndexerState(config());
     const tokenId = computeTokenId({
@@ -184,6 +208,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
       policyVersion: 3,
       ticker: "FROG",
       tokenNonce: NONCE,
+      creatorScript: CREATOR_SCRIPT,
     });
     const tokenIdHex = tokenId.toString("hex");
     // deploy so the token exists, but no token UTXOs
@@ -214,7 +239,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
 
   it("ignores Cove ops below the activation height, indexes at/above it (§13/§48)", () => {
     const state = new V3IndexerState({ ...config(), genesisHeight: 2n });
-    const tokenId = computeTokenId({ chainIdentity: CHAIN_BITCOIN_REGTEST, policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
+    const tokenId = computeTokenId({ chainIdentity: CHAIN_BITCOIN_REGTEST, policyVersion: 3, ticker: "FROG", tokenNonce: NONCE, creatorScript: CREATOR_SCRIPT });
     const s0 = s0StateV2({ tokenId: tokenId.toString("hex") });
     const deployWire = encodeDeployV2({ policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
     const deployHex = tx(
@@ -236,7 +261,7 @@ describe("V3IndexerState — deterministic lifecycle indexing (§9-§13, §14)",
 
 describe("V3IndexerState — carriers spent outside the protocol are burned", () => {
   function deployAndMint(state: V3IndexerState) {
-    const tokenId = computeTokenId({ chainIdentity: CHAIN_BITCOIN_REGTEST, policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
+    const tokenId = computeTokenId({ chainIdentity: CHAIN_BITCOIN_REGTEST, policyVersion: 3, ticker: "FROG", tokenNonce: NONCE, creatorScript: CREATOR_SCRIPT });
     const s0 = s0StateV2({ tokenId: tokenId.toString("hex") });
     const deployHex = tx(
       [{ txid: "d0".repeat(32), vout: 0 }],

@@ -52,7 +52,7 @@ describe("V3 builders (offline)", () => {
   it("DEPLOY: tokenId precomputable, S0 vault value = anchor, OP_RETURN wire v2", () => {
     const d = deploy();
     expect(d.tokenId.toString("hex")).toBe(
-      "4710488a0ab304fb2316e0174360a41937e1f0a81f2b26dee5a38ef79fb2d252",
+      "2b831aa045c22a0be1913c268aa30ab182bb3afc0759c5f5e99139e1f593780c",
     );
     expect(d.s0.issuedPublicSupplyAtoms).toBe(0n);
     expect(d.s0.backingSats).toBe(0n);

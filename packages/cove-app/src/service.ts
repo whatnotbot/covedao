@@ -79,10 +79,13 @@ export interface LaunchPrepareInput {
   xUrl?: string | null;
   imageUrl?: string | null;
   nonceHex?: string;
+  /** The creator's payout script (hex). The tokenId commits to it. */
+  creatorScript?: string;
 }
 
 export interface LaunchPrepareResult {
-  tokenId: string;
+  /** Null until the creator script is known (see LaunchPrepareInput). */
+  tokenId: string | null;
   ticker: string;
   nonceHex: string;
   policyVersion: number;
@@ -653,7 +656,12 @@ export class V3AppService {
     const ticker = canonicalTicker(input.ticker);
     const nonce = input.nonceHex ? Buffer.from(input.nonceHex, "hex") : randomBytes(32);
     if (nonce.length !== 32) throw new AppError("TOKEN_AMOUNT_INVALID", "nonce must be 32 bytes");
-    const tokenId = computeTokenId({ chainIdentity: this.config.chainIdentity, policyVersion: 3, ticker, tokenNonce: nonce }).toString("hex");
+    // The tokenId commits to the creator's payout script, which is known only
+    // once a wallet is connected; without one the id is left to the build.
+    const creatorScript = input.creatorScript ? Buffer.from(input.creatorScript, "hex") : null;
+    const tokenId = creatorScript
+      ? computeTokenId({ chainIdentity: this.config.chainIdentity, policyVersion: 3, ticker, tokenNonce: nonce, creatorScript }).toString("hex")
+      : null;
     validateMetadata({ displayName: input.displayName, description: input.description, websiteUrl: input.websiteUrl, xUrl: input.xUrl, imageUrl: input.imageUrl });
     return {
       tokenId,
@@ -688,7 +696,9 @@ export class V3AppService {
     this.assertMutating();
     await this.requireHealthy();
     const wallet = resolveWalletIdentity(walletIdentityFrom(params));
-    const tokenId = computeTokenId({ chainIdentity: this.config.chainIdentity, policyVersion: 3, ticker: canonicalTicker(params.ticker), tokenNonce: Buffer.from(params.nonceHex, "hex") }).toString("hex");
+    // The creator is paid at their payment address, where BTC belongs.
+    const creatorScript = wallet.payments.scriptBuffer;
+    const tokenId = computeTokenId({ chainIdentity: this.config.chainIdentity, policyVersion: 3, ticker: canonicalTicker(params.ticker), tokenNonce: Buffer.from(params.nonceHex, "hex"), creatorScript }).toString("hex");
     this.assertCanaryAllowed({ tokenId, walletScript: params.walletScript });
     // The deploy funds the vault anchor, the creator record (which comes back
     // to the creator's own address) and the miner fee.
@@ -708,8 +718,7 @@ export class V3AppService {
       recoveryProfile: this.config.recoveryProfile,
       deployerInputs,
       deployerChangeScript: wallet.payments.scriptBuffer,
-      // The creator is paid at their payment address, where BTC belongs.
-      creatorScript: wallet.payments.scriptBuffer,
+      creatorScript,
       minerFeeSats,
     });
     const psbtBase64 = result.psbt.toBase64();

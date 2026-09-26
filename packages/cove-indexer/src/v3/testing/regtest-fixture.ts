@@ -56,12 +56,14 @@ export const REGTEST_RECOVERY_XONLY = Buffer.from(REGTEST_KEYS.recovery.publicKe
 export const REGTEST_FEE_SCRIPT = p2wpkh(REGTEST_KEYS.fee);
 export const REGTEST_FEE_ADDRESS = p2wpkhAddr(REGTEST_KEYS.fee);
 
-export function regtestTokenId(): Buffer {
+/** The fixture tokenId for a DEPLOY naming `creatorScript` as its creator. */
+export function regtestTokenId(creatorScript: Buffer): Buffer {
   return computeTokenId({
     chainIdentity: REGTEST_CHAIN_IDENTITY,
     policyVersion: 3,
     ticker: REGTEST_TICKER,
     tokenNonce: REGTEST_NONCE,
+    creatorScript,
   });
 }
 

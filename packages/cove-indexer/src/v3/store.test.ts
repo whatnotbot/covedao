@@ -51,7 +51,7 @@ describe.skipIf(!URL)("V3Store persistence — DEPLOY/MINT/TRANSFER/REDEEM + rev
     const db = createDb(URL!);
     const store = new V3Store("regtest");
     const state = new V3IndexerState(config());
-    const tokenId = computeTokenId({ chainIdentity: CHAIN_BITCOIN_REGTEST, policyVersion: 3, ticker: "FROG", tokenNonce: NONCE });
+    const tokenId = computeTokenId({ chainIdentity: CHAIN_BITCOIN_REGTEST, policyVersion: 3, ticker: "FROG", tokenNonce: NONCE, creatorScript: CREATOR_SCRIPT });
     const tokenIdHex = tokenId.toString("hex");
     const s0 = s0StateV2({ tokenId: tokenIdHex });
 

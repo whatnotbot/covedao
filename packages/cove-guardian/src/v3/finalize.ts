@@ -168,11 +168,17 @@ export function validateFinalizedDeployTransaction(params: {
   if ("ok" in wire) return wire;
   if (wire.op !== OP_DEPLOY) return reject("WRONG_OPCODE");
 
+  // The tokenId commits to the creator, so the creator output is read first.
+  const creatorOut = tx.outs[2];
+  if (!creatorOut || BigInt(creatorOut.value) !== CREATOR_RECORD_SATS || !isCreatorScript(creatorOut.script)) {
+    return reject("CREATOR_OUTPUT_MISSING");
+  }
   const tokenId = computeTokenId({
     chainIdentity: params.chainIdentity,
     policyVersion: wire.policyVersion,
     ticker: wire.ticker,
     tokenNonce: wire.tokenNonce,
+    creatorScript: creatorOut.script,
   });
   const s0 = s0StateV2({ tokenId: tokenId.toString("hex") });
   const vault = buildBackingVaultV3({
@@ -188,10 +194,6 @@ export function validateFinalizedDeployTransaction(params: {
   }
   if (BigInt(s0Out.value) !== RESERVE_ANCHOR_SATS) {
     return reject("S0_ANCHOR_MISMATCH");
-  }
-  const creatorOut = tx.outs[2];
-  if (!creatorOut || BigInt(creatorOut.value) !== CREATOR_RECORD_SATS || !isCreatorScript(creatorOut.script)) {
-    return reject("CREATOR_OUTPUT_MISSING");
   }
   return validated(params.rawTxHex, tx.getId(), "DEPLOY", tokenId.toString("hex"));
 }

@@ -11,12 +11,17 @@ export { canonicalTicker };
  * deterministic fixed point). Production uses a PRECOMPUTABLE identity known
  * before DEPLOY transaction construction:
  *
- *   tokenId = H_CoveToken(chainIdentity || policyVersion || canonicalTicker || tokenNonce)
+ *   tokenId = H_CoveToken(chainIdentity || policyVersion || canonicalTicker || tokenNonce
+ *                         || len(creatorScript) || creatorScript)
  *
  * - chainIdentity prevents accidental cross-network identity reuse.
  * - policyVersion is the production policy-set version.
  * - canonicalTicker is the uppercase ASCII ticker (metadata, not unique key).
  * - tokenNonce is 32 random bytes committed in the DEPLOY wire data.
+ * - creatorScript is the DEPLOY's output 2, where every mint pays the creator.
+ *   Without it, anyone who saw a DEPLOY in the mempool could copy its ticker
+ *   and nonce, name their own address as creator, pay a higher fee, and take
+ *   the tokenId (a later duplicate is invalid) and every creator payment.
  *
  * Duplicate tokenId deploy is invalid. deployTxid is stored separately.
  */
@@ -38,6 +43,8 @@ export interface TokenIdentityInput {
   ticker: string;
   /** 32 random bytes committed in DEPLOY wire data. */
   tokenNonce: Buffer;
+  /** The creator's payout script: the DEPLOY's output 2. */
+  creatorScript: Buffer;
 }
 
 export function computeTokenId(input: TokenIdentityInput): Buffer {
@@ -48,6 +55,9 @@ export function computeTokenId(input: TokenIdentityInput): Buffer {
   if (!Number.isInteger(input.policyVersion) || input.policyVersion < 1) {
     throw new Error("policyVersion must be a positive integer");
   }
+  if (input.creatorScript.length === 0 || input.creatorScript.length > 255) {
+    throw new Error("creatorScript must be 1..255 bytes");
+  }
   return taggedHash(
     "CoveToken",
     Buffer.concat([
@@ -55,6 +65,8 @@ export function computeTokenId(input: TokenIdentityInput): Buffer {
       Buffer.from([input.policyVersion]),
       Buffer.from(tick, "utf8"),
       input.tokenNonce,
+      Buffer.from([input.creatorScript.length]),
+      input.creatorScript,
     ]),
   );
 }

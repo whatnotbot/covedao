@@ -27,6 +27,7 @@ function staticSection(): boolean {
       network: "tooling",
       testOnlyPath: TEST_ONLY_PATH,
       baseDir: process.env.INIT_CWD ?? process.cwd(),
+      feeAddress: process.env.COVE_FEE_ADDRESS || undefined,
     });
     console.log(`profile source: ${source}${source === "test-only" ? ` (${TEST_ONLY_PATH}; test keys allowed)` : ""}`);
     line("profile completeness", validation.ok, validation.errors.slice(0, 3).join("; "));

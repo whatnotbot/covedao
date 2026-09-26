@@ -56,7 +56,7 @@ Edit the committed profile, `packages/cove-mainnet/src/committed-profile.ts`
 | `recovery.pubkeys` | the 3 `recovery-*` x-only pubkeys (any order; they are sorted canonically), or the single one for 1-of-1 |
 | `recovery.csvBlocks` | `2016` (≈2 weeks) |
 | `activationHeight` | a **future** block height (see below) |
-| `feeScript` | your fee-destination P2WPKH script (hex) |
+| `feeScript` | leave `null`: set `COVE_FEE_ADDRESS` (your fee wallet's `bc1…` address) on web, worker and Guardian |
 | `buyFeeBps` / `redeemFeeBps` | `100` (1%) |
 | `p2pFeeBps` | `50` (0.5%) |
 | `canary.allowedWalletScripts` | **only your wallet script** |

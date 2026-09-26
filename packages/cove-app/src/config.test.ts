@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolve } from "node:path";
+import * as bitcoin from "bitcoinjs-lib";
 import { loadV3AppConfig } from "./config.js";
 import { loadMainnetProfile, validateMainnetProfile } from "@crclaunch/cove-mainnet";
 
@@ -72,5 +73,24 @@ describe("loadV3AppConfig mainnet path (§15)", () => {
     const cfg = loadV3AppConfig({ COVE_NETWORK: "regtest", COVE_BITCOIN_RPC_URL_SECONDARY: "http://127.0.0.1:18444" });
     expect(cfg.coreRpcUrlSecondary).toBe("http://127.0.0.1:18444");
     expect(loadV3AppConfig({ COVE_NETWORK: "regtest" }).coreRpcUrlSecondary).toBeUndefined();
+  });
+});
+
+describe("COVE_FEE_ADDRESS", () => {
+  const script = `0014${"11".repeat(20)}`;
+  const address = (net: bitcoin.networks.Network) => bitcoin.address.fromOutputScript(Buffer.from(script, "hex"), net);
+
+  it("sends fees to the given address off mainnet too, instead of the fee key's", () => {
+    const cfg = loadV3AppConfig({ COVE_NETWORK: "regtest", COVE_FEE_ADDRESS: address(bitcoin.networks.regtest) });
+    expect(cfg.feeScript.toString("hex")).toBe(script);
+    expect(loadV3AppConfig({ COVE_NETWORK: "regtest" }).feeScript.toString("hex")).not.toBe(script);
+  });
+
+  it("refuses an address from another network", () => {
+    expect(() => loadV3AppConfig({ COVE_NETWORK: "regtest", COVE_FEE_ADDRESS: address(bitcoin.networks.bitcoin) })).toThrow(/COVE_FEE_ADDRESS/);
+  });
+
+  it("is required on mainnet: the committed profile has no fee address of its own", () => {
+    expect(() => loadV3AppConfig({ COVE_NETWORK: "mainnet", COVE_BITCOIN_RPC_URL: RPC })).toThrow(/feeScript/);
   });
 });

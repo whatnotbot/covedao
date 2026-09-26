@@ -9,7 +9,7 @@ import {
   reorgPersistentToTip,
   hydrateState,
 } from "@crclaunch/cove-indexer/v3";
-import { loadV3AppConfig, V3AppService, Metrics, buildAppTransitionSigner, workerLockKey } from "@crclaunch/cove-app";
+import { loadV3AppConfig, V3AppService, Metrics, buildAppTransitionSigner, watchGuardianAgreement, workerLockKey } from "@crclaunch/cove-app";
 import type { V3IndexerConfig } from "@crclaunch/cove-indexer/v3";
 
 /**
@@ -55,6 +55,8 @@ async function main() {
   const store = new V3Store(config.network);
   // §C4: the transition signer is REQUIRED (no raw-signing fallback).
   const transitionSigner = buildAppTransitionSigner(db, config);
+  // Mainnet: stop if the Guardian runs a different profile (fee address included).
+  watchGuardianAgreement(transitionSigner, config, { service: "worker" });
   const app = new V3AppService(db, provider, config, transitionSigner, secondaryProvider);
   const metrics = new Metrics();
 

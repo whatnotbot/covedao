@@ -53,7 +53,7 @@ export {
 } from "./readiness.js";
 export { PostgresSigningJournal } from "./journal.js";
 export { PostgresGuardianAudit } from "./audit.js";
-export { buildAppTransitionSigner } from "./transition-signer.js";
+export { buildAppTransitionSigner, watchGuardianAgreement } from "./transition-signer.js";
 export { checkBackingInvariant, checkSupplyInvariant, type InvariantResult } from "./invariants.js";
 export { FixedWindowRateLimiter, type RateLimiter, type RateLimitKey, type RateLimitConfig, type RateLimitResult } from "./rate-limit.js";
 export { Metrics, type MetricName } from "./metrics.js";

@@ -19,7 +19,7 @@ domain. The ONE explicit versioned change is the vault recovery profile.
 - `activationHeight` — immutable once canary begins
 - `guardianXOnly` — committed public key (custody backend selected)
 - `recovery.pubkeys` (3 x-only) + `recovery.csvBlocks` + threshold=2
-- `feeScript` — committed public fee destination
+- `COVE_FEE_ADDRESS` — fee destination, identical on web, worker and Guardian (fills `feeScript`)
 - `buyFeeBps` / `redeemFeeBps` / `p2pFeeBps` — approved mainnet schedule
 - canary allowlist (operator wallet scripts) + caps (max backing/buy/redeem/P2P)
 

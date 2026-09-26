@@ -118,3 +118,30 @@ describe("resolveMainnetProfile", () => {
     expect(() => resolveMainnetProfile({ network: "mainnet", testOnlyPath: FIXTURE })).toThrow(/refused on mainnet/);
   });
 });
+
+describe("fee address from COVE_FEE_ADDRESS", () => {
+  const feeAddress = bitcoin.address.fromOutputScript(Buffer.from(`0014${"11".repeat(20)}`, "hex"), bitcoin.networks.bitcoin);
+
+  it("fills feeScript, and a different address gives a different profile hash", () => {
+    const withFee = committedMainnetProfile({ feeAddress });
+    expect(withFee.profile.feeScript).toBe(`0014${"11".repeat(20)}`);
+    expect(withFee.validation.errors).not.toContain("OWNER_DECISION_REQUIRED: feeScript");
+    expect(withFee.profileHash).not.toBe(committedMainnetProfile().profileHash);
+    const other = bitcoin.address.fromOutputScript(Buffer.from(`0014${"22".repeat(20)}`, "hex"), bitcoin.networks.bitcoin);
+    expect(committedMainnetProfile({ feeAddress: other }).profileHash).not.toBe(withFee.profileHash);
+    expect(resolveMainnetProfile({ network: "mainnet", feeAddress }).profileHash).toBe(withFee.profileHash);
+  });
+
+  it("refuses an address from another network", () => {
+    const testnet = bitcoin.address.fromOutputScript(Buffer.from(`0014${"11".repeat(20)}`, "hex"), bitcoin.networks.testnet);
+    expect(() => committedMainnetProfile({ feeAddress: testnet })).toThrow(/COVE_FEE_ADDRESS/);
+    expect(() => committedMainnetProfile({ feeAddress: "not-an-address" })).toThrow(/COVE_FEE_ADDRESS/);
+  });
+
+  it("refuses the address of a public test key", () => {
+    const pub = ecc.pointFromScalar(Buffer.alloc(32, 0x44), true)!;
+    const testKeyAddress = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(pub), network: bitcoin.networks.bitcoin }).address!;
+    const { validation } = committedMainnetProfile({ feeAddress: testKeyAddress });
+    expect(validation.errors).toContain("TEST_KEY_IN_PROFILE: feeScript");
+  });
+});

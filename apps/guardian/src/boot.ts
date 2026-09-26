@@ -1,5 +1,5 @@
 import { requireCoveNetwork, coveNetworkSettings, type CoveNetworkName } from "@crclaunch/config";
-import { resolveMainnetProfile, TEST_ONLY_PROFILE_ENV, type ResolvedMainnetProfile } from "@crclaunch/cove-mainnet";
+import { resolveMainnetProfile, TEST_ONLY_PROFILE_ENV, FEE_ADDRESS_ENV, type ResolvedMainnetProfile } from "@crclaunch/cove-mainnet";
 import { CHAIN_BITCOIN_MAINNET } from "@crclaunch/cove-wire";
 import type { GuardianCustodyBackend } from "@crclaunch/cove-guardian/v3";
 import { selectCustodyBackend } from "./custody.js";
@@ -14,6 +14,8 @@ import { requireAuthToken } from "./auth.js";
  *                       to refuse unconfirmed funding inputs (the app could lie)
  *   GUARDIAN_AUTH_TOKEN required
  *   GUARDIAN_KEY_HEX    required on mainnet
+ *   COVE_FEE_ADDRESS    required on mainnet: where every protocol fee goes;
+ *                       must equal the web app's and the worker's
  *
  * Everything else (port, ord server) is committed per network. Regtest CI may
  * also name COVE_TEST_ONLY_PROFILE_PATH and GUARDIAN_TEST_KEY_HEX.
@@ -40,7 +42,11 @@ export function resolveGuardianBoot(env: Record<string, string | undefined>): Gu
   const coreRpcUrl = env.COVE_BITCOIN_RPC_URL;
   if (!coreRpcUrl) throw new Error("COVE_BITCOIN_RPC_URL is required (the Guardian checks funding inputs against its own node)");
 
-  const profile = resolveMainnetProfile({ network, testOnlyPath: env[TEST_ONLY_PROFILE_ENV] || undefined });
+  const profile = resolveMainnetProfile({
+    network,
+    testOnlyPath: env[TEST_ONLY_PROFILE_ENV] || undefined,
+    feeAddress: env[FEE_ADDRESS_ENV] || undefined,
+  });
   // The committed profile is always a bitcoin-mainnet profile. Running it
   // under any other network would sign for mainnet vaults with non-mainnet
   // rules, so it forces the mainnet guard — and must be declared as mainnet.

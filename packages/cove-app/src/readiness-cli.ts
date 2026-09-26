@@ -23,6 +23,8 @@ import { committedHash, evaluateIndexerProbe, probeWorkerLock } from "./readines
 export interface RuntimeReadinessEnv {
   /** TEST-ONLY profile file (CI); the committed profile otherwise. */
   COVE_TEST_ONLY_PROFILE_PATH?: string;
+  /** Where every protocol fee goes; fills the committed profile's feeScript. */
+  COVE_FEE_ADDRESS?: string;
   /** Committed hash of the approved mainnet profile (the source of truth). */
   COVE_V3_MAINNET_PROFILE_HASH?: string;
   /** Committed expected state root (replay root) the indexer must reach. */
@@ -67,6 +69,7 @@ export async function runRuntimeReadiness(env: RuntimeReadinessEnv): Promise<Run
     network: "tooling",
     testOnlyPath: env.COVE_TEST_ONLY_PROFILE_PATH,
     baseDir: process.env.INIT_CWD ?? process.cwd(),
+    feeAddress: env.COVE_FEE_ADDRESS || undefined,
   });
   const canaryActive = ["true", "1", "yes", "on"].includes((env.COVE_V3_CANARY_ACTIVE ?? "").toLowerCase());
 

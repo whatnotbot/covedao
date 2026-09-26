@@ -1,4 +1,5 @@
 import { resolve as resolvePath } from "node:path";
+import * as bitcoin from "bitcoinjs-lib";
 import {
   loadMainnetProfile,
   parseMainnetProfileJson,
@@ -18,8 +19,13 @@ import {
  * still null (placeholders), so validation FAILS and mainnet refuses to start
  * until they are filled in:
  *   activationHeight, guardianXOnly, recovery.pubkeys (+ threshold) and
- *   recovery.csvBlocks, feeScript, buyFeeBps, redeemFeeBps, p2pFeeBps,
+ *   recovery.csvBlocks, buyFeeBps, redeemFeeBps, p2pFeeBps,
  *   canary.allowedWalletScripts, canary.allowedTokenIds and the canary caps.
+ *
+ * feeScript stays null here: every service fills it from COVE_FEE_ADDRESS
+ * (see FEE_ADDRESS_ENV) before validating and hashing, so a service with a
+ * different fee address has a different profile hash and is caught by the
+ * app ↔ Guardian hash comparison.
  * Recovery is 2-of-3 (threshold 2, three keys) or 1-of-1 (threshold 1, one key).
  *
  * The frozen protocol fields at the bottom (carrier, anchor, supply, reserve,
@@ -69,9 +75,30 @@ export interface CommittedMainnetProfile {
   profileHash: string;
 }
 
-/** Parse + validate + hash the committed profile. Never throws on an incomplete one; check `validation.ok`. */
-export function committedMainnetProfile(): CommittedMainnetProfile {
+/**
+ * The env var holding the ONE address every protocol fee (mint, redeem,
+ * marketplace) is paid to. Web, worker and Guardian must all be given the same
+ * value; set it once, as a shared variable.
+ */
+export const FEE_ADDRESS_ENV = "COVE_FEE_ADDRESS";
+
+/** A fee address as the hex scriptPubKey the profile stores. Throws on an address not valid for `network`. */
+export function feeScriptFromAddress(address: string, network: bitcoin.networks.Network): string {
+  try {
+    return Buffer.from(bitcoin.address.toOutputScript(address.trim(), network)).toString("hex");
+  } catch {
+    throw new Error(`${FEE_ADDRESS_ENV} "${address}" is not a valid address for this network`);
+  }
+}
+
+/**
+ * Parse + validate + hash the committed profile, with feeScript taken from
+ * `feeAddress` (COVE_FEE_ADDRESS). Never throws on an incomplete profile; check
+ * `validation.ok`. Throws only on a fee address that is not a mainnet address.
+ */
+export function committedMainnetProfile(opts: { feeAddress?: string } = {}): CommittedMainnetProfile {
   const profile = parseMainnetProfileJson(COMMITTED_MAINNET_PROFILE_JSON);
+  if (opts.feeAddress) profile.feeScript = feeScriptFromAddress(opts.feeAddress, bitcoin.networks.bitcoin);
   return { profile, validation: validateMainnetProfile(profile), profileHash: hashMainnetProfile(profile) };
 }
 
@@ -95,8 +122,12 @@ export function resolveMainnetProfile(params: {
   testOnlyPath?: string;
   /** Directory a relative testOnlyPath resolves against. */
   baseDir?: string;
+  /** COVE_FEE_ADDRESS; fills the committed profile's feeScript. A test profile keeps its own. */
+  feeAddress?: string;
 }): ResolvedMainnetProfile {
-  if (!params.testOnlyPath) return { ...committedMainnetProfile(), source: "committed" };
+  if (!params.testOnlyPath) {
+    return { ...committedMainnetProfile({ feeAddress: params.feeAddress }), source: "committed" };
+  }
   if (params.network === "mainnet") {
     throw new Error(`${TEST_ONLY_PROFILE_ENV} is refused on mainnet: mainnet runs only the committed profile`);
   }

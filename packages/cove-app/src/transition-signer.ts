@@ -70,3 +70,44 @@ export function buildAppTransitionSigner(db: Database, config: V3AppConfig): Gua
     config.guardianXOnly.toString("hex"),
   );
 }
+
+/**
+ * Startup check that this process and the Guardian run the same mainnet
+ * profile — which includes COVE_FEE_ADDRESS. A service whose fee address (or
+ * any other profile value) differs from the Guardian's would build or index
+ * transitions the other side rejects, freezing vaults, so a mismatch stops the
+ * process. An unreachable Guardian is not a mismatch: it is retried until the
+ * profiles can be compared. Off mainnet there is no remote Guardian; no-op.
+ */
+export function watchGuardianAgreement(
+  signer: GuardianTransitionSigner,
+  config: V3AppConfig,
+  opts: { service: string; retryMs?: number; onMismatch?: (reason: string) => void } = { service: "app" },
+): void {
+  if (config.network !== "mainnet") return;
+  const retryMs = opts.retryMs ?? 15_000;
+  const onMismatch =
+    opts.onMismatch ??
+    ((reason: string) => {
+      console.error(`[${opts.service}] refusing to run: ${reason}. Set the same COVE_FEE_ADDRESS on web, worker and Guardian, and deploy them from one commit.`);
+      process.exit(1);
+    });
+  if (!config.guardianEndpoint) {
+    onMismatch("COVE_GUARDIAN_ENDPOINT is not set, so the profile cannot be compared with the Guardian's");
+    return;
+  }
+  const check = async (): Promise<void> => {
+    const h = await signer.health();
+    if (h.reachable) {
+      console.log(`[${opts.service}] Guardian runs the same mainnet profile (fee address included)`);
+      return;
+    }
+    if (h.reason?.startsWith("GUARDIAN_PROFILE_MISMATCH") || h.reason === "GUARDIAN_KEY_MISMATCH") {
+      onMismatch(h.reason);
+      return;
+    }
+    console.warn(`[${opts.service}] cannot compare profiles with the Guardian yet (${h.reason ?? "unreachable"}); retrying`);
+    setTimeout(() => void check(), retryMs);
+  };
+  void check();
+}

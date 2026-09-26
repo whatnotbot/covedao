@@ -68,7 +68,7 @@ have been.
 | `guardianXOnly` | Contents of `guardian.pub`. |
 | `recovery.pubkeys` | The three `recovery-N.pub` values. |
 | `recovery.csvBlocks` | Delay before recovery may spend. 144 ≈ 24 hours. Valid range 1–65535. |
-| `feeScript` | `scriptPubKey` hex where protocol fees are paid. A wallet you control. |
+| `feeScript` | Leave `null`. Fees go to `COVE_FEE_ADDRESS` (a `bc1…` address you control), set identically on web, worker and Guardian. |
 | `buyFeeBps` | Fee on a curve buy, in basis points. 100 = 1%. |
 | `redeemFeeBps` | Fee on a redeem, in basis points. |
 | `p2pFeeBps` | Fee on a peer-to-peer fill, in basis points. |

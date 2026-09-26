@@ -17,6 +17,8 @@ export {
   committedMainnetProfile,
   resolveMainnetProfile,
   TEST_ONLY_PROFILE_ENV,
+  FEE_ADDRESS_ENV,
+  feeScriptFromAddress,
   type CommittedMainnetProfile,
   type ResolvedMainnetProfile,
 } from "./committed-profile.js";

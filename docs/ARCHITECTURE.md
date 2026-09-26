@@ -56,14 +56,19 @@ each service reads is listed in `apps/*/.env.example`:
 
 | Service | Env |
 | --- | --- |
-| web | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL`, `COVE_GUARDIAN_ENDPOINT`, `COVE_GUARDIAN_AUTH_TOKEN` |
-| worker | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL` |
-| guardian | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL`, `GUARDIAN_AUTH_TOKEN`, `GUARDIAN_KEY_HEX` |
+| web | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL`, `COVE_GUARDIAN_ENDPOINT`, `COVE_GUARDIAN_AUTH_TOKEN`, `COVE_FEE_ADDRESS` |
+| worker | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL`, `COVE_GUARDIAN_ENDPOINT`, `COVE_GUARDIAN_AUTH_TOKEN`, `COVE_FEE_ADDRESS` |
+| guardian | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL`, `GUARDIAN_AUTH_TOKEN`, `GUARDIAN_KEY_HEX`, `COVE_FEE_ADDRESS` |
 
 RPC user and password are optional (hosted providers put the key in the
 URL). Mainnet refuses to start while the committed profile is incomplete,
 while any `COVE_*_PRIVATE_KEY_HEX` is set on web or worker, or when the
 Guardian key does not match the profile.
+
+`COVE_FEE_ADDRESS` is the one address every protocol fee is paid to. It fills
+the profile's `feeScript` before the profile is hashed, so set it once (a
+shared variable) for all three services: web and worker compare their profile
+hash with the Guardian's at startup and stop on a mismatch.
 
 Local regtest keeps its fixture defaults (local node, public test keys) once
 `COVE_NETWORK=regtest` is set in the repo-root `.env`. Regtest CI may name a

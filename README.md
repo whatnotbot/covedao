@@ -175,14 +175,19 @@ Guardian) with only these env vars:
 
 | Service | Env (see `apps/*/.env.example`) |
 | --- | --- |
-| web | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL`, `COVE_GUARDIAN_ENDPOINT`, `COVE_GUARDIAN_AUTH_TOKEN` |
-| worker | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL` |
-| guardian | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL`, `GUARDIAN_AUTH_TOKEN`, `GUARDIAN_KEY_HEX` |
+| web | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL`, `COVE_GUARDIAN_ENDPOINT`, `COVE_GUARDIAN_AUTH_TOKEN`, `COVE_FEE_ADDRESS` |
+| worker | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL`, `COVE_GUARDIAN_ENDPOINT`, `COVE_GUARDIAN_AUTH_TOKEN`, `COVE_FEE_ADDRESS` |
+| guardian | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL`, `GUARDIAN_AUTH_TOKEN`, `GUARDIAN_KEY_HEX`, `COVE_FEE_ADDRESS` |
 
 The Guardian refuses to start unless `GUARDIAN_KEY_HEX` matches the profile's
 `guardianXOnly`. On Railway the web may reach it over private networking
 (`http://<guardian>.railway.internal:4391`); anywhere else it must be https.
 The canary allowlists and caps in the profile are enforced on every mutation.
+
+`COVE_FEE_ADDRESS` is the one address every protocol fee is paid to. It fills
+the profile's `feeScript` before the profile is hashed, so set it once (a
+shared variable) for all three services: web and worker compare their profile
+hash with the Guardian's at startup and stop on a mismatch.
 
 Check readiness at any time:
 

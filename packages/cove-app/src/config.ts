@@ -2,7 +2,14 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "tiny-secp256k1";
 import { ECPairFactory } from "ecpair";
 import { CHAIN_BITCOIN_REGTEST, CHAIN_BITCOIN_SIGNET, CHAIN_BITCOIN_TESTNET, CHAIN_BITCOIN_MAINNET } from "@crclaunch/cove-wire";
-import { committedMainnetProfile, hashMainnetProfile, validateMainnetProfile, type MainnetProfile } from "@crclaunch/cove-mainnet";
+import {
+  committedMainnetProfile,
+  feeScriptFromAddress,
+  hashMainnetProfile,
+  validateMainnetProfile,
+  FEE_ADDRESS_ENV,
+  type MainnetProfile,
+} from "@crclaunch/cove-mainnet";
 import { COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
 import { PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
 import { AppError } from "./errors.js";
@@ -145,15 +152,23 @@ export interface LoadV3AppConfigOptions {
   testOnlyMainnetProfile?: MainnetProfile;
 }
 
-/** The committed mainnet profile, which must validate (no private keys in it). */
-function loadMainnetConfig(opts: LoadV3AppConfigOptions): MainnetProfile {
-  const profile = opts.testOnlyMainnetProfile ?? committedMainnetProfile().profile;
+/**
+ * The committed mainnet profile with its feeScript from COVE_FEE_ADDRESS, which
+ * must validate (no private keys in it).
+ */
+function loadMainnetConfig(env: Env, opts: LoadV3AppConfigOptions): MainnetProfile {
+  let profile: MainnetProfile;
+  try {
+    profile = opts.testOnlyMainnetProfile ?? committedMainnetProfile({ feeAddress: env[FEE_ADDRESS_ENV] }).profile;
+  } catch (e) {
+    throw new AppError("MAINNET_DISABLED", (e as Error).message);
+  }
   const validation = validateMainnetProfile(profile, { allowTestKeys: opts.testOnlyMainnetProfile !== undefined });
   if (!validation.ok) {
     throw new AppError("MAINNET_DISABLED", `invalid mainnet profile: ${validation.errors.join("; ")}`);
   }
   if (profile.guardianXOnly == null || profile.feeScript == null) {
-    throw new AppError("MAINNET_DISABLED", "mainnet profile missing guardianXOnly/feeScript");
+    throw new AppError("MAINNET_DISABLED", `mainnet profile missing guardianXOnly, or ${FEE_ADDRESS_ENV} is not set`);
   }
   return profile;
 }
@@ -199,7 +214,7 @@ export function loadV3AppConfig(env: Env, opts: LoadV3AppConfigOptions = {}): V3
     if (!settings.ordUrl) {
       throw new AppError("MAINNET_DISABLED", "mainnet needs an ord server: funding inputs must be checked for inscriptions and runes");
     }
-    const profile = loadMainnetConfig(opts);
+    const profile = loadMainnetConfig(env, opts);
     const recoveryProfile = recoveryProfileFromMainnetProfile(profile);
     return {
       enabled,
@@ -251,9 +266,22 @@ export function loadV3AppConfig(env: Env, opts: LoadV3AppConfigOptions = {}): V3
     throw new AppError("GUARDIAN_UNAVAILABLE", "COVE_GUARDIAN_PRIVATE_KEY_HEX is required off regtest");
   }
   const recoveryPriv = hexOrNull(env.COVE_RECOVERY_PRIVATE_KEY_HEX) ?? (network === "regtest" ? REGTEST_RECOVERY_PRIV : null);
+  // Fees go to COVE_FEE_ADDRESS when set, as on mainnet; otherwise to the
+  // fee key's address (the public fixture key on regtest).
+  const feeAddress = env[FEE_ADDRESS_ENV];
   const feePriv = hexOrNull(env.COVE_FEE_PRIVATE_KEY_HEX) ?? (network === "regtest" ? REGTEST_FEE_PRIV : null);
 
-  if (!recoveryPriv || !feePriv) throw new AppError("GUARDIAN_UNAVAILABLE", "recovery/fee keys required for non-regtest");
+  if (!recoveryPriv || (!feePriv && !feeAddress)) {
+    throw new AppError("GUARDIAN_UNAVAILABLE", `recovery key and ${FEE_ADDRESS_ENV} (or a fee key) required for non-regtest`);
+  }
+  let feeScript: Buffer;
+  try {
+    feeScript = feeAddress
+      ? Buffer.from(feeScriptFromAddress(feeAddress, network === "regtest" ? bitcoin.networks.regtest : bitcoin.networks.testnet), "hex")
+      : p2wpkh(feePriv!);
+  } catch (e) {
+    throw new AppError("WRONG_NETWORK", (e as Error).message);
+  }
 
   return {
     enabled,
@@ -264,7 +292,7 @@ export function loadV3AppConfig(env: Env, opts: LoadV3AppConfigOptions = {}): V3
     coreRpcUser,
     coreRpcPassword,
     coreRpcUrlSecondary,
-    feeScript: p2wpkh(feePriv),
+    feeScript,
     guardianXOnly: xonly(guardianPriv!),
     recoveryKeyXOnly: xonly(recoveryPriv),
     guardianPrivateKey: guardianPriv,

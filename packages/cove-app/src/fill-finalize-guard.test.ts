@@ -16,7 +16,7 @@ const dummySigner = {
 } as GuardianTransitionSigner;
 
 function serviceWith(overrides: Partial<ReturnType<typeof loadV3AppConfig>>): V3AppService {
-  const base = loadV3AppConfig({}); // regtest defaults
+  const base = loadV3AppConfig({ COVE_NETWORK: "regtest" }); // regtest defaults
   const config = { ...base, ...overrides };
   return new V3AppService({} as never, {} as never, config, dummySigner);
 }

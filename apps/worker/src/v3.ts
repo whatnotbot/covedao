@@ -19,7 +19,6 @@ import type { V3IndexerConfig } from "@crclaunch/cove-indexer/v3";
 
 const DB_URL = process.env.COVE_DATABASE_URL ?? process.env.DATABASE_URL ?? "";
 
-const POLL_MS = Number(process.env.COVE_WORKER_POLL_MS ?? 2000);
 
 async function acquireNetworkLock(network: string): Promise<Client> {
   const client = new Client({ connectionString: DB_URL });
@@ -38,7 +37,8 @@ async function acquireNetworkLock(network: string): Promise<Client> {
 async function main() {
   if (!DB_URL) throw new Error("COVE_DATABASE_URL is required");
   const config = loadV3AppConfig(process.env);
-  if (!config.enabled) throw new Error("COVE_V3_APP_ENABLED is false — refusing to run the V3 worker");
+  if (!config.enabled) throw new Error(`the V3 app is not enabled for ${config.network} (committed network settings)`);
+  const POLL_MS = config.settings.workerPollMs;
 
   const lock = await acquireNetworkLock(config.network);
   const provider = new CoreRpcProvider({ url: config.coreRpcUrl, user: config.coreRpcUser, password: config.coreRpcPassword });

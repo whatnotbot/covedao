@@ -44,6 +44,9 @@ importers:
       '@crclaunch/bitcoin':
         specifier: workspace:*
         version: link:../../packages/bitcoin
+      '@crclaunch/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@crclaunch/cove-app':
         specifier: workspace:*
         version: link:../../packages/cove-app
@@ -280,6 +283,9 @@ importers:
       '@crclaunch/bitcoin':
         specifier: workspace:*
         version: link:../bitcoin
+      '@crclaunch/config':
+        specifier: workspace:*
+        version: link:../config
       '@crclaunch/cove-covenant':
         specifier: workspace:*
         version: link:../cove-covenant

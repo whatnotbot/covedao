@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
+import { EXPLORER_URL } from "@/lib/network";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useWallet } from "@/components/WalletProvider";
@@ -482,14 +483,14 @@ function TokenContent() {
         curveStage={detail.curveStage}
         demo={demo}
         asks={asks}
-        explorerBase={process.env.NEXT_PUBLIC_EXPLORER_URL}
+        explorerBase={EXPLORER_URL}
       />
 
       {/* ── History ──────────────────────────────────────────────────── */}
       <TokenActivity
         tokenId={detail.tokenId}
         ticker={detail.ticker}
-        explorerBase={process.env.NEXT_PUBLIC_EXPLORER_URL}
+        explorerBase={EXPLORER_URL}
         demoRows={demo ? [] : undefined}
       />
 
@@ -694,7 +695,7 @@ function TokenContent() {
             {err ? (
               <p className="mt-4 border border-rejected/40 bg-rejected/10 px-3 py-2 text-xs text-rejected">{err}</p>
             ) : null}
-            {txid ? <TxStatus txid={txid} explorerBase={process.env.NEXT_PUBLIC_EXPLORER_URL} /> : null}
+            {txid ? <TxStatus txid={txid} explorerBase={EXPLORER_URL} /> : null}
           </div>
 
           {/* ── The verifiable facts. This is what separates Cove from a

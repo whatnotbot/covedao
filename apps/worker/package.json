@@ -16,17 +16,17 @@
     "v3": "tsx src/v3.ts"
   },
   "dependencies": {
+    "@crclaunch/bitcoin": "workspace:*",
     "@crclaunch/config": "workspace:*",
+    "@crclaunch/cove-app": "workspace:*",
+    "@crclaunch/cove-guardian": "workspace:*",
+    "@crclaunch/cove-indexer": "workspace:*",
     "@crclaunch/curve": "workspace:*",
     "@crclaunch/db": "workspace:*",
     "@crclaunch/protocol": "workspace:*",
     "bullmq": "^5.34.0",
     "dotenv": "^16.4.7",
     "ioredis": "^5.4.2",
-    "@crclaunch/bitcoin": "workspace:*",
-    "@crclaunch/cove-app": "workspace:*",
-    "@crclaunch/cove-guardian": "workspace:*",
-    "@crclaunch/cove-indexer": "workspace:*",
     "pg": "^8.13.1"
   },
   "devDependencies": {

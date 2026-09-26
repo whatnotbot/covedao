@@ -17,20 +17,21 @@
   },
   "dependencies": {
     "@crclaunch/bitcoin": "workspace:*",
+    "@crclaunch/config": "workspace:*",
     "@crclaunch/cove-covenant": "workspace:*",
     "@crclaunch/cove-economics": "workspace:*",
     "@crclaunch/cove-guardian": "workspace:*",
     "@crclaunch/cove-indexer": "workspace:*",
     "@crclaunch/cove-mainnet": "workspace:*",
     "@crclaunch/cove-market": "workspace:*",
+    "@crclaunch/cove-vault": "workspace:*",
     "@crclaunch/cove-wire": "workspace:*",
     "@crclaunch/curve": "workspace:*",
     "@crclaunch/db": "workspace:*",
     "bitcoinjs-lib": "^6.1.7",
-    "tiny-secp256k1": "^2.2.3",
-    "ecpair": "^2.1.0",
     "drizzle-orm": "^0.36.4",
-    "@crclaunch/cove-vault": "workspace:*"
+    "ecpair": "^2.1.0",
+    "tiny-secp256k1": "^2.2.3"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

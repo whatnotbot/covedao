@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { NETWORK } from "@/lib/network";
 import { useWallet } from "./WalletProvider";
 import { ADAPTERS } from "@/lib/wallets/adapters";
 import { WalletError, type WalletId } from "@/lib/wallets/types";
@@ -12,7 +13,6 @@ import { WalletError, type WalletId } from "@/lib/wallets/types";
  * get them — a picker that hides what you do not have looks broken to someone
  * who has not installed anything yet.
  */
-const NETWORK = process.env.NEXT_PUBLIC_COVE_NETWORK ?? "regtest";
 
 export function WalletPicker() {
   const { pickerOpen, closePicker, connect } = useWallet();

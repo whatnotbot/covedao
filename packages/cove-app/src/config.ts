@@ -6,6 +6,7 @@ import { committedMainnetProfile, hashMainnetProfile, validateMainnetProfile, ty
 import { COVE_FEE_CONFIG } from "@crclaunch/cove-economics";
 import { PUBLIC_SUPPLY_ATOMS } from "@crclaunch/curve";
 import { AppError } from "./errors.js";
+import { requireCoveNetwork, coveNetworkSettings, CoveNetworkError, type CoveNetworkSettings } from "@crclaunch/config";
 import type { VaultRecoveryProfile } from "@crclaunch/cove-vault";
 
 bitcoin.initEccLib(ecc as unknown as Parameters<typeof bitcoin.initEccLib>[0]);
@@ -15,11 +16,14 @@ export type V3Network = "regtest" | "signet" | "testnet" | "mainnet";
 
 export interface V3AppConfig {
   enabled: boolean;
+  /** The committed per-network settings (explorer, esplora, ord, poll, …). */
+  settings: CoveNetworkSettings;
   network: V3Network;
   chainIdentity: string;
   coreRpcUrl: string;
-  coreRpcUser: string;
-  coreRpcPassword: string;
+  /** Optional: hosted providers put the API key in the URL. */
+  coreRpcUser?: string;
+  coreRpcPassword?: string;
   /** Optional secondary Core URL for the two-node quorum (§29/§P1-2). */
   coreRpcUrlSecondary?: string;
   feeScript: Buffer;
@@ -90,21 +94,6 @@ function p2wpkh(priv: Buffer): Buffer {
   return bitcoin.payments.p2wpkh({ pubkey: key.publicKey, network: bitcoin.networks.regtest }).output!;
 }
 
-function parseNetwork(raw: string): V3Network {
-  switch (raw) {
-    case "regtest":
-      return "regtest";
-    case "signet":
-      return "signet";
-    case "testnet":
-      return "testnet";
-    case "mainnet":
-      return "mainnet";
-    default:
-      throw new AppError("WRONG_NETWORK", `unsupported Cove V3 network "${raw}"`);
-  }
-}
-
 function chainIdentityFor(network: V3Network): string {
   switch (network) {
     case "regtest":
@@ -165,27 +154,51 @@ function loadMainnetConfig(opts: LoadV3AppConfigOptions): MainnetProfile {
 }
 
 export function loadV3AppConfig(env: Env, opts: LoadV3AppConfigOptions = {}): V3AppConfig {
-  const enabled = ["true", "1", "yes", "on"].includes((env.COVE_V3_APP_ENABLED ?? "").toLowerCase());
-  const network = parseNetwork(env.COVE_NETWORK ?? env.CRC_NETWORK ?? "regtest");
+  // COVE_NETWORK is required; there is no fallback to CRC_NETWORK or regtest.
+  let network: V3Network;
+  try {
+    network = requireCoveNetwork(env);
+  } catch (e) {
+    if (e instanceof CoveNetworkError) throw new AppError("WRONG_NETWORK", e.message);
+    throw e;
+  }
+  const settings = coveNetworkSettings(network, env);
+  const enabled = settings.v3Enabled;
 
-  const coreRpcUrl =
-    env.COVE_BITCOIN_RPC_URL ?? env.COVE_REGTEST_RPC_URL ?? env.BITCOIN_RPC_URL ?? "http://127.0.0.1:18443";
-  const coreRpcUser = env.COVE_BITCOIN_RPC_USER ?? env.COVE_REGTEST_RPC_USER ?? env.BITCOIN_RPC_USER ?? "user";
-  const coreRpcPassword = env.COVE_BITCOIN_RPC_PASSWORD ?? env.COVE_REGTEST_RPC_PASSWORD ?? env.BITCOIN_RPC_PASSWORD ?? "pass";
-  const coreRpcUrlSecondary = env.COVE_BITCOIN_RPC_URL_SECONDARY;
+  // Regtest keeps its fixture defaults (the local node every harness starts).
+  // Every other network names its node explicitly; user/password are optional
+  // because hosted providers put the API key in the URL.
+  let coreRpcUrl: string;
+  let coreRpcUser: string | undefined;
+  let coreRpcPassword: string | undefined;
+  if (network === "regtest") {
+    coreRpcUrl = env.COVE_BITCOIN_RPC_URL ?? env.COVE_REGTEST_RPC_URL ?? env.BITCOIN_RPC_URL ?? "http://127.0.0.1:18443";
+    coreRpcUser = env.COVE_BITCOIN_RPC_USER ?? env.COVE_REGTEST_RPC_USER ?? env.BITCOIN_RPC_USER ?? "user";
+    coreRpcPassword = env.COVE_BITCOIN_RPC_PASSWORD ?? env.COVE_REGTEST_RPC_PASSWORD ?? env.BITCOIN_RPC_PASSWORD ?? "pass";
+  } else {
+    if (!env.COVE_BITCOIN_RPC_URL) {
+      throw new AppError("CORE_UNAVAILABLE", `COVE_BITCOIN_RPC_URL is required on ${network}`);
+    }
+    coreRpcUrl = env.COVE_BITCOIN_RPC_URL;
+    coreRpcUser = env.COVE_BITCOIN_RPC_USER || undefined;
+    coreRpcPassword = env.COVE_BITCOIN_RPC_PASSWORD || undefined;
+  }
+  // Optional second node for the two-node quorum; never required.
+  const coreRpcUrlSecondary = env.COVE_BITCOIN_RPC_URL_SECONDARY || undefined;
 
   // Mainnet: public profile ONLY. Any local private-key env var is fatal (§15).
   if (network === "mainnet") {
     if (env.COVE_GUARDIAN_PRIVATE_KEY_HEX || env.COVE_RECOVERY_PRIVATE_KEY_HEX || env.COVE_FEE_PRIVATE_KEY_HEX) {
       throw new AppError("MAINNET_DISABLED", "mainnet must not load local Guardian/recovery/fee private keys");
     }
-    if (!env.COVE_ORD_URL) {
-      throw new AppError("MAINNET_DISABLED", "COVE_ORD_URL is required on mainnet: funding inputs must be checked for inscriptions and runes");
+    if (!settings.ordUrl) {
+      throw new AppError("MAINNET_DISABLED", "mainnet needs an ord server: funding inputs must be checked for inscriptions and runes");
     }
     const profile = loadMainnetConfig(opts);
     const recoveryProfile = recoveryProfileFromMainnetProfile(profile);
     return {
       enabled,
+      settings,
       network,
       chainIdentity: CHAIN_BITCOIN_MAINNET,
       coreRpcUrl,
@@ -203,7 +216,7 @@ export function loadV3AppConfig(env: Env, opts: LoadV3AppConfigOptions = {}): V3
       p2pFeeBps: profile.p2pFeeBps ?? undefined,
       buyFeeBps: BigInt(profile.buyFeeBps!),
       buyFeeFlatSats: COVE_FEE_CONFIG.buyFeeFlatSats,
-      discoveryEnvelope: ["true", "1", "yes", "on"].includes((env.COVE_V3_DISCOVERY_ENVELOPE ?? "").toLowerCase()),
+      discoveryEnvelope: settings.discoveryEnvelope,
       redeemFeeBps: BigInt(profile.redeemFeeBps!),
       redeemFeeFlatSats: COVE_FEE_CONFIG.redeemFeeFlatSats,
       maxP2pSettlementSats: profile.canary.maxP2pSettlementSats ?? undefined,
@@ -218,7 +231,7 @@ export function loadV3AppConfig(env: Env, opts: LoadV3AppConfigOptions = {}): V3
       mainnetProfileHash: hashMainnetProfile(profile),
       guardianEndpoint: env.COVE_GUARDIAN_ENDPOINT,
       guardianAuthToken: env.COVE_GUARDIAN_AUTH_TOKEN,
-      ordUrl: env.COVE_ORD_URL,
+      ordUrl: settings.ordUrl ?? undefined,
     };
   }
 
@@ -238,6 +251,7 @@ export function loadV3AppConfig(env: Env, opts: LoadV3AppConfigOptions = {}): V3
 
   return {
     enabled,
+    settings,
     network,
     chainIdentity: chainIdentityFor(network),
     coreRpcUrl,
@@ -254,13 +268,13 @@ export function loadV3AppConfig(env: Env, opts: LoadV3AppConfigOptions = {}): V3
     activationHeight: BigInt(env.COVE_ACTIVATION_HEIGHT ?? "0"),
     buyFeeBps: COVE_FEE_CONFIG.buyFeeBps,
     buyFeeFlatSats: COVE_FEE_CONFIG.buyFeeFlatSats,
-    discoveryEnvelope: ["true", "1", "yes", "on"].includes((env.COVE_V3_DISCOVERY_ENVELOPE ?? "").toLowerCase()),
+    discoveryEnvelope: settings.discoveryEnvelope,
     redeemFeeBps: COVE_FEE_CONFIG.redeemFeeBps,
     redeemFeeFlatSats: COVE_FEE_CONFIG.redeemFeeFlatSats,
     maxMinerFeeSats: 20_000n,
     maxListingBlocks: 21_000n,
     reservationTtlSeconds: 90,
-    ordUrl: env.COVE_ORD_URL || undefined,
+    ordUrl: settings.ordUrl ?? undefined,
     // Regtest only: the end-to-end suite mints a whole curve, which at the
     // real 200,000-sat limit would take about 5,000 mints.
     ...(network === "regtest" && env.COVE_REGTEST_MAX_MINT_GROSS_SATS

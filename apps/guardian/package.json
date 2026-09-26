@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@crclaunch/bitcoin": "workspace:*",
+    "@crclaunch/config": "workspace:*",
     "@crclaunch/cove-app": "workspace:*",
     "@crclaunch/cove-guardian": "workspace:*",
     "@crclaunch/cove-indexer": "workspace:*",

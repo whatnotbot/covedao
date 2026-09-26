@@ -17,7 +17,7 @@ const dummySigner = {
 } as GuardianTransitionSigner;
 
 function disabledService(): V3AppService {
-  const base = loadV3AppConfig({}); // regtest defaults (all key material present)
+  const base = loadV3AppConfig({ COVE_NETWORK: "regtest" }); // regtest defaults (all key material present)
   const config = { ...base, enabled: false };
   return new V3AppService({} as never, {} as never, config, dummySigner);
 }

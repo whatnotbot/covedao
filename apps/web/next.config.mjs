@@ -4,8 +4,21 @@ import { fileURLToPath } from "node:url";
 // Load the monorepo-root .env so both web + worker share one configuration.
 loadEnv({ path: fileURLToPath(new URL("../../.env", import.meta.url)) });
 
+// COVE_NETWORK is required: the browser bundle is built for one network.
+const NETWORKS = ["regtest", "signet", "testnet", "mainnet"];
+const network = process.env.COVE_NETWORK;
+if (!network || !NETWORKS.includes(network)) {
+  throw new Error(`COVE_NETWORK is required to build the web app (one of ${NETWORKS.join(", ")}); got "${network ?? ""}"`);
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Inlined into the browser bundle. The explorer is committed per network
+  // (@crclaunch/config); the env override is honoured off mainnet only.
+  env: {
+    NEXT_PUBLIC_COVE_NETWORK: network,
+    NEXT_PUBLIC_EXPLORER_URL: network === "mainnet" ? "" : (process.env.NEXT_PUBLIC_EXPLORER_URL ?? ""),
+  },
   transpilePackages: [
     "@crclaunch/config",
     "@crclaunch/curve",

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { NETWORK as COVE_NETWORK } from "@/lib/network";
 import type { WalletCapabilities } from "@crclaunch/wallets";
 import { adapterFor, inputsOwnedBy } from "@/lib/wallets/adapters";
 import { WalletError, type CoveNetwork, type WalletId } from "@/lib/wallets/types";
@@ -82,7 +83,7 @@ function getTestWallet(): TestWallet | null {
   return (window as unknown as { __COVE_TEST_WALLET__?: TestWallet }).__COVE_TEST_WALLET__ ?? null;
 }
 
-const NETWORK = (process.env.NEXT_PUBLIC_COVE_NETWORK ?? "regtest") as CoveNetwork;
+const NETWORK = COVE_NETWORK as CoveNetwork;
 const STORAGE_KEY = "cove.wallet";
 
 interface Connected {

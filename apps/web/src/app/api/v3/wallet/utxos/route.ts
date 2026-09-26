@@ -49,12 +49,12 @@ export async function GET(req: Request) {
       return ok({ address, utxos, source: "core" });
     }
 
-    const esplora = process.env.COVE_ESPLORA_URL;
+    // Committed per network (@crclaunch/config); regtest has none.
+    const esplora = config.settings.esploraUrl;
     if (!esplora) {
       return fail(
         "ESPLORA_NOT_CONFIGURED",
-        "No address index is configured, so the wallet's spendable coins cannot be listed. " +
-          "Set COVE_ESPLORA_URL.",
+        `No address index is configured for ${config.network}, so the wallet's spendable coins cannot be listed.`,
         503,
       );
     }

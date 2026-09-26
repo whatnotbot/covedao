@@ -27,3 +27,12 @@ export {
   type ProductMode,
   type CoveMainnetActivationStage,
 } from "./flags.js";
+export {
+  COVE_NETWORKS,
+  COVE_NETWORK_SETTINGS,
+  CoveNetworkError,
+  requireCoveNetwork,
+  coveNetworkSettings,
+  type CoveNetworkName,
+  type CoveNetworkSettings,
+} from "./cove-networks.js";

@@ -27,7 +27,13 @@ const globalForV3 = globalThis as unknown as { __coveV3Services?: V3Services };
 export function getV3Services(): V3Services {
   if (globalForV3.__coveV3Services) return globalForV3.__coveV3Services;
   const config = loadV3AppConfig(process.env);
-  const db = createDb(process.env.COVE_DATABASE_URL ?? process.env.DATABASE_URL ?? "");
+  // Mainnet signs only through the Guardian service; refuse to start without it.
+  if (config.network === "mainnet" && (!config.guardianEndpoint || !config.guardianAuthToken)) {
+    throw new AppError("GUARDIAN_UNAVAILABLE", "COVE_GUARDIAN_ENDPOINT and COVE_GUARDIAN_AUTH_TOKEN are required on mainnet");
+  }
+  const dbUrl = process.env.COVE_DATABASE_URL ?? process.env.DATABASE_URL;
+  if (!dbUrl) throw new AppError("APP_DISABLED", "COVE_DATABASE_URL is required");
+  const db = createDb(dbUrl);
   const provider = new CoreRpcProvider({
     url: config.coreRpcUrl,
     user: config.coreRpcUser,

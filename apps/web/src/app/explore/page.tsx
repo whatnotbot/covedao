@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useIndexedHeight } from "@/lib/use-indexed-height";
+import { useIndexedBlock } from "@/lib/use-indexed-block";
 import { useSearchParams } from "next/navigation";
 import type { V3TokenCardData } from "@/components/TokenCard";
 import { DEMO_TOKENS } from "@/lib/demo-tokens";
@@ -44,7 +44,7 @@ function ExploreContent() {
   const [filter, setFilter] = useState<Filter>("all");
 
   // Refetch when a new block is indexed; only a new search shows the loading state.
-  const height = useIndexedHeight();
+  const block = useIndexedBlock();
   const shownSearch = useRef<string | null>(null);
   useEffect(() => {
     if (demo) {
@@ -67,7 +67,7 @@ function ExploreContent() {
         setFailed(true);
         setLoaded(true);
       });
-  }, [search, demo, height]);
+  }, [search, demo, block]);
 
   const rows = useMemo(() => {
     const pct = (t: V3TokenCardData) => {

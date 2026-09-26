@@ -3,11 +3,12 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * The indexer's height, polled once for the whole page.
+ * The indexer's latest block, polled once for the whole page.
  *
  * Everything Cove shows changes only when a block is indexed, so pages refetch
  * when this value changes (put it in an effect's dependencies) instead of
- * polling each endpoint on a timer. One shared poll serves every subscriber,
+ * polling each endpoint on a timer. It is the block HASH, not the height: a
+ * reorg replaces a block at the same height, and the page must refetch then too. One shared poll serves every subscriber,
  * and it runs only while something is subscribed.
  */
 
@@ -15,7 +16,14 @@ export interface ChainStatus {
   network: string;
   appEnabled: boolean;
   core: { reachable: boolean; height: string; tip: string };
-  indexer: { health: string; indexedHeight: string; stateRoot: string; lag: string; rebuilding: boolean };
+  indexer: {
+    health: string;
+    indexedHeight: string;
+    indexedBlockHash: string;
+    stateRoot: string;
+    lag: string;
+    rebuilding: boolean;
+  };
   guardian: { configured: boolean };
   market: { enabled: boolean };
 }
@@ -57,7 +65,7 @@ export function useChainStatus(): ChainStatus | null {
   return useSyncExternalStore(subscribe, () => status, () => null);
 }
 
-/** The indexed block height ("" until known). Changes once per indexed block. */
-export function useIndexedHeight(): string {
-  return useChainStatus()?.indexer.indexedHeight ?? "";
+/** The indexed block's hash ("" until known). Changes on every new block and on a reorg. */
+export function useIndexedBlock(): string {
+  return useChainStatus()?.indexer.indexedBlockHash ?? "";
 }

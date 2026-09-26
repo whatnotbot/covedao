@@ -1,6 +1,6 @@
 "use client";
 
-import { useChainStatus } from "@/lib/use-indexed-height";
+import { useChainStatus } from "@/lib/use-indexed-block";
 
 export function StatusBar() {
   const status = useChainStatus();

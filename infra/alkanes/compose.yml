@@ -1,0 +1,126 @@
+# Local regtest Bitcoin + the alkanes stack, for Cove development.
+#
+#   scripts/alkanes-up.sh            build (first time ~30-60 min), start, mine to 101
+#   scripts/alkanes-up.sh status     heights of every service
+#   scripts/alkanes-up.sh down       stop (keeps the chain)
+#   scripts/alkanes-up.sh reset      stop and delete the chain
+#
+# Every port binds to 127.0.0.1 only. RPC credentials are the regtest fixture
+# defaults (user/pass) so Cove's COVE_NETWORK=regtest works against this node
+# with no extra env. Upstream images come from kungfuflex/alkanes pinned to a
+# commit; metashrew is built here (see metashrew/Dockerfile).
+name: cove-alkanes
+
+volumes:
+  bitcoin-data:   # shared: esplora reads bitcoind's block files
+  metashrew-data:
+  ord-data:
+  esplora-data:
+
+services:
+  bitcoind:
+    # Core 30: relays two OP_RETURNs, so the crc-20 discovery envelope works here.
+    image: bitcoin/bitcoin:30.0
+    volumes:
+      - bitcoin-data:/home/bitcoin/.bitcoin
+    command:
+      - -regtest=1
+      - -txindex=1
+      - -printtoconsole
+      - -server=1
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=user
+      - -rpcpassword=pass
+      - -rpcthreads=32
+      - -rpcworkqueue=1024
+      - -fallbackfee=0.0002
+    ports:
+      - "127.0.0.1:18443:18443"
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-regtest", "-rpcuser=user", "-rpcpassword=pass", "getblockchaininfo"]
+      interval: 2s
+      retries: 60
+    restart: unless-stopped
+
+  metashrew:
+    build: ./metashrew
+    image: cove-metashrew:alkanes
+    depends_on:
+      bitcoind: { condition: service_healthy }
+    volumes:
+      - metashrew-data:/data
+    environment:
+      DAEMON_RPC_ADDR: http://bitcoind:18443
+      AUTH: user:pass
+      DB_PATH: /data
+      HOST: 0.0.0.0
+      PORT: "8080"
+    ports:
+      - "127.0.0.1:18080:8080"
+    restart: unless-stopped
+
+  ord:
+    # ord 0.22.1 with --index-runes: answers "does this outpoint hold an
+    # inscription or a rune?" for Cove's funding-input check.
+    build:
+      context: "https://github.com/kungfuflex/alkanes.git#7a3326b12702c044424d10b37c048e06ebefb3d2:docker/ord"
+    image: cove-ord:alkanes
+    depends_on:
+      bitcoind: { condition: service_healthy }
+    volumes:
+      - ord-data:/root/.local/share/ord
+    environment:
+      CHAIN: regtest
+      RPCUSER: user
+      RPCPASSWORD: pass
+      DAEMON_RPC_ADDR: bitcoind:18443
+      PORT: "8090"
+    ports:
+      - "127.0.0.1:8090:8090"
+    restart: unless-stopped
+
+  esplora:
+    # Address index (REST on 50010, electrum on 50001) for wallet UTXO lookups.
+    build:
+      context: "https://github.com/kungfuflex/alkanes.git#7a3326b12702c044424d10b37c048e06ebefb3d2:docker/electrs"
+    image: cove-esplora:alkanes
+    depends_on:
+      bitcoind: { condition: service_healthy }
+    volumes:
+      - bitcoin-data:/data/bitcoin
+      - esplora-data:/data/electrs
+    environment:
+      ELECTRS_AUTH: user:pass
+      ELECTRS_NETWORK: regtest
+      ELECTRS_DAEMON_RPC_ADDR: bitcoind:18443
+      ELECTRS_HTTP_ADDR: 0.0.0.0:50010
+      ELECTRS_ELECTRUM_RPC_ADDR: 0.0.0.0:50001
+      ELECTRS_DB_DIR: /data/electrs
+      ELECTRS_DAEMON_DIR: /data/bitcoin
+    ports:
+      - "127.0.0.1:50010:50010"
+      - "127.0.0.1:50001:50001"
+    restart: unless-stopped
+
+  jsonrpc:
+    # The alkanes JSON-RPC gateway (btc_*, ord_*, esplora_*, metashrew_* /
+    # alkanes_*) that oyl-sdk and alkanes tooling talk to.
+    build:
+      context: "https://github.com/kungfuflex/alkanes.git#7a3326b12702c044424d10b37c048e06ebefb3d2:jsonrpc"
+    image: cove-jsonrpc:alkanes
+    depends_on: [bitcoind, metashrew, ord, esplora]
+    environment:
+      HOST: 0.0.0.0
+      PORT: "18888"
+      RPCUSER: user
+      RPCPASSWORD: pass
+      DAEMON_RPC_ADDR: bitcoind:18443
+      ORD_HOST: ord
+      ORD_PORT: "8090"
+      ESPLORA_HOST: esplora
+      ESPLORA_PORT: "50010"
+      METASHREW_URI: http://metashrew:8080
+    ports:
+      - "127.0.0.1:18888:18888"
+    restart: unless-stopped

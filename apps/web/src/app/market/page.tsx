@@ -1,6 +1,6 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useIndexedBlock } from "@/lib/use-indexed-block";
@@ -28,10 +28,26 @@ interface Listing {
   ticker?: string | null;
 }
 
+/** A launched token, as a market card. */
+interface MarketToken {
+  tokenId: string;
+  ticker: string;
+  displayName: string;
+  issuedSupplyAtoms: string;
+  publicCapAtoms: string;
+  graduated?: boolean;
+  imageUrl?: string | null;
+}
+
 function MarketContent() {
   const searchParams = useSearchParams();
   // Client-side design-preview path: no API calls, no writes.
   const demo = searchParams.get("demo") === "1";
+  const router = useRouter();
+  // The market being viewed: one token's book, or every book when unset.
+  const selected = searchParams.get("token");
+  const [tokens, setTokens] = useState<MarketToken[]>([]);
+  const [query, setQuery] = useState("");
   const { connected, script, publicKey, ordinalsScript, connect, signPsbt, signBip322, getUtxos } = useWallet();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -41,6 +57,29 @@ function MarketContent() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const { rates, selected: feeTier, setSelected: setFeeTier, satPerVb } = useFeeRates();
+
+  // Every launched token, for the market cards.
+  useEffect(() => {
+    if (demo) {
+      setTokens(DEMO_TOKENS as unknown as MarketToken[]);
+      return;
+    }
+    void fetch("/api/v3/tokens")
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.ok) setTokens(j.data);
+      })
+      .catch(() => undefined);
+  }, [demo, block]);
+
+  /** Open one token's market (or all, with null); kept in the URL so it can be shared. */
+  function selectToken(tokenId: string | null) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (tokenId) params.set("token", tokenId);
+    else params.delete("token");
+    const qs = params.toString();
+    router.replace(qs ? `/market?${qs}` : "/market", { scroll: false });
+  }
 
   useEffect(() => {
     if (demo) {
@@ -87,9 +126,35 @@ function MarketContent() {
   // Grouped by token, then cheapest first within each token. Sorting the whole
   // book by absolute price would rank a cheap token above an expensive one and
   // read as a bargain, when the two prices are not comparable at all.
+  const visible = useMemo(
+    () => (selected ? listings.filter((l) => l.tokenId === selected) : listings),
+    [listings, selected],
+  );
+
+  // Per-token book stats for the cards: open asks and the floor per 1,000.
+  const bookByToken = useMemo(() => {
+    const m = new Map<string, { asks: number; floor: number | null }>();
+    for (const l of listings) {
+      if (l.status !== "ACTIVE") continue;
+      const u = unitPriceSats(l.amountAtoms, l.totalPriceSats);
+      const cur = m.get(l.tokenId) ?? { asks: 0, floor: null };
+      m.set(l.tokenId, { asks: cur.asks + 1, floor: cur.floor === null ? u : Math.min(cur.floor, u) });
+    }
+    return m;
+  }, [listings]);
+
+  // Cards: search by ticker or name; tokens with open asks first, then by ticker.
+  const cards = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return tokens
+      .filter((t) => !q || t.ticker.toLowerCase().includes(q) || (t.displayName ?? "").toLowerCase().includes(q))
+      .sort((a, b) => (bookByToken.get(b.tokenId)?.asks ?? 0) - (bookByToken.get(a.tokenId)?.asks ?? 0) || a.ticker.localeCompare(b.ticker));
+  }, [tokens, query, bookByToken]);
+  const selectedToken = tokens.find((t) => t.tokenId === selected) ?? null;
+
   const rows = useMemo(
     () =>
-      listings
+      visible
         .map((l) => ({
           listing: l,
           unitPrice: unitPriceSats(l.amountAtoms, l.totalPriceSats),
@@ -97,7 +162,7 @@ function MarketContent() {
           label: l.ticker ?? l.tokenId,
         }))
         .sort((a, b) => a.label.localeCompare(b.label) || a.unitPrice - b.unitPrice),
-    [listings],
+    [visible],
   );
 
   const { series, lastPrice } = useSparklines(
@@ -111,7 +176,7 @@ function MarketContent() {
   );
 
   const totalTokens = rows.reduce((a, r) => a + r.tokens, 0);
-  const totalSats = listings.reduce((a, l) => a + BigInt(l.totalPriceSats), 0n);
+  const totalSats = visible.reduce((a, l) => a + BigInt(l.totalPriceSats), 0n);
 
   return (
     <div className="space-y-px">
@@ -130,17 +195,74 @@ function MarketContent() {
         </p>
 
         <div className="mt-8 grid grid-cols-2 gap-px bg-rule sm:grid-cols-3">
-          <Tile value={fmtInt(listings.length)} label="Open asks" />
+          <Tile value={fmtInt(visible.length)} label="Open asks" />
           <Tile value={fmtInt(totalTokens)} label="Tokens offered" />
           <Tile value={totalSats > 0n ? fmtBtc(totalSats) : "\u2014"} label="Book value" />
         </div>
       </section>
 
       <section className="panel px-6 py-8 sm:px-10">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="eyebrow">Markets</p>
+            <h2 className="mt-2 text-xl text-bone">{selectedToken ? `$${selectedToken.ticker}` : "All tokens"}</h2>
+          </div>
+          <input
+            aria-label="Search tokens"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search ticker or name"
+            className="field max-w-xs"
+          />
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-px bg-rule sm:grid-cols-3 lg:grid-cols-4">
+          <button
+            onClick={() => selectToken(null)}
+            aria-pressed={!selected}
+            className={`bg-ink-2 p-4 text-left transition-colors hover:bg-ink-3 ${!selected ? "outline outline-1 outline-signal" : ""}`}
+          >
+            <div className="text-bone">All tokens</div>
+            <div className="mt-1 text-xs text-bone-dim">{fmtInt(listings.filter((l) => l.status === "ACTIVE").length)} open asks</div>
+          </button>
+          {cards.map((t) => {
+            const book = bookByToken.get(t.tokenId);
+            const minted = BigInt(t.publicCapAtoms) > 0n ? Number((BigInt(t.issuedSupplyAtoms) * 1000n) / BigInt(t.publicCapAtoms)) / 10 : 0;
+            const out = t.graduated ?? BigInt(t.issuedSupplyAtoms) >= BigInt(t.publicCapAtoms);
+            const on = selected === t.tokenId;
+            return (
+              <button
+                key={t.tokenId}
+                onClick={() => selectToken(on ? null : t.tokenId)}
+                aria-pressed={on}
+                aria-label={`${t.ticker} market`}
+                className={`bg-ink-2 p-4 text-left transition-colors hover:bg-ink-3 ${on ? "outline outline-1 outline-signal" : ""}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-bone">${t.ticker}</span>
+                  <span className={out ? "chip chip-signal" : "chip chip-verified"}>{out ? "Minted out" : `${minted}%`}</span>
+                </div>
+                <div className="mt-1 truncate text-xs text-bone-dim">{t.displayName}</div>
+                <div className="mt-3 text-xs text-bone-2">
+                  {book ? `${fmtInt(book.asks)} ask${book.asks === 1 ? "" : "s"} · floor ${fmtInt(Math.ceil(book.floor ?? 0))} sats/1k` : out ? "No asks yet" : "Minting — trades after mint-out"}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        {tokens.length > 0 && cards.length === 0 ? <p className="mt-4 text-sm text-bone-dim">No token matches “{query}”.</p> : null}
+        {selectedToken ? (
+          <p className="mt-4 text-xs text-bone-dim">
+            Showing only ${selectedToken.ticker}.{" "}
+            <Link href={`/token/${selectedToken.tokenId}`} className="text-signal hover:underline">Open its token page</Link> to mint, redeem or list.
+          </p>
+        ) : null}
+      </section>
+
+      <section className="panel px-6 py-8 sm:px-10">
         {!loaded ? (
           <Empty message="Loading listings\u2026" />
         ) : rows.length === 0 ? (
-          <Empty message="No active listings yet." />
+          <Empty message={selectedToken ? `No asks for $${selectedToken.ticker} yet.` : "No active listings yet."} />
         ) : (
           <div className="overflow-x-auto">
             <table className="ledger-table min-w-[64rem]">

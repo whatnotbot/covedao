@@ -295,6 +295,20 @@ test("E2E-009 mint-out: the page switches to Buy / Sell / Redeem, and the market
   const listings = await fetch(`${BASE}/api/v3/market/listings?tokenId=${fullId}`).then((r) => r.json());
   expect(listings.data.some((l: { status: string; amountAtoms: string; totalPriceSats: string }) =>
     l.status === "ACTIVE" && BigInt(l.amountAtoms) === 2_000n * T && l.totalPriceSats === "120000")).toBe(true);
+
+  // The Market page has a card per launched token; clicking one shows only
+  // that token's book, and the URL keeps the filter.
+  await carol.goto(`${BASE}/market`);
+  await expect(carol.getByRole("button", { name: "FULL market" })).toBeVisible();
+  await expect(carol.getByRole("button", { name: "FROG market" })).toBeVisible();
+  await carol.getByRole("button", { name: "FULL market" }).click();
+  await expect(carol).toHaveURL(new RegExp(`token=${fullId}`));
+  await expect(carol.getByText("Showing only $FULL.")).toBeVisible();
+  await expect(carol.locator("tbody tr")).toHaveCount(1);
+  await expect(carol.locator("tbody")).toContainText("0.0012 BTC");
+  await carol.getByLabel("Search tokens").fill("fro");
+  await expect(carol.getByRole("button", { name: "FULL market" })).toHaveCount(0);
+  await expect(carol.getByRole("button", { name: "FROG market" })).toBeVisible();
 });
 
 test("E2E-010 wallet: no List before mint-out, and it says why", async ({ browser }) => {

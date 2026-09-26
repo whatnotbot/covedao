@@ -86,7 +86,7 @@ class RegtestRpc {
   }
   async createWallet(name: string): Promise<void> {
     try { await this.call("createwallet", [name, false, false, "", false, true, false]); }
-    catch (e) { if (!/already exists/i.test((e as Error).message)) throw e; }
+    catch (e) { if (!/already exists/i.test((e as Error).message)) throw e; await this.call("loadwallet", [name]).catch((le: Error) => { if (!/already loaded/i.test(le.message)) throw le; }); }
   }
   getNewAddress(): Promise<string> { return this.call("getnewaddress"); }
   sendToAddress(addr: string, btc: number): Promise<string> { return this.call("sendtoaddress", [addr, btc]); }

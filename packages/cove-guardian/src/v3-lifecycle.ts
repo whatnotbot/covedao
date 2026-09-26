@@ -102,7 +102,7 @@ class RegtestRpc {
     try {
       await this.call("createwallet", [name, false, false, "", false, true, false]);
     } catch (e) {
-      if (!/already exists/i.test((e as Error).message)) throw e;
+      if (!/already exists/i.test((e as Error).message)) throw e; await this.call("loadwallet", [name]).catch((le: Error) => { if (!/already loaded/i.test(le.message)) throw le; });
     }
   }
   getNewAddress(): Promise<string> {

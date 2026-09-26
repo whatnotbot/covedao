@@ -73,7 +73,7 @@ class Rpc {
   getNewAddress = () => this.call<string>("getnewaddress");
   createWallet = async (n: string) => {
     try { await this.call("createwallet", [n, false, false, "", false, false, false]); }
-    catch (e) { if (!/already exists/i.test((e as Error).message)) throw e; }
+    catch (e) { if (!/already exists/i.test((e as Error).message)) throw e; await this.call("loadwallet", [n]).catch((le: Error) => { if (!/already loaded/i.test(le.message)) throw le; }); }
   };
   sendToAddress = (a: string, btc: number) => this.call<string>("sendtoaddress", [a, btc]);
   generate = (n: number, a: string) => this.call<string[]>("generatetoaddress", [n, a]);

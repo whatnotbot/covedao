@@ -5,6 +5,9 @@
 #   scripts/alkanes-up.sh           build if needed, start, mine to height 101
 #   scripts/alkanes-up.sh status    height of every service
 #   scripts/alkanes-up.sh mine [n]  mine n blocks (default 1)
+#   scripts/alkanes-up.sh unload    unload every wallet (Cove's harnesses each
+#                                   expect to be the only loaded wallet; run
+#                                   this between two harness runs)
 #   scripts/alkanes-up.sh down      stop (keeps the chain)
 #   scripts/alkanes-up.sh reset     stop and delete every volume (fresh chain)
 #
@@ -37,17 +40,24 @@ status() {
   height_of esplora http://127.0.0.1:50010/blocks/tip/height
 }
 
+# The stack's own wallet is loaded only while mining, so tools that expect to
+# be the only loaded wallet (Cove's regtest harnesses) keep working.
 mine() {
+  "${CLI[@]}" loadwallet $WALLET >/dev/null 2>&1 || "${CLI[@]}" createwallet $WALLET >/dev/null 2>&1 || true
   "${CLI[@]}" -rpcwallet=$WALLET generatetoaddress "${1:-1}" "$("${CLI[@]}" -rpcwallet=$WALLET getnewaddress)" >/dev/null
+  "${CLI[@]}" unloadwallet $WALLET >/dev/null 2>&1 || true
 }
 
 case "${1:-up}" in
   status) status; exit 0 ;;
   mine) mine "${2:-1}"; status; exit 0 ;;
+  unload)
+    for w in $("${CLI[@]}" listwallets | tr -d '[]", ' | grep -v '^$'); do "${CLI[@]}" unloadwallet "$w" >/dev/null; echo "unloaded $w"; done
+    exit 0 ;;
   down) "${DC[@]}" down; exit 0 ;;
   reset) "${DC[@]}" down -v; exit 0 ;;
   up) ;;
-  *) echo "usage: $0 [up|status|mine [n]|down|reset]"; exit 1 ;;
+  *) echo "usage: $0 [up|status|mine [n]|unload|down|reset]"; exit 1 ;;
 esac
 
 if lsof -nP -iTCP:18443 -sTCP:LISTEN 2>/dev/null | grep -qv com.docker; then
@@ -61,7 +71,6 @@ echo "building images (first run compiles metashrew, ord and esplora: ~30-60 min
 "${DC[@]}" up -d
 for i in $(seq 1 60); do "${CLI[@]}" getblockcount >/dev/null 2>&1 && break; sleep 2; done
 
-"${CLI[@]}" loadwallet $WALLET >/dev/null 2>&1 || "${CLI[@]}" createwallet $WALLET >/dev/null 2>&1 || true
 H=$("${CLI[@]}" getblockcount)
 [ "$H" -lt 101 ] && mine $((101 - H))
 echo "waiting for the indexers to reach the tip…"

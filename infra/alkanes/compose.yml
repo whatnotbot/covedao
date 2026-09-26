@@ -7,7 +7,9 @@
 #
 # Every port binds to 127.0.0.1 only. RPC credentials are the regtest fixture
 # defaults (user/pass) so Cove's COVE_NETWORK=regtest works against this node
-# with no extra env. Upstream images come from kungfuflex/alkanes pinned to a
+# with no extra env. Cove's harnesses each expect to be the only loaded
+# wallet: run `scripts/alkanes-up.sh unload` between two harness runs.
+# Upstream images come from kungfuflex/alkanes pinned to a
 # commit; metashrew is built here (see metashrew/Dockerfile).
 name: cove-alkanes
 
@@ -62,7 +64,10 @@ services:
 
   ord:
     # ord 0.22.1 with --index-runes: answers "does this outpoint hold an
-    # inscription or a rune?" for Cove's funding-input check.
+    # inscription or a rune?" for Cove's funding-input check. Its indexer and
+    # JSON API work against Core 30; its WALLET does not (Core 30 dropped the
+    # getwalletinfo "balance" field ord reads), so build inscriptions with
+    # your own commit/reveal transactions rather than `ord wallet inscribe`.
     build:
       context: "https://github.com/kungfuflex/alkanes.git#7a3326b12702c044424d10b37c048e06ebefb3d2:docker/ord"
     image: cove-ord:alkanes

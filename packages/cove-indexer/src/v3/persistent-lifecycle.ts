@@ -44,9 +44,9 @@ const RPC_USER = process.env.COVE_REGTEST_RPC_USER ?? "user";
 const RPC_PASSWORD = process.env.COVE_REGTEST_RPC_PASSWORD ?? "pass";
 const DB_URL = process.env.COVE_DATABASE_URL ?? process.env.DATABASE_URL;
 
-const MINT_AMOUNT = 10_000n * 100_000_000n;
+const MINT_AMOUNT = 1_000_000n * 100_000_000n;
 /** Required backing after minting MINT_AMOUNT from S0, from the frozen curve. */
-const R_10K = requiredBackingSats(MINT_AMOUNT / 100_000_000n);
+const R_MINT = requiredBackingSats(MINT_AMOUNT / 100_000_000n);
 
 function p2wpkh(key: { publicKey: Uint8Array }): Buffer {
   return bitcoin.payments.p2wpkh({ pubkey: key.publicKey as Buffer, network: bitcoin.networks.regtest }).output!;
@@ -174,7 +174,7 @@ async function main() {
   await mine();
   {
     const h = await hydrateState(db, "regtest", cfg);
-    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_10K) throw new Error("MINT backing != R(10k)");
+    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_MINT) throw new Error("MINT backing != R(1M)");
     if (h.tokenUtxos.size !== 1) throw new Error("MINT should create 1 token utxo");
   }
   console.log(`✓ MINT persisted ${mintTxid}`);
@@ -197,7 +197,7 @@ async function main() {
   await mine();
   {
     const h = await hydrateState(db, "regtest", cfg);
-    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_10K) throw new Error("TRANSFER moved backing");
+    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_MINT) throw new Error("TRANSFER moved backing");
   }
   console.log(`✓ TRANSFER persisted ${transferTxid}`);
 
@@ -243,7 +243,7 @@ async function main() {
   await mine();
   {
     const h = await hydrateState(db, "regtest", cfg);
-    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_10K) throw new Error("RE-BUY backing != R(10k)");
+    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_MINT) throw new Error("RE-BUY backing != R(1M)");
   }
   console.log(`✓ RE-BUY persisted ${mint2Txid}`);
 
@@ -275,7 +275,7 @@ async function main() {
     const h = await hydrateState(db, "regtest", cfg);
     const after = await getTokenUtxosByScriptDb(db, "regtest", aliceScript);
     if (after.some((u) => u.txid === sellerX.txid && u.vout === sellerX.vout)) throw new Error("seller UTXO still unspent after P2P");
-    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_10K) throw new Error("P2P moved backing");
+    if (h.backing.get(tokenIdHex)!.state.backingSats !== R_MINT) throw new Error("P2P moved backing");
     // spent marker
     const spent = await db.select().from(schema.coveV3TokenUtxos).where(and(eq(schema.coveV3TokenUtxos.network, "regtest"), eq(schema.coveV3TokenUtxos.txid, sellerX.txid), eq(schema.coveV3TokenUtxos.vout, sellerX.vout)));
     if (spent[0]!.spentByTxid !== p2pTxid) throw new Error("P2P spentByTxid mismatch");

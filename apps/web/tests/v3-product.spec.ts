@@ -233,8 +233,8 @@ test("E2E-009 mint-out: the page switches to Buy / Sell / Redeem, and the market
   const fullId = tokens.data.find((t: { ticker: string }) => t.ticker === "FULL").tokenId as string;
 
   // One mint is capped (COVE_REGTEST_MAX_MINT_GROSS_SATS of curve price, 0.5
-  // BTC here) and the whole curve is about ten BTC, so minting out takes about
-  // twenty. The page stops each one at the cap and says so.
+  // BTC here) and the whole curve is about 0.73 BTC, so minting out takes two.
+  // The page stops each one at the cap and says so.
   await carol.goto(`${BASE}/token/${fullId}`);
   await carol.getByRole("button", { name: /connect wallet/i }).click();
   for (let i = 0; i < 40; i++) {

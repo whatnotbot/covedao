@@ -61,7 +61,7 @@ const RPC_USER = process.env.COVE_REGTEST_RPC_USER ?? "user";
 const RPC_PASSWORD = process.env.COVE_REGTEST_RPC_PASSWORD ?? "pass";
 const DB_URL = process.env.COVE_DATABASE_URL ?? process.env.DATABASE_URL;
 
-const MINT_AMOUNT = 10_000n * 100_000_000n;
+const MINT_AMOUNT = 1_000_000n * 100_000_000n;
 const HALF = MINT_AMOUNT / 2n;
 const PRICE = 100_000n;
 
@@ -155,7 +155,7 @@ async function main() {
   const tokenIdHex = tokenId.toString("hex");
   console.log(`✓ DEPLOY ${deployTxid.slice(0, 16)}…`);
 
-  // ── MINT → Alice owns 10k ──
+  // ── MINT → Alice owns 1M ──
   const aliceUtxo = await fund(alice, 1.0);
   const mint = buildMintPsbtV3({
     network: bitcoin.networks.regtest, tokenId, prevState: deploy.s0,
@@ -172,7 +172,7 @@ async function main() {
     rawTxHex: mint.psbt.extractTransaction().toHex(), view: state, network: "regtest", guardianXOnly, recoveryKeyXOnly: recoveryXOnly, feeScript,
   })));
   await mine();
-  console.log(`✓ MINT (Alice 10k) ${mintTxid.slice(0, 16)}…`);
+  console.log(`✓ MINT (Alice 1M) ${mintTxid.slice(0, 16)}…`);
 
   const market = new MarketService(db, provider, defaultMarketConfig("regtest", feeScript));
   const aliceScript = p2wpkh(alice).toString("hex");
@@ -294,7 +294,7 @@ async function main() {
   // seller payout output (vout 3 for a partial fill: 0 OP_RETURN,1 buyer,2 change,3 payout)
   const payoutOut = await provider.getTxout(validated.txid, 3);
   assert(payoutOut && payoutOut.scriptPubKeyHex === carolScript && payoutOut.valueSats === PRICE, "seller receives exactly totalPriceSats");
-  console.log(`✓ P2P partial fill CONFIRMED (10k → 5k buyer + 5k change + ${PRICE} sats, backing untouched)`);
+  console.log(`✓ P2P partial fill CONFIRMED (1M → 500k buyer + 500k change + ${PRICE} sats, backing untouched)`);
 
   // ══ Phase 4: market rows survive a full indexer reindex ══
   await reindexDb({ db, store, provider, config: cfg, network: "regtest" });

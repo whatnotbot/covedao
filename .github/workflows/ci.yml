@@ -42,3 +42,6 @@ jobs:
 
       - name: Build
         run: pnpm build
+        env:
+          # Required: the web bundle is built for one network (no default).
+          COVE_NETWORK: regtest

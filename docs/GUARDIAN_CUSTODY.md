@@ -34,7 +34,7 @@ and NOT a hash. It must be:
 1. Generated inside the custody device/KMS during setup (the private key never
    leaves it).
 2. Exported from the device as a 32-byte hex x-only value.
-3. Committed into `config/cove-v3-mainnet-profile.json` as `guardianXOnly` and
+3. Committed into `packages/cove-mainnet/src/committed-profile.ts` as `guardianXOnly` and
    into the vault leaves by the deploy tooling.
 
 The BIP340 signer inside the device handles the even-y negation, so the x-only

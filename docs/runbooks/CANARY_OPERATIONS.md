@@ -27,7 +27,7 @@ every required health signal is green:
 
 1. `Cove V3 — mainnet readiness gate` CI is green (no mainnet broadcast anywhere).
 2. Operator ceremony complete: committed public mainnet profile
-   (activation height, guardian X-only key, 2-of-3 recovery pubkeys + CSV,
+   (activation height, guardian X-only key, 2-of-3 or 1-of-1 recovery pubkeys + CSV,
    fee script, buy/redeem/p2p BPS, canary allowlist + caps) — see
    `MAINNET_RECOVERY_CEREMONY.md`.
 3. Release manifest + secret scan clean; readiness CLI reports
@@ -35,7 +35,7 @@ every required health signal is green:
 
 ## Activation (human-only)
 
-1. Commit the public profile values (`.cove-v3-mainnet-profile.json`); verify
+1. Commit the public profile values (`packages/cove-mainnet/src/committed-profile.ts`); verify
    `node scripts/cove-v3-mainnet-readiness.mjs` reports the canary-ready state.
 2. Arm the canary (set `canaryActive`) only after reviewing the canary
    allowlist + caps.

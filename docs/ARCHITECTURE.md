@@ -1,103 +1,102 @@
-# Architecture
+# Architecture (Cove V3)
 
 ## Components
 
 ```
-                    ┌─────────────────────────────┐
-                    │   Browser (Next.js web)     │
-                    │  React UI + WalletAdapter   │
-                    └──────────────┬──────────────┘
-                                   │ HTTP (API routes)
-                    ┌──────────────▼──────────────┐
-                    │   apps/web (API layer)      │
-                    │  quotes, builds, broadcasts │
-                    │  read endpoints (DB)        │
-                    └───┬──────────────┬──────────┘
-                        │              │
-        ┌───────────────▼───┐    ┌─────▼───────────────┐
-        │  PostgreSQL (Drizzle)│    │  Redis (cache/lock) │
-        │  projection/cache   │    │  mock chain state   │
-        └───────▲───────────┘    └─────▲───────────────┘
-                │                      │
-        ┌───────┴───────────┐    ┌─────┴───────────────┐
-        │  apps/worker       │    │  Protocol adapter    │
-        │  indexer (BullMQ)  │    │  MockCRCAdapter      │
-        │  mock block mining │    │  PrecopCRCAdapter    │
-        │  reorg handling    │    │  (gated, read-only)  │
-        └───────────────────┘    └─────────────────────┘
+            ┌───────────────────────────────┐
+            │  Browser: Next.js UI + wallet  │  Xverse / Unisat / Leather sign PSBTs
+            └───────────────┬───────────────┘
+                            │ HTTP (API routes)
+            ┌───────────────▼───────────────┐        ┌──────────────────────────┐
+            │  apps/web                     │ bearer │  apps/guardian            │
+            │  quotes, PSBT builds, submit, ├───────►│  GET /health, POST /sign  │
+            │  read models, P2P market      │  token │  MINT/REDEEM only         │
+            └───┬───────────────────┬───────┘        │  holds GUARDIAN_KEY_HEX   │
+                │                   │                └───┬──────────────┬────────┘
+                │ reads             │ RPC                │ journal,     │ RPC (own view:
+                │                   │                    │ audit, index │ confirmations)
+        ┌───────▼───────┐   ┌───────▼────────┐          │              │
+        │  PostgreSQL   │◄──┤  Bitcoin Core  │◄─────────┼──────────────┘
+        │  index + app  │   │  (JSON-RPC)    │          │
+        │  stores       │◄──┐└───────▲───────┘          │
+        └───────────────┘   │        │ blocks           │
+                            │ ┌──────┴─────────┐        │
+                            └─┤  apps/worker   │        │
+                     writes   │  V3 indexer,   │        │
+                              │  reconcile     │◄───────┘ (same database)
+                              └────────────────┘
 ```
+
+- **apps/web** builds every PSBT, asks the user's wallet to sign it, and on
+  mint/redeem asks the Guardian to sign the vault input. It never signs a
+  vault input itself on mainnet.
+- **apps/worker** follows Bitcoin Core block by block, applies Cove
+  transitions deterministically to Postgres (with an undo journal for
+  reorgs), and reconciles market fills and app sessions. It never calls the
+  Guardian.
+- **apps/guardian** is the only process with the Guardian key. It rebuilds
+  the canonical state from its own view of the database, re-validates the
+  real PSBT (reference policy + Simplicity predicate), checks funding inputs
+  against its own node and an ord server, journals, audits, then signs the
+  MINT or REDEEM leaf.
+
+## Configuration
+
+Environment variables carry only secrets and per-deploy endpoints.
+Everything else is committed:
+
+| What | Where |
+| --- | --- |
+| Mainnet profile (activation height, Guardian key, recovery keys, fees, canary caps) | `packages/cove-mainnet/src/committed-profile.ts` |
+| Per-network settings (V3 on, worker poll, Guardian port, explorer, esplora, ord) | `packages/config/src/cove-networks.ts` |
+| Protocol constants (curve, CMRs, carrier/anchor sats, vault profile) | the protocol packages; frozen |
+
+`COVE_NETWORK` is required by every service; there is no default. The env
+each service reads is listed in `apps/*/.env.example`:
+
+| Service | Env |
+| --- | --- |
+| web | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL`, `COVE_GUARDIAN_ENDPOINT`, `COVE_GUARDIAN_AUTH_TOKEN` |
+| worker | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL` |
+| guardian | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL`, `GUARDIAN_AUTH_TOKEN`, `GUARDIAN_KEY_HEX` |
+
+RPC user and password are optional (hosted providers put the key in the
+URL). Mainnet refuses to start while the committed profile is incomplete,
+while any `COVE_*_PRIVATE_KEY_HEX` is set on web or worker, or when the
+Guardian key does not match the profile.
+
+Local regtest keeps its fixture defaults (local node, public test keys) once
+`COVE_NETWORK=regtest` is set in the repo-root `.env`. Regtest CI may name a
+test profile with `COVE_TEST_ONLY_PROFILE_PATH`; that is refused on mainnet.
 
 ## Packages
 
-- **`packages/curve`** — the Progressive Mint Curve. Pure BigInt. Canonical 20-stage
-  table, `quoteExactTokens`/`quoteExactSats`, fee math, minimum contribution.
-  100% test coverage; no UI reimplements curve math.
-- **`packages/protocol`** — `CRCProtocolAdapter` interface + `MockCRCAdapter`
-  (simulated chain, Redis-backed state) + `PrecopCRCAdapter` (mainnet, every
-  build method gated by an operation VERIFIED registry). Also the shared
-  `MockChainNode` used by both web and worker.
-- **`packages/bitcoin`** — `BitcoinProvider` abstraction + `MockBitcoinProvider`.
-- **`packages/wallets`** — `WalletAdapter` interface + `MockWalletAdapter`.
-- **`packages/db`** — Drizzle schema (20 tables), SQL migrations, repositories,
-  and explicit transaction/token/listing state machines.
-- **`packages/schemas`** — Zod schemas for all API inputs.
-- **`packages/config`** — env parsing, validation, mainnet safety gates.
+| Package | Purpose |
+| --- | --- |
+| `cove-wire` | Binary `CV` OP_RETURN envelope, token identity, crc-20 discovery JSON |
+| `cove-covenant` | State encoding, state hash, transition rules |
+| `cove-vault` | Taproot vault (NUMS key, MINT/REDEEM leaves, 2-of-3 or 1-of-1 recovery) |
+| `cove-simplicity` | Simplicity predicates (Rust) run by the Guardian |
+| `cove-economics`, `curve` | 210-stair curve, fees, creator share |
+| `cove-guardian` | PSBT builders, validation, signing, funding checks, custody backends |
+| `cove-indexer` | Deterministic V3 indexer, state root, reorg handling, Postgres store |
+| `cove-market` | P2P listings and atomic PSBT settlement |
+| `cove-mainnet` | Committed mainnet profile, validator, hash, test-key denylist |
+| `cove-app` | Application service used by web and worker |
+| `config` | Committed per-network settings (browser-safe) |
+| `wallets`, `bitcoin`, `db` | Wallet intent checks, Bitcoin providers, Drizzle schema |
 
-## Data flow (mock mode)
+`packages/protocol` and the V1 worker (`pnpm --filter @crclaunch/worker
+start:v1`) are the earlier design, kept for their regression suites.
 
-1. Web app reads/writes **protocol state** through `MockChainNode` (shared via
-   Redis so web + worker see one chain).
-2. The worker mines a block every `MOCK_BLOCK_INTERVAL_MS`, then enqueues a
-   BullMQ **sync job**.
-3. The sync job idempotently upserts chain events and derives projections
-   (tokens, balances, listings, trades, mints) into PostgreSQL.
-4. Web **reads** (homepage, token pages, activity, portfolio) come from the DB
-   projection; web **writes** (quote/build/broadcast) go to the protocol adapter.
+## Invariants
 
-This mirrors the real architecture: the API never indexes, and the database is
-never the source of truth for money movement.
-
-## Key invariants
-
-- Monetary math is integer-only (`bigint`); DB monetary columns are `BIGINT`.
-- Every state-changing API accepts an `Idempotency-Key`; DB unique constraints
-  make event/transaction ingestion idempotent.
-- Reorgs reconcile projections to the canonical chain (mock chain rebuilds
-  derived state; the worker re-syncs; `reorg_events` records forensics).
-- A stale quote cannot be signed: quotes bind to a protocol state hash and
-  expire by time and height.
-- Mempool is never treated as final; graduation waits for a configurable
-  finality threshold.
-
-## Trust model (adversarial hardening)
-
-Transaction construction is convenience only. Canonical state is produced by
-**independently validating every operation against deterministic protocol
-rules**, never by trusting the requestor:
-
-- **Frontend is untrusted** — the UI is a convenience wrapper.
-- **Builder is untrusted** — a malicious client may construct its own transaction.
-- **Payload is untrusted** — payment/fee/price/address/ticker claims are ignored.
-- **Indexer/validator recomputes all material state** from canonical prior state,
-  the transaction signer, transaction outputs, and deterministic rules
-  (`packages/protocol/src/mock/chain.ts` `validateTx` → `applyNormalized`).
-
-The validator derives actual payments from transaction **outputs** (address +
-amount) against the canonical protocol config (`packages/protocol/src/validation/config.ts`),
-not from payload fields. See `packages/protocol/src/mock/adversarial.test.ts` for
-the tampered-transaction attack matrix.
-
-## Exact output semantics + reorg rebuild (P0.1)
-
-- **Exact V1 protocol outputs**: the validator requires exact output count,
-  order, address, amount (exact equality — overpay/underpay both rejected), and
-  kind for MINT (2 outputs), DEPLOY (1), DEX_BID (seller payment), and zero
-  outputs for DEX_ASK/CANCEL. `validateExactOutputs` in
-  `packages/protocol/src/validation/common.ts` is the single helper.
-- **TRANSFER respects locked listings**: `available = balance - locked`.
-- **Reorg reconciliation**: on chain-history mismatch the worker finds the common
-  ancestor from stored canonical blocks, then `rebuildProjections` truncates the
-  protocol projection tables and re-syncs from the canonical mock chain. App data
-  (`token_metadata` keyed by immutable deploymentTxid, `reports`,
-  `terms_acceptances`, `admin_audit_logs`, `media`, `reorg_events`) survives.
-  This guarantees incremental-after-reorg === clean-reindex.
+- All money math is `bigint`; Postgres money columns are `BIGINT`.
+- The browser and web API are untrusted: the Guardian recomputes every
+  amount from canonical state and the real transaction before signing.
+- A vault outpoint is signed at most once (Postgres signing journal), and
+  every signature is preceded by a durable audit record.
+- Mint and redeem funding inputs must be confirmed and hold no tokens of any
+  kind (Cove carriers, inscriptions, runes).
+- The indexer's state root is deterministic: an incremental index after a
+  reorg equals a clean replay.

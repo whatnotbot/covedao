@@ -46,14 +46,14 @@ recovery-3    <64-hex>
 
 ## 2. Fill the profile
 
-Copy `config/cove-v3-mainnet-profile.template.json` to
-`.cove-v3-mainnet-profile.json` (gitignored) and fill:
+Edit the committed profile, `packages/cove-mainnet/src/committed-profile.ts`
+(public values only), and fill:
 
 | Field | Value |
 |---|---|
 | `guardianXOnly` | the `guardian` x-only pubkey from step 1 |
-| `recovery.threshold` | `2` |
-| `recovery.pubkeys` | the 3 `recovery-*` x-only pubkeys (any order; they are sorted canonically) |
+| `recovery.threshold` | `2` (with 3 keys) or `1` (with 1 key) |
+| `recovery.pubkeys` | the 3 `recovery-*` x-only pubkeys (any order; they are sorted canonically), or the single one for 1-of-1 |
 | `recovery.csvBlocks` | `2016` (≈2 weeks) |
 | `activationHeight` | a **future** block height (see below) |
 | `feeScript` | your fee-destination P2WPKH script (hex) |
@@ -63,6 +63,10 @@ Copy `config/cove-v3-mainnet-profile.template.json` to
 | `canary.allowedTokenIds` | the single precomputed tokenId from launch prep |
 | `canary.maxBackingSats` / `maxSingleBuySats` / `maxSingleRedeemPayoutSats` / `maxP2pSettlementSats` | the caps from §7 |
 
+Validation refuses any key or script controlled by the repo's public test
+keys. Commit the change: web, worker and Guardian must run the same commit,
+because they compare the profile hash.
+
 **`activationHeight`:** choose a block height that is still in the future so the
 indexer begins indexing Cove ops exactly at `H`. (`getblockchaininfo` for the
 current tip, then add margin.)
@@ -70,7 +74,7 @@ current tip, then add margin.)
 ## 3. Static readiness
 
 ```bash
-COVE_V3_MAINNET_PROFILE_PATH=.cove-v3-mainnet-profile.json pnpm cove:v3-mainnet-readiness --static
+pnpm cove:v3-mainnet-readiness --static
 ```
 
 Expected: every `profile completeness` / `protocol profile match` / `recovery
@@ -83,30 +87,36 @@ STATIC_PROFILE_READY
 If it prints `READY_EXCEPT_FOR_OPERATOR_CEREMONY` with `OWNER_DECISION_REQUIRED`,
 a field is still null — fix it before continuing.
 
-## 4. Deploy the Guardian to a separate host
+## 4. Deploy the Guardian as its own service
 
-`apps/guardian` is a standalone Node HTTP service. On a host **separate** from
-the web app/worker, with the profile + a Postgres DB + a primary (and optional
-secondary) Core RPC:
+`apps/guardian` is a standalone Node HTTP service. Run it as a service of its
+own (on Railway: its own service in the project); `GUARDIAN_KEY_HEX` must exist
+nowhere else. Its environment is exactly (see `apps/guardian/.env.example`):
 
 ```bash
-COVE_V3_MAINNET_PROFILE_PATH=.cove-v3-mainnet-profile.json \
+COVE_NETWORK=mainnet \
 COVE_DATABASE_URL=postgres://… \
-GUARDIAN_NETWORK=mainnet \
+COVE_BITCOIN_RPC_URL=https://… \
 GUARDIAN_AUTH_TOKEN=<strong-random-token> \
-GUARDIAN_PORT=4391 \
+GUARDIAN_KEY_HEX=<guardian private key, 64 hex> \
 pnpm --filter @crclaunch/guardian start
 ```
 
-(For production custody, the `UnconfiguredGuardianCustodyBackend` is replaced by
-the selected backend — see `docs/GUARDIAN_CUSTODY.md`; there is no `exportPrivateKey`
-and no generic sign endpoint.)
+It listens on port 4391 (committed). It refuses to start if the key does not
+match `guardianXOnly`, if `COVE_BITCOIN_RPC_URL` is not on the main chain, or
+if the committed profile does not validate. There is no `exportPrivateKey` and
+no generic sign endpoint.
+
+The web app then needs `COVE_GUARDIAN_ENDPOINT` (on Railway:
+`http://<guardian>.railway.internal:4391`; elsewhere `https://…`) and
+`COVE_GUARDIAN_AUTH_TOKEN` set to the same token.
 
 Health check (only public info):
 
 ```bash
 curl -s http://guardian-host:4391/health -H "Authorization: Bearer <token>"
-# {"reachable":true, "profileHash":"…", "guardianXOnly":"…", "custodyBackendReady":true, "signingEnabled":true, …}
+# {"reachable":true, "profileHash":"…", "guardianXOnly":"…", "custodyBackendReady":true, "auditHealthy":true,
+#  "signingJournalHealthy":true, "signingEnabled":true, …}   ← probed live, not fixed values
 ```
 
 Confirm `guardianXOnly` equals the profile value and `profileHash` equals the
@@ -118,7 +128,6 @@ The runtime probe is fail-closed: it compares against **committed** hashes and
 contacts the real indexer DB + worker lock, so pass all of these in:
 
 ```bash
-COVE_V3_MAINNET_PROFILE_PATH=.cove-v3-mainnet-profile.json \
 COVE_V3_MAINNET_PROFILE_HASH=<committed-profile-hash> \
 COVE_V3_MAINNET_STATE_ROOT=<committed-replay-state-root> \
 COVE_V3_MAINNET_RELEASE_MANIFEST_HASH=<committed-release-manifest-hash> \

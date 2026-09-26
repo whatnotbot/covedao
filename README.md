@@ -9,10 +9,11 @@ key of a live UTXO. A token's history is a chain of on-chain state transitions �
 Bitcoin transaction. Anyone can run the indexer and independently reproduce the
 same state root from the same blocks.
 
-Cove sits in the CRC category but runs its own protocol. The wire identifier is
-**`cove-20`**, deliberately distinct from `crc-20`: sharing a tag would mean
-sharing a ledger, and a third party's closed indexer would decide what a Cove
-token is worth. Separate tag, open indexer, reproducible state.
+Cove sits in the CRC category but runs its own protocol. The authoritative
+record is a binary OP_RETURN envelope tagged **`CV`**; an optional second
+OP_RETURN carries `crc-20` JSON so CRC explorers can see Cove tokens, but it is
+advisory and never read into state. Own ledger, open indexer, reproducible
+state.
 
 ---
 
@@ -56,10 +57,10 @@ REDEEM ──────┘  burn tokens, release the backing BTC
 Each vault's output key is `Q = P + H_TapTweak(P ‖ stateCommitment)·G`, so the
 address itself is a commitment to the protocol state. The vault carries three
 tapleaves: MINT and REDEEM execution paths bound to a Simplicity program
-commitment (CMR), and a **2-of-3 threshold recovery leaf** behind a relative
-timelock.
+commitment (CMR), and a **threshold recovery leaf** (2-of-3, or 1-of-1) behind
+a relative timelock.
 
-The issuance curve is a frozen 20-stage integer staircase. All arithmetic is
+The issuance curve is a frozen 210-stair integer staircase. All arithmetic is
 `bigint`; there is no floating point anywhere in the consensus path.
 
 ---
@@ -68,7 +69,7 @@ The issuance curve is a frozen 20-stage integer staircase. All arithmetic is
 
 | Package | Purpose |
 | --- | --- |
-| `packages/cove-wire` | Wire envelope: fixed-width binary, versioned, `COVE` magic |
+| `packages/cove-wire` | Wire envelope: fixed-width binary, versioned, `CV` magic |
 | `packages/cove-covenant` | State encoding, state hash, transition rules |
 | `packages/cove-vault` | Taproot vault construction, MAST, recovery profiles |
 | `packages/cove-simplicity` | Simplicity predicate (Rust) + Bit Machine execution |
@@ -76,13 +77,14 @@ The issuance curve is a frozen 20-stage integer staircase. All arithmetic is
 | `packages/cove-indexer` | Deterministic indexer, state root, reorg recovery, Postgres |
 | `packages/cove-market` | Signed listings, PSBT atomic settlement, reconciliation |
 | `packages/cove-economics` | Frozen issuance curve and fee schedule |
-| `packages/cove-mainnet` | Canonical mainnet profile: one schema, parser, validator, hash |
+| `packages/cove-mainnet` | The committed mainnet profile: schema, parser, validator, hash |
+| `packages/config` | Committed per-network settings (explorer, ports, ord server, …) |
 | `packages/cove-app` | Application service, readiness aggregation, durable stores |
 | `packages/cove-recovery` | Offline threshold-recovery tool |
 | `packages/bitcoin` | PSBT construction, dust policy, Core RPC and Esplora providers |
 | `apps/web` | Next.js application |
 | `apps/guardian` | Standalone Guardian service (sign-only HTTP API) |
-| `apps/worker` | Indexer worker |
+| `apps/worker` | V3 indexer worker (`start`); the V1 mock worker is `start:v1` |
 
 `packages/protocol`, `packages/curve` and the V1 paths under `docs/legacy/` are
 the earlier OP_RETURN/indexer-authoritative design, retained for its regression
@@ -96,13 +98,21 @@ Requires Node 22, pnpm 10, Postgres 16, and Rust (for the Simplicity binary).
 
 ```bash
 pnpm install
-cp .env.example .env          # then edit DATABASE_URL
+cp .env.example .env          # local regtest; sets COVE_NETWORK=regtest
 
 docker compose up -d postgres
 pnpm db:migrate
 
 pnpm typecheck && pnpm lint && pnpm test
 ```
+
+`COVE_NETWORK` is required by every service; nothing defaults to regtest.
+Everything that is not a secret or a per-deploy endpoint is committed:
+per-network settings in `packages/config/src/cove-networks.ts`, the mainnet
+profile in `packages/cove-mainnet/src/committed-profile.ts`. See
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#configuration).
+
+Signet with real browser wallets: `scripts/signet-up.sh`.
 
 Build the Simplicity predicate and verify the frozen CMRs:
 
@@ -124,7 +134,6 @@ pnpm cove:csv-proof                # NUMS/MAST, 144-block CSV recovery leaf
 pnpm cove:v3-regtest-lifecycle     # DEPLOY → MINT → TRANSFER → REDEEM
 pnpm cove:regtest-reorg            # reorg recovery, root == clean replay
 pnpm cove:signet-proof             # signet lifecycle, real broadcast
-pnpm cove:liquidity-demo           # graduation + constant-product pool
 ```
 
 | Workflow | Proves |
@@ -142,15 +151,26 @@ pnpm cove:liquidity-demo           # graduation + constant-product pool
 
 ## Mainnet status
 
-**Mainnet is not activated.** `COVE_V1_MAINNET_GENESIS_HEIGHT = 0` and every
-`COVE_*_MAINNET_ENABLED` flag defaults to `false`. The Guardian refuses to boot
-on mainnet with a development key, and the only other custody backend fails
-closed on every call — so the mainnet signing path cannot produce a signature
-today. That is deliberate.
+**Mainnet is not activated.** The committed profile
+(`packages/cove-mainnet/src/committed-profile.ts`) still has placeholders for
+every owner decision — activation height, Guardian key, recovery keys (2-of-3
+or 1-of-1), fee destination and bps, canary allowlists and caps — so mainnet
+refuses to start until they are filled in. The profile also refuses any key
+or script controlled by the repo's public test keys.
 
-Consensus configuration — activation height, Guardian key, recovery keys, fee
-destination — lives in a committed constant, never in the environment. The
-runtime may only *verify* against it; a mismatch is fatal.
+Once the profile validates, mainnet runs as three services (web, worker,
+Guardian) with only these env vars:
+
+| Service | Env (see `apps/*/.env.example`) |
+| --- | --- |
+| web | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL`, `COVE_GUARDIAN_ENDPOINT`, `COVE_GUARDIAN_AUTH_TOKEN` |
+| worker | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL` |
+| guardian | `COVE_NETWORK`, `COVE_DATABASE_URL`, `COVE_BITCOIN_RPC_URL`, `GUARDIAN_AUTH_TOKEN`, `GUARDIAN_KEY_HEX` |
+
+The Guardian refuses to start unless `GUARDIAN_KEY_HEX` matches the profile's
+`guardianXOnly`. On Railway the web may reach it over private networking
+(`http://<guardian>.railway.internal:4391`); anywhere else it must be https.
+The canary allowlists and caps in the profile are enforced on every mutation.
 
 Check readiness at any time:
 
@@ -178,7 +198,8 @@ recomputes every amount from canonical state and validates the real
 transaction — but it is the component to protect.
 [`docs/GUARDIAN_CUSTODY.md`](docs/GUARDIAN_CUSTODY.md) covers backend options.
 
-Key material is never held by the application. The ceremony tool writes each
+Key material is never held by the web app or worker. The Guardian holds its
+key in `GUARDIAN_KEY_HEX` on its own service. The ceremony tool writes each
 private key to a separate `0600` file and prints only x-only public keys:
 
 ```bash
@@ -205,7 +226,7 @@ public issue.
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System overview |
 | [`THREAT_MODEL.md`](docs/THREAT_MODEL.md) | Threat model |
 | [`GUARDIAN_CUSTODY.md`](docs/GUARDIAN_CUSTODY.md) | Custody backend selection |
-| [`MAINNET_RECOVERY_CEREMONY.md`](docs/MAINNET_RECOVERY_CEREMONY.md) | 2-of-3 recovery procedure |
+| [`MAINNET_RECOVERY_CEREMONY.md`](docs/MAINNET_RECOVERY_CEREMONY.md) | Threshold recovery procedure |
 | [`runbooks/`](docs/runbooks) | Backup/restore, canary operations, recovery |
 
 ---

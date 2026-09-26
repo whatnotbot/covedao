@@ -20,11 +20,11 @@ pnpm cove:ceremony-keys --out /Volumes/ceremony/keys
 
 ## Storage checklist
 
-- [ ] `guardian.key` → the Guardian service's own machine ONLY (encrypted
-      disk, mode 0600, set as `GUARDIAN_KEY_FILE`). It is a hot key: the
-      Guardian signs every mint and redeem automatically. Never on the app/web
-      host. The service refuses to start if the key does not match the
-      profile's `guardianXOnly`.
+- [ ] `guardian.key` → the Guardian service ONLY, as `GUARDIAN_KEY_HEX` (its
+      64 hex characters). It is a hot key: the Guardian signs every mint and
+      redeem automatically. Never on the web or worker. The service refuses
+      to start if it does not match the profile's `guardianXOnly`. Keep the
+      offline file as the backup.
 - [ ] `recovery-1.key` → offline signer 1 (separate physical location).
 - [ ] `recovery-2.key` → offline signer 2 (separate physical location).
 - [ ] `recovery-3.key` → offline signer 3 (separate physical location).
@@ -34,4 +34,5 @@ pnpm cove:ceremony-keys --out /Volumes/ceremony/keys
 
 The private-key files are for the operator's own offline storage only; the
 **public** x-only values are what go into
-`config/cove-v3-mainnet-profile.template.json`.
+`packages/cove-mainnet/src/committed-profile.ts`. For 1-of-1 recovery, use
+one recovery key and `threshold: 1`.

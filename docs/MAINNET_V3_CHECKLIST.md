@@ -11,7 +11,7 @@ domain. The ONE explicit versioned change is the vault recovery profile.
 ## Vault security profile
 
 - `COVE_V3_VAULT_PROFILE_DEV1` — historical single-key 144-CSV (regtest/golden).
-- `COVE_V3_VAULT_PROFILE_MAINNET1` — 2-of-3 threshold recovery, lexicographic key
+- `COVE_V3_VAULT_PROFILE_MAINNET1` — 2-of-3 (or 1-of-1) threshold recovery, lexicographic key
   order, committed CSV delay. Golden vectors frozen in `cove-vault`.
 
 ## Operator decisions (OWNER_DECISION_REQUIRED until supplied)

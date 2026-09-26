@@ -877,6 +877,12 @@ export class V3AppService {
     limitedBy: "budget" | "per-mint limit" | "supply";
     minGrossSats: bigint;
     maxGrossSats: bigint | null;
+    /**
+     * The smallest budget that mints anything right now: one lot (or the few
+     * lots the minimum mint needs) with every fee and the token carrier.
+     * Null when the curve is sold out.
+     */
+    minSpendSats: bigint | null;
   }> {
     const backing = await this.loadBacking(tokenId);
     const supplyTokens = backing.state.issuedPublicSupplyAtoms / ATOMS_PER_TOKEN;
@@ -905,7 +911,20 @@ export class V3AppService {
     }
     const lo = loLots * LOT_TOKENS;
     const perMintTokens = perMintLots * LOT_TOKENS;
-    const base = { carrierSats: TOKEN_CARRIER_SATS, minGrossSats: limits.minGrossSats, maxGrossSats: limits.maxGrossSats } as const;
+    // Smallest mint: the fewest lots whose curve price meets the minimum, with
+    // every fee and the carrier. Tells the buyer what "too little" means.
+    let minSpendSats: bigint | null = null;
+    if (remainingLots > 0n) {
+      let a = 1n;
+      let b = remainingLots;
+      while (a < b) {
+        const m = (a + b) / 2n;
+        if (costOf(m * LOT_TOKENS).gross >= limits.minGrossSats) b = m;
+        else a = m + 1n;
+      }
+      if (costOf(a * LOT_TOKENS).gross >= limits.minGrossSats) minSpendSats = costOf(a * LOT_TOKENS).total;
+    }
+    const base = { carrierSats: TOKEN_CARRIER_SATS, minGrossSats: limits.minGrossSats, maxGrossSats: limits.maxGrossSats, minSpendSats } as const;
     const nothing = { ...base, amountAtoms: 0n, grossSats: 0n, feeSats: 0n, creatorFeeSats: 0n, totalSats: 0n, limitedBy: "budget" } as const;
     // The budget does not cover one lot (or the curve is minted out): there is
     // nothing to price, and grossBuy rejects a zero amount.

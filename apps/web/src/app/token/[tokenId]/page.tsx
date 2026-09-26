@@ -30,7 +30,8 @@ type Tab = "mint" | "redeem" | "buy" | "sell";
 const TABS_OPEN: Tab[] = ["mint", "redeem"];
 const TABS_GRADUATED: Tab[] = ["buy", "sell", "redeem"];
 const TAB_LABEL: Record<Tab, string> = { mint: "Mint", redeem: "Redeem", buy: "Buy", sell: "Sell" };
-const QUICK_SATS = [5_000n, 25_000n, 100_000n];
+// The flat mint fee alone is 5,000 sats, so the smallest button must clear it.
+const QUICK_SATS = [10_000n, 25_000n, 100_000n];
 
 interface Ask {
   listingId: string;
@@ -81,6 +82,7 @@ function TokenContent() {
     limitedBy: "budget" | "per-mint limit" | "supply";
     minGrossSats: string;
     maxGrossSats: string | null;
+    minSpendSats: string | null;
   } | null>(null);
   const [heldAtoms, setHeldAtoms] = useState<bigint | null>(null);
   const [balanceSats, setBalanceSats] = useState<bigint | null>(null);
@@ -598,7 +600,9 @@ function TokenContent() {
                     {mintQuote && BigInt(mintQuote.amountAtoms) > 0n
                       ? `≈ ${fmtTokens(BigInt(mintQuote.amountAtoms))} ${detail.ticker}`
                       : budget
-                        ? "too little to mint"
+                        ? mintQuote?.minSpendSats
+                          ? `nothing — the smallest mint is ${fmtInt(BigInt(mintQuote.minSpendSats))} sats`
+                          : "too little to mint"
                         : "—"}
                   </span>
                 </div>

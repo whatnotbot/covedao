@@ -61,7 +61,10 @@
   "description": "A CRC-family token protocol on Bitcoin L1 \u2014 state-committed Taproot UTXOs, an open indexer, and a non-custodial marketplace.",
   "pnpm": {
     "overrides": {
-      "bitcoinjs-lib": "6.1.8"
+      "bitcoinjs-lib": "6.1.8",
+      "axios@>=1.0.0 <1.20.0": "^1.20.0",
+      "ws@>=8.0.0 <8.21.0": "^8.21.3",
+      "postcss@<8.5.18": "^8.5.28"
     }
   }
 }
